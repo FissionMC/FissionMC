@@ -115,7 +115,7 @@ class Surface private constructor(
                     val n = widenFlags(m.access, p.access and VIS_MASK, 0)
                     if (n != m.access) { m.access = n; changed = true }
                 }
-                is Parsed.Implements -> if (p.iface !in node.interfaces) { addInterface(node, p.iface); changed = true }
+                is Parsed.Implements -> if (p.iface !in node.interfaces) { addInterface(node, p.iface, p.signature); changed = true }
             }
         }
         return changed
@@ -141,21 +141,25 @@ class Surface private constructor(
                     }
                     node.methods.add(m)
                 }
-                is Parsed.Implements -> if (p.iface !in node.interfaces) addInterface(node, p.iface)
+                is Parsed.Implements -> if (p.iface !in node.interfaces) addInterface(node, p.iface, p.signature)
             }
         }
     }
 
     /** Adds an interface; javac reads supertypes from the generic Signature when present, so extend it too. */
-    private fun addInterface(node: ClassNode, iface: String) {
+    private fun addInterface(node: ClassNode, iface: String, ifaceSig: String) {
         node.interfaces.add(iface)
-        node.signature?.let { node.signature = it + "L$iface;" }
+        val sig = node.signature
+        if (sig != null) node.signature = sig + ifaceSig
+        else if (ifaceSig.contains('<')) {
+            node.signature = "L${node.superName};" + node.interfaces.dropLast(1).joinToString("") { "L$it;" } + ifaceSig
+        }
     }
 
     sealed interface Parsed {
         data class Field(val access: Int, val name: String, val desc: String, val signature: String?) : Parsed
         data class Method(val access: Int, val name: String, val desc: String, val signature: String?, val exceptions: List<String>) : Parsed
-        data class Implements(val iface: String) : Parsed
+        data class Implements(val iface: String, val signature: String) : Parsed
     }
 
     companion object {
@@ -291,7 +295,10 @@ class Surface private constructor(
     }
 
     private fun parseDecl(text: String, node: ClassNode): Parsed {
-        if (text.startsWith("implements ")) return Parsed.Implements(text.removePrefix("implements ").trim().replace('.', '/'))
+        if (text.startsWith("implements ")) {
+            val t = TypeParser(text.removePrefix("implements ").trim(), classTypeVars(node).keys).parseType() as JType.Cls
+            return Parsed.Implements(t.internal, t.signature())
+        }
         val classVars = classTypeVars(node)
         // modifiers
         var access = 0
