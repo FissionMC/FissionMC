@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Summarize javac errors from a Gradle log: unique count, categories, NMS owners.
-  errstats.py <log> [--owners] [--list <substring>]"""
+  errstats.py <log> [--owners] [--list <substring>] [--owner <SimpleName>[,<SimpleName>...]]
+--owner prints the errors whose `location:` is exactly that class (simple name, as javac prints it)."""
 import re, sys, collections
 t = open(sys.argv[1]).read().split('* What went wrong')[0]
 blocks = re.split(r'\n(?=/\S+\.java:\d+: error:)', t)
@@ -23,3 +24,12 @@ if '--list' in sys.argv:
     sub = sys.argv[sys.argv.index('--list') + 1]
     for b in errs:
         if sub in b: print(b.strip()[:600]); print('---')
+
+if '--owner' in sys.argv:
+    want = set(sys.argv[sys.argv.index('--owner') + 1].split(','))
+    n = 0
+    for b in errs:
+        l = re.search(r'location: (?:class|interface|variable \S+ of type|@interface) (\S+)', b)
+        if l and l.group(1).split('<')[0] in want:
+            print(b.strip()[:700]); print('---'); n += 1
+    print(n, 'errors for', ','.join(sorted(want)))
