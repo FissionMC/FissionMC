@@ -1,0 +1,59 @@
+/*
+ * This file is part of packetevents - https://github.com/retrooper/packetevents
+ * Copyright (C) 2022 retrooper and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.github.retrooper.packetevents.wrapper.configuration.client;
+
+import com.github.retrooper.packetevents.event.PacketReceiveEvent;
+import com.github.retrooper.packetevents.netty.buffer.ByteBufHelper;
+import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.resources.ResourceLocation;
+import com.github.retrooper.packetevents.wrapper.common.client.WrapperCommonClientPluginMessage;
+
+public class WrapperConfigClientPluginMessage extends WrapperCommonClientPluginMessage<WrapperConfigClientPluginMessage> {
+
+    public WrapperConfigClientPluginMessage(PacketReceiveEvent event) {
+        super(event);
+    }
+
+    public WrapperConfigClientPluginMessage(ResourceLocation channelName, byte[] data) {
+        this(channelName.toString(), data);
+    }
+
+    public WrapperConfigClientPluginMessage(String channelName, byte[] data) {
+        super(PacketType.Configuration.Client.PLUGIN_MESSAGE, channelName, data);
+    }
+
+    @Override
+    public void read() {
+        this.channelName = this.readString();
+        if (MAX_PAYLOAD_BYTES >= 0) {
+            int readable = ByteBufHelper.readableBytes(this.buffer);
+            if (readable > MAX_PAYLOAD_BYTES) {
+                throw new RuntimeException("Payload may not be larger than " + MAX_PAYLOAD_BYTES + " bytes (got " + readable + ")");
+            }
+        }
+        this.data = this.readRemainingBytes();
+    }
+
+    @Override
+    public void write() {
+        this.writeString(this.channelName);
+        this.writeBytes(this.data);
+    }
+
+}

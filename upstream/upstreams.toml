@@ -1,0 +1,52 @@
+# Upstream registry. `scripts/upstream.py status` compares `pinned` with the remote head.
+# type = "vendor"    : source is copied into this repo (paths), local changes live in upstream/patches/<name>/
+# type = "reference" : never shipped; read/ported from. `pinned` = commit our ported code is based on.
+
+[packetevents]
+type = "vendor"
+repo = "https://github.com/retrooper/packetevents.git"
+branch = "2.0"
+pinned = "4b766e86de98f5ec2a6c7ceb68cbedfac5f83bb6"
+paths = { "api" = "packetevents/api", "netty-common" = "packetevents/netty-common", "LICENSE" = "packetevents/LICENSE" }
+
+[paper]
+type = "reference"
+repo = "https://github.com/PaperMC/Paper.git"
+branch = "main"
+pinned = "6b6835847e5abfbfa17cc59fe0ec7c5b46291066"
+
+[folia]
+type = "reference"
+repo = "https://github.com/PaperMC/Folia.git"
+branch = "ver/26.3.x"
+pinned = "73865e0e1c11752a03f30320e0521d4611221e08"
+
+[purpur]
+type = "reference"
+repo = "https://github.com/PurpurMC/Purpur.git"
+branch = "ver/26.3"
+pinned = "5b4c7f048d57d0d440e02398409d036e801d6154"
+
+[leaf]
+type = "reference"
+repo = "https://github.com/Winds-Studio/Leaf.git"
+branch = "ver/26.3"
+pinned = "f77ec8d8aeecb3962b5303df757a7e6093b96550"
+
+[spigot-bukkit]
+type = "reference"
+repo = "https://hub.spigotmc.org/stash/scm/spigot/bukkit.git"
+branch = "HEAD"
+pinned = "29025a7ed5789807e11158a2263316b13ed50c3b"
+
+[spigot-craftbukkit]
+type = "reference"
+repo = "https://hub.spigotmc.org/stash/scm/spigot/craftbukkit.git"
+branch = "HEAD"
+pinned = "e89124d3e8e9585e75ceb7f9a4daba133788e5bd"
+
+[spigot]
+type = "reference"
+repo = "https://hub.spigotmc.org/stash/scm/spigot/spigot.git"
+branch = "HEAD"
+pinned = "bed90fca391bc35f0dbbcdc7ce5d7bb28e533681"

@@ -1,0 +1,156 @@
+/*
+ * This file is part of packetevents - https://github.com/retrooper/packetevents
+ * Copyright (C) 2022 retrooper and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.github.retrooper.packetevents.util.updatechecker;
+
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.util.PEVersion;
+import com.github.retrooper.packetevents.util.adventure.AdventureSerializer;
+import com.google.gson.JsonObject;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+
+/**
+ * PacketEvents update checker.
+ *
+ * @author retrooper
+ * @since 1.6.9
+ */
+@ApiStatus.Internal
+public class UpdateChecker {
+    @ApiStatus.Internal
+    public String checkLatestReleasedVersion() {
+        try {
+            URLConnection connection = new URL("https://api.github.com/repos/retrooper/packetevents/releases/latest").openConnection();
+            connection.addRequestProperty("User-Agent", "Mozilla/4.0");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            String jsonResponse = reader.readLine();
+            reader.close();
+            JsonObject jsonObject = AdventureSerializer.serializer().gson().serializer().fromJson(jsonResponse, JsonObject.class);
+            return jsonObject.get("name").getAsString();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to parse packetevents version!", e);
+        }
+    }
+
+    /**
+     * Check for an update and log in the console (ALL DONE ON THE CURRENT THREAD).
+     */
+    @ApiStatus.Internal
+    public UpdateCheckerStatus checkForUpdate(@Nullable Consumer<PEVersion> latestVersionHolder) {
+        PEVersion localVersion = PacketEvents.getAPI().getVersion();
+        PEVersion newVersion;
+        try {
+            newVersion = PEVersion.fromString(checkLatestReleasedVersion());
+            if (latestVersionHolder != null) {
+                latestVersionHolder.accept(newVersion);
+            }
+        } catch (Exception ex) {
+            PacketEvents.getAPI().getLogManager().warn("Failed to check for updates", ex);
+            return UpdateCheckerStatus.FAILED;
+        }
+
+        if (localVersion.isOlderThan(newVersion)) {
+            PacketEvents.getAPI().getLogManager().warn("There is an update available! "
+                    + "Your version: " + localVersion + " | Latest release: " + newVersion);
+            return UpdateCheckerStatus.OUTDATED;
+        } else if (localVersion.isNewerThan(newVersion)) {
+            PacketEvents.getAPI().getLogManager().info("You are running a development build. "
+                    + "Your version: " + localVersion + " | Latest release: " + newVersion);
+            return UpdateCheckerStatus.PRE_RELEASE;
+        } else if (localVersion.equals(newVersion)) {
+            PacketEvents.getAPI().getLogManager().info("You are running the latest release: " + localVersion);
+            return UpdateCheckerStatus.UP_TO_DATE;
+        } else {
+            PacketEvents.getAPI().getLogManager().warn("Failed to check for updates for version " + localVersion);
+            return UpdateCheckerStatus.FAILED;
+        }
+    }
+
+    @ApiStatus.Internal
+    public UpdateCheckerStatus checkForUpdate() {
+        return checkForUpdate(null);
+    }
+
+    @Deprecated
+    @ApiStatus.Internal
+    public void handleUpdateCheck(@Nullable Runnable updateCheckCallback) {
+        Thread thread = new Thread(() -> {
+            PacketEvents.getAPI().getLogManager().info("Checking for updates, please wait...");
+            UpdateCheckerStatus status = checkForUpdate();
+            if (updateCheckCallback != null)
+                updateCheckCallback.run();
+        }, "packetevents-update-check-thread");
+        thread.start();
+    }
+
+    @ApiStatus.Internal
+    public void handleUpdateCheck(@Nullable BiConsumer<PEVersion, UpdateCheckerStatus> updateResultHolder) {
+        Thread thread = new Thread(() -> {
+            PacketEvents.getAPI().getLogManager().info("Checking for updates, please wait...");
+            AtomicReference<PEVersion> latestVersion = new AtomicReference<>();
+            Consumer<PEVersion> latestVersionHolder = latestVersion::set;
+            UpdateCheckerStatus status = checkForUpdate(latestVersionHolder);
+            if (updateResultHolder != null)
+                updateResultHolder.accept(latestVersion.get(), status);
+        }, "packetevents-update-check-thread");
+        thread.start();
+    }
+
+    @ApiStatus.Internal
+    public void handleUpdateCheck() {
+        if (Boolean.getBoolean("packetevents.disable-update-checker")) {
+            return; // disabled via system property
+        }
+        handleUpdateCheck((Runnable) null);
+    }
+
+    /**
+     * Result of an update check.
+     *
+     * @author retrooper
+     * @since 1.8
+     */
+    public enum UpdateCheckerStatus {
+        /**
+         * Your build is outdated, an update is available.
+         */
+        OUTDATED,
+        /**
+         * You are on a development build. Not on the latest stable release(not necessarily bad).
+         */
+        PRE_RELEASE,
+        /**
+         * Your build is up-to-date. Latest stable release.
+         */
+        UP_TO_DATE,
+        /**
+         * Failed to check for an update. There might be an issue with your connection.
+         */
+        FAILED
+    }
+}

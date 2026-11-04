@@ -1,0 +1,1327 @@
+/*
+ * This file is part of packetevents - https://github.com/retrooper/packetevents
+ * Copyright (C) 2022 retrooper and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.github.retrooper.packetevents.protocol.world.states.defaulttags;
+
+import com.github.retrooper.packetevents.protocol.world.states.type.StateType;
+import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
+import com.github.retrooper.packetevents.resources.ResourceLocation;
+import com.github.retrooper.packetevents.resources.TagKey;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * This class allows you to use block tags on outdated versions.
+ * If you are on a version that sends tags to the player, you are suggested to listen to {@link com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerTags}
+ * <p>
+ * Might as well just fucking shade the entire vanilla jar if we are going to copy SO MANY HUNDREDS OF LINES
+ *
+ * @author DefineOutside
+ */
+public class BlockTags {
+    private static final HashMap<String, BlockTags> byName = new HashMap<>();
+
+    public static final BlockTags WOOL = bind("wool");
+    public static final BlockTags PLANKS = bind("planks");
+    public static final BlockTags STONE_BRICKS = bind("stone_bricks");
+    public static final BlockTags WOODEN_BUTTONS = bind("wooden_buttons");
+    public static final BlockTags STONE_BUTTONS = bind("stone_buttons");
+    public static final BlockTags BUTTONS = bind("buttons");
+    public static final BlockTags WOOL_CARPETS = bind("wool_carpets");
+    public static final BlockTags WOODEN_DOORS = bind("wooden_doors");
+    public static final BlockTags WOODEN_STAIRS = bind("wooden_stairs");
+    public static final BlockTags WOODEN_SLABS = bind("wooden_slabs");
+    public static final BlockTags WOODEN_FENCES = bind("wooden_fences");
+    public static final BlockTags PRESSURE_PLATES = bind("pressure_plates");
+    public static final BlockTags WOODEN_PRESSURE_PLATES = bind("wooden_pressure_plates");
+    public static final BlockTags STONE_PRESSURE_PLATES = bind("stone_pressure_plates");
+    public static final BlockTags WOODEN_TRAPDOORS = bind("wooden_trapdoors");
+    public static final BlockTags DOORS = bind("doors");
+    public static final BlockTags SAPLINGS = bind("saplings");
+    public static final BlockTags LOGS_THAT_BURN = bind("logs_that_burn");
+    public static final BlockTags OVERWORLD_NATURAL_LOGS = bind("overworld_natural_logs");
+    public static final BlockTags LOGS = bind("logs");
+    public static final BlockTags DARK_OAK_LOGS = bind("dark_oak_logs");
+    public static final BlockTags OAK_LOGS = bind("oak_logs");
+    public static final BlockTags BIRCH_LOGS = bind("birch_logs");
+    public static final BlockTags ACACIA_LOGS = bind("acacia_logs");
+    public static final BlockTags CHERRY_LOGS = bind("cherry_logs");
+    public static final BlockTags JUNGLE_LOGS = bind("jungle_logs");
+    public static final BlockTags SPRUCE_LOGS = bind("spruce_logs");
+    public static final BlockTags MANGROVE_LOGS = bind("mangrove_logs");
+    public static final BlockTags CRIMSON_STEMS = bind("crimson_stems");
+    public static final BlockTags WARPED_STEMS = bind("warped_stems");
+    public static final BlockTags BAMBOO_BLOCKS = bind("bamboo_blocks");
+    public static final BlockTags WART_BLOCKS = bind("wart_blocks");
+    public static final BlockTags BANNERS = bind("banners");
+    public static final BlockTags SAND = bind("sand");
+    public static final BlockTags SMELTS_TO_GLASS = bind("smelts_to_glass");
+    public static final BlockTags STAIRS = bind("stairs");
+    public static final BlockTags SLABS = bind("slabs");
+    public static final BlockTags WALLS = bind("walls");
+    public static final BlockTags ANVIL = bind("anvil");
+    public static final BlockTags RAILS = bind("rails");
+    public static final BlockTags LEAVES = bind("leaves");
+    public static final BlockTags TRAPDOORS = bind("trapdoors");
+    public static final BlockTags SMALL_FLOWERS = bind("small_flowers");
+    public static final BlockTags BEDS = bind("beds");
+    public static final BlockTags FENCES = bind("fences");
+    /**
+     * Removed with 1.21.4
+     */
+    @ApiStatus.Obsolete
+    public static final BlockTags TALL_FLOWERS = bind("tall_flowers");
+    public static final BlockTags FLOWERS = bind("flowers");
+    public static final BlockTags PIGLIN_REPELLENTS = bind("piglin_repellents");
+    public static final BlockTags GOLD_ORES = bind("gold_ores");
+    public static final BlockTags IRON_ORES = bind("iron_ores");
+    public static final BlockTags DIAMOND_ORES = bind("diamond_ores");
+    public static final BlockTags REDSTONE_ORES = bind("redstone_ores");
+    public static final BlockTags LAPIS_ORES = bind("lapis_ores");
+    public static final BlockTags COAL_ORES = bind("coal_ores");
+    public static final BlockTags EMERALD_ORES = bind("emerald_ores");
+    public static final BlockTags COPPER_ORES = bind("copper_ores");
+    public static final BlockTags CANDLES = bind("candles");
+    public static final BlockTags DIRT = bind("dirt");
+    public static final BlockTags TERRACOTTA = bind("terracotta");
+    public static final BlockTags COMPLETES_FIND_TREE_TUTORIAL = bind("completes_find_tree_tutorial");
+    public static final BlockTags FLOWER_POTS = bind("flower_pots");
+    public static final BlockTags ENDERMAN_HOLDABLE = bind("enderman_holdable");
+    public static final BlockTags ICE = bind("ice");
+    public static final BlockTags VALID_SPAWN = bind("valid_spawn");
+    public static final BlockTags IMPERMEABLE = bind("impermeable");
+    public static final BlockTags UNDERWATER_BONEMEALS = bind("underwater_bonemeals");
+    public static final BlockTags CORAL_BLOCKS = bind("coral_blocks");
+    public static final BlockTags WALL_CORALS = bind("wall_corals");
+    public static final BlockTags CORAL_PLANTS = bind("coral_plants");
+    public static final BlockTags CORALS = bind("corals");
+    public static final BlockTags STANDING_SIGNS = bind("standing_signs");
+    public static final BlockTags WALL_SIGNS = bind("wall_signs");
+    public static final BlockTags SIGNS = bind("signs");
+    public static final BlockTags CEILING_HANGING_SIGNS = bind("ceiling_hanging_signs");
+    public static final BlockTags WALL_HANGING_SIGNS = bind("wall_hanging_signs");
+    public static final BlockTags ALL_HANGING_SIGNS = bind("all_hanging_signs");
+    public static final BlockTags ALL_SIGNS = bind("all_signs");
+    public static final BlockTags DRAGON_IMMUNE = bind("dragon_immune");
+    public static final BlockTags DRAGON_TRANSPARENT = bind("dragon_transparent");
+    public static final BlockTags WITHER_IMMUNE = bind("wither_immune");
+    public static final BlockTags WITHER_SUMMON_BASE_BLOCKS = bind("wither_summon_base_blocks");
+    public static final BlockTags BEEHIVES = bind("beehives");
+    public static final BlockTags CROPS = bind("crops");
+    public static final BlockTags BEE_GROWABLES = bind("bee_growables");
+    public static final BlockTags PORTALS = bind("portals");
+    public static final BlockTags FIRE = bind("fire");
+    public static final BlockTags NYLIUM = bind("nylium");
+    public static final BlockTags BEACON_BASE_BLOCKS = bind("beacon_base_blocks");
+    public static final BlockTags SOUL_SPEED_BLOCKS = bind("soul_speed_blocks");
+    public static final BlockTags WALL_POST_OVERRIDE = bind("wall_post_override");
+    public static final BlockTags CLIMBABLE = bind("climbable");
+    public static final BlockTags FALL_DAMAGE_RESETTING = bind("fall_damage_resetting");
+    public static final BlockTags SHULKER_BOXES = bind("shulker_boxes");
+    public static final BlockTags HOGLIN_REPELLENTS = bind("hoglin_repellents");
+    public static final BlockTags SOUL_FIRE_BASE_BLOCKS = bind("soul_fire_base_blocks");
+    public static final BlockTags STRIDER_WARM_BLOCKS = bind("strider_warm_blocks");
+    public static final BlockTags CAMPFIRES = bind("campfires");
+    public static final BlockTags GUARDED_BY_PIGLINS = bind("guarded_by_piglins");
+    public static final BlockTags PREVENT_MOB_SPAWNING_INSIDE = bind("prevent_mob_spawning_inside");
+    public static final BlockTags FENCE_GATES = bind("fence_gates");
+    public static final BlockTags UNSTABLE_BOTTOM_CENTER = bind("unstable_bottom_center");
+    public static final BlockTags INFINIBURN_OVERWORLD = bind("infiniburn_overworld");
+    public static final BlockTags INFINIBURN_NETHER = bind("infiniburn_nether");
+    public static final BlockTags INFINIBURN_END = bind("infiniburn_end");
+    public static final BlockTags BASE_STONE_OVERWORLD = bind("base_stone_overworld");
+    public static final BlockTags STONE_ORE_REPLACEABLES = bind("stone_ore_replaceables");
+    public static final BlockTags DEEPSLATE_ORE_REPLACEABLES = bind("deepslate_ore_replaceables");
+    public static final BlockTags BASE_STONE_NETHER = bind("base_stone_nether");
+    /**
+     * @versions -26.2
+     */
+    @ApiStatus.Obsolete
+    public static final BlockTags OVERWORLD_CARVER_REPLACEABLES = bind("overworld_carver_replaceables");
+    /**
+     * @versions -26.2
+     */
+    @ApiStatus.Obsolete
+    public static final BlockTags NETHER_CARVER_REPLACEABLES = bind("nether_carver_replaceables");
+    public static final BlockTags CANDLE_CAKES = bind("candle_cakes");
+    public static final BlockTags CAULDRONS = bind("cauldrons");
+    public static final BlockTags CRYSTAL_SOUND_BLOCKS = bind("crystal_sound_blocks");
+    public static final BlockTags INSIDE_STEP_SOUND_BLOCKS = bind("inside_step_sound_blocks");
+    public static final BlockTags COMBINATION_STEP_SOUND_BLOCKS = bind("combination_step_sound_blocks");
+    public static final BlockTags CAMEL_SAND_STEP_SOUND_BLOCKS = bind("camel_sand_step_sound_blocks");
+    public static final BlockTags OCCLUDES_VIBRATION_SIGNALS = bind("occludes_vibration_signals");
+    public static final BlockTags DAMPENS_VIBRATIONS = bind("dampens_vibrations");
+    public static final BlockTags DRIPSTONE_REPLACEABLE_BLOCKS = bind("dripstone_replaceable_blocks");
+    @Deprecated
+    public static final BlockTags DRIPSTONE_REPLACEABLE = DRIPSTONE_REPLACEABLE_BLOCKS;
+    public static final BlockTags CAVE_VINES = bind("cave_vines");
+    public static final BlockTags MOSS_REPLACEABLE = bind("moss_replaceable");
+    public static final BlockTags LUSH_GROUND_REPLACEABLE = bind("lush_ground_replaceable");
+    public static final BlockTags AZALEA_ROOT_REPLACEABLE = bind("azalea_root_replaceable");
+    public static final BlockTags SNOW = bind("snow");
+    public static final BlockTags MINEABLE_AXE = bind("mineable/axe");
+    public static final BlockTags MINEABLE_HOE = bind("mineable/hoe");
+    public static final BlockTags MINEABLE_PICKAXE = bind("mineable/pickaxe");
+    public static final BlockTags MINEABLE_SHOVEL = bind("mineable/shovel");
+    @Deprecated
+    public static final BlockTags MINEABLE_WITH_AXE = MINEABLE_AXE;
+    @Deprecated
+    public static final BlockTags MINEABLE_WITH_HOE = MINEABLE_HOE;
+    @Deprecated
+    public static final BlockTags MINEABLE_WITH_PICKAXE = MINEABLE_PICKAXE;
+    @Deprecated
+    public static final BlockTags MINEABLE_WITH_SHOVEL = MINEABLE_SHOVEL;
+    public static final BlockTags SWORD_EFFICIENT = bind("sword_efficient");
+    public static final BlockTags NEEDS_DIAMOND_TOOL = bind("needs_diamond_tool");
+    public static final BlockTags NEEDS_IRON_TOOL = bind("needs_iron_tool");
+    public static final BlockTags NEEDS_STONE_TOOL = bind("needs_stone_tool");
+    public static final BlockTags FEATURES_CANNOT_REPLACE = bind("features_cannot_replace");
+    public static final BlockTags LAVA_POOL_STONE_CANNOT_REPLACE = bind("lava_pool_stone_cannot_replace");
+    public static final BlockTags GEODE_INVALID_BLOCKS = bind("geode_invalid_blocks");
+    public static final BlockTags FROG_PREFER_JUMP_TO = bind("frog_prefer_jump_to");
+    public static final BlockTags SCULK_REPLACEABLE = bind("sculk_replaceable");
+    public static final BlockTags SCULK_REPLACEABLE_WORLD_GEN = bind("sculk_replaceable_world_gen");
+    public static final BlockTags ANCIENT_CITY_REPLACEABLE = bind("ancient_city_replaceable");
+    public static final BlockTags VIBRATION_RESONATORS = bind("vibration_resonators");
+    public static final BlockTags ANIMALS_SPAWNABLE_ON = bind("animals_spawnable_on");
+    public static final BlockTags AXOLOTLS_SPAWNABLE_ON = bind("axolotls_spawnable_on");
+    public static final BlockTags GOATS_SPAWNABLE_ON = bind("goats_spawnable_on");
+    public static final BlockTags MOOSHROOMS_SPAWNABLE_ON = bind("mooshrooms_spawnable_on");
+    public static final BlockTags PARROTS_SPAWNABLE_ON = bind("parrots_spawnable_on");
+    public static final BlockTags POLAR_BEARS_SPAWNABLE_ON_ALTERNATE = bind("polar_bears_spawnable_on_alternate");
+    public static final BlockTags RABBITS_SPAWNABLE_ON = bind("rabbits_spawnable_on");
+    public static final BlockTags FOXES_SPAWNABLE_ON = bind("foxes_spawnable_on");
+    public static final BlockTags WOLVES_SPAWNABLE_ON = bind("wolves_spawnable_on");
+    public static final BlockTags FROGS_SPAWNABLE_ON = bind("frogs_spawnable_on");
+    public static final BlockTags AZALEA_GROWS_ON = bind("azalea_grows_on");
+    @Deprecated
+    public static final BlockTags REPLACEABLE_PLANTS = bind("replaceable_plants");
+    /**
+     * @versions -26.2
+     */
+    @ApiStatus.Obsolete
+    public static final BlockTags CONVERTABLE_TO_MUD = bind("convertable_to_mud");
+    public static final BlockTags MANGROVE_LOGS_CAN_GROW_THROUGH = bind("mangrove_logs_can_grow_through");
+    public static final BlockTags MANGROVE_ROOTS_CAN_GROW_THROUGH = bind("mangrove_roots_can_grow_through");
+    public static final BlockTags SNAPS_GOAT_HORN = bind("snaps_goat_horn");
+    public static final BlockTags REPLACEABLE_BY_TREES = bind("replaceable_by_trees");
+    public static final BlockTags INVALID_SPAWN_INSIDE = bind("invalid_spawn_inside");
+    public static final BlockTags SNIFFER_DIGGABLE_BLOCK = bind("sniffer_diggable_block");
+    public static final BlockTags SNIFFER_EGG_HATCH_BOOST = bind("sniffer_egg_hatch_boost");
+    public static final BlockTags TRAIL_RUINS_REPLACEABLE = bind("trail_ruins_replaceable");
+    public static final BlockTags REPLACEABLE = bind("replaceable");
+    public static final BlockTags ENCHANTMENT_POWER_PROVIDER = bind("enchantment_power_provider");
+    public static final BlockTags ENCHANTMENT_POWER_TRANSMITTER = bind("enchantment_power_transmitter");
+    public static final BlockTags MAINTAINS_FARMLAND = bind("maintains_farmland");
+
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags ARMADILLO_SPAWNABLE_ON = bind("armadillo_spawnable_on");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags BADLANDS_TERRACOTTA = bind("badlands_terracotta");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags BLOCKS_WIND_CHARGE_EXPLOSIONS = bind("blocks_wind_charge_explosions");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags DOES_NOT_BLOCK_HOPPERS = bind("does_not_block_hoppers");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags INCORRECT_FOR_DIAMOND_TOOL = bind("incorrect_for_diamond_tool");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags INCORRECT_FOR_GOLD_TOOL = bind("incorrect_for_gold_tool");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags INCORRECT_FOR_IRON_TOOL = bind("incorrect_for_iron_tool");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags INCORRECT_FOR_NETHERITE_TOOL = bind("incorrect_for_netherite_tool");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags INCORRECT_FOR_STONE_TOOL = bind("incorrect_for_stone_tool");
+    /**
+     * Added with 1.20.5
+     */
+    public static final BlockTags INCORRECT_FOR_WOODEN_TOOL = bind("incorrect_for_wooden_tool");
+
+    /**
+     * Added with 1.21.2
+     */
+    public static final BlockTags PALE_OAK_LOGS = bind("pale_oak_logs");
+    /**
+     * Added with 1.21.2
+     */
+    public static final BlockTags AIR = bind("air");
+    /**
+     * Added with 1.21.2
+     */
+    public static final BlockTags MOB_INTERACTABLE_DOORS = bind("mob_interactable_doors");
+    /**
+     * Added with 1.21.2
+     */
+    public static final BlockTags BATS_SPAWNABLE_ON = bind("bats_spawnable_on");
+
+    /**
+     * Added with 1.21.4
+     */
+    public static final BlockTags BEE_ATTRACTIVE = bind("bee_attractive");
+
+    /**
+     * Added with 1.21.5
+     */
+    public static final BlockTags EDIBLE_FOR_SHEEP = bind("edible_for_sheep");
+    /**
+     * Added with 1.21.5
+     */
+    public static final BlockTags SWORD_INSTANTLY_MINES = bind("sword_instantly_mines");
+    /**
+     * Added with 1.21.5
+     */
+    public static final BlockTags CAMELS_SPAWNABLE_ON = bind("camels_spawnable_on");
+    /**
+     * Added with 1.21.5
+     */
+    public static final BlockTags REPLACEABLE_BY_MUSHROOMS = bind("replaceable_by_mushrooms");
+
+    /**
+     * Added with 1.21.6
+     */
+    public static final BlockTags HAPPY_GHAST_AVOIDS = bind("happy_ghast_avoids");
+    /**
+     * Added with 1.21.6
+     */
+    public static final BlockTags TRIGGERS_AMBIENT_DESERT_SAND_BLOCK_SOUNDS = bind("triggers_ambient_desert_sand_block_sounds");
+    /**
+     * Added with 1.21.5, renamed in 1.21.6
+     */
+    @Deprecated
+    public static final BlockTags PLAYS_AMBIENT_DESERT_BLOCK_SOUNDS = TRIGGERS_AMBIENT_DESERT_SAND_BLOCK_SOUNDS;
+    /**
+     * Added with 1.21.6
+     */
+    public static final BlockTags TRIGGERS_AMBIENT_DRIED_GHAST_BLOCK_SOUNDS = bind("triggers_ambient_dried_ghast_block_sounds");
+    /**
+     * Added with 1.21.6
+     */
+    public static final BlockTags TRIGGERS_AMBIENT_DESERT_DRY_VEGETATION_BLOCK_SOUNDS = bind("triggers_ambient_desert_dry_vegetation_block_sounds");
+
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags WOODEN_SHELVES = bind("wooden_shelves");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags COPPER_CHESTS = bind("copper_chests");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags LIGHTNING_RODS = bind("lightning_rods");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags COPPER = bind("copper");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags CHAINS = bind("chains");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags COPPER_GOLEM_STATUES = bind("copper_golem_statues");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags LANTERNS = bind("lanterns");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags BARS = bind("bars");
+    /**
+     * @versions 1.21.9+
+     */
+    public static final BlockTags INCORRECT_FOR_COPPER_TOOL = bind("incorrect_for_copper_tool");
+    /**
+     * @versions 1.21.11+
+     */
+    public static final BlockTags CAN_GLIDE_THROUGH = bind("can_glide_through");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags MUD = bind("mud");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags MOSS_BLOCKS = bind("moss_blocks");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags GRASS_BLOCKS = bind("grass_blocks");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags ENABLES_BUBBLE_COLUMN_DRAG_DOWN = bind("enables_bubble_column_drag_down");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags ENABLES_BUBBLE_COLUMN_PUSH_UP = bind("enables_bubble_column_push_up");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_CROPS = bind("supports_crops");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_SUGAR_CANE_ADJACENTLY = bind("supports_sugar_cane_adjacently");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_SMALL_DRIPLEAF = bind("supports_small_dripleaf");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_CHORUS_PLANT = bind("supports_chorus_plant");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_CHORUS_FLOWER = bind("supports_chorus_flower");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_HANGING_MANGROVE_PROPAGULE = bind("supports_hanging_mangrove_propagule");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_NETHER_WART = bind("supports_nether_wart");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_LILY_PAD = bind("supports_lily_pad");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_FROGSPAWN = bind("supports_frogspawn");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORT_OVERRIDE_CACTUS_FLOWER = bind("support_override_cactus_flower");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORT_OVERRIDE_SNOW_LAYER = bind("support_override_snow_layer");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags CANNOT_SUPPORT_SNOW_LAYER = bind("cannot_support_snow_layer");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags CANNOT_SUPPORT_SEAGRASS = bind("cannot_support_seagrass");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags CANNOT_SUPPORT_KELP = bind("cannot_support_kelp");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags OVERRIDES_MUSHROOM_LIGHT_REQUIREMENT = bind("overrides_mushroom_light_requirement");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags GROWS_CROPS = bind("grows_crops");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUBSTRATE_OVERWORLD = bind("substrate_overworld");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags CANNOT_REPLACE_BELOW_TREE_TRUNK = bind("cannot_replace_below_tree_trunk");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_STEM_CROPS = bind("supports_stem_crops");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_BIG_DRIPLEAF = bind("supports_big_dripleaf");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_CACTUS = bind("supports_cactus");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_COCOA = bind("supports_cocoa");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_DRY_VEGETATION = bind("supports_dry_vegetation");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_STEM_FRUIT = bind("supports_stem_fruit");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_NETHER_SPROUTS = bind("supports_nether_sprouts");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_AZALEA = bind("supports_azalea");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_WARPED_FUNGUS = bind("supports_warped_fungus");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_WITHER_ROSE = bind("supports_wither_rose");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_PUMPKIN_STEM_FRUIT = bind("supports_pumpkin_stem_fruit");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_CRIMSON_FUNGUS = bind("supports_crimson_fungus");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_CRIMSON_ROOTS = bind("supports_crimson_roots");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags BENEATH_TREE_PODZOL_REPLACEABLE = bind("beneath_tree_podzol_replaceable");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags BENEATH_BAMBOO_PODZOL_REPLACEABLE = bind("beneath_bamboo_podzol_replaceable");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags ICE_SPIKE_REPLACEABLE = bind("ice_spike_replaceable");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags FOREST_ROCK_CAN_PLACE_ON = bind("forest_rock_can_place_on");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags HUGE_BROWN_MUSHROOM_CAN_PLACE_ON = bind("huge_brown_mushroom_can_place_on");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags HUGE_RED_MUSHROOM_CAN_PLACE_ON = bind("huge_red_mushroom_can_place_on");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_VEGETATION = bind("supports_vegetation");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_PUMPKIN_STEM = bind("supports_pumpkin_stem");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_MELON_STEM = bind("supports_melon_stem");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_SUGAR_CANE = bind("supports_sugar_cane");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_BAMBOO = bind("supports_bamboo");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags PREVENTS_NEARBY_LEAF_DECAY = bind("prevents_nearby_leaf_decay");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_MANGROVE_PROPAGULE = bind("supports_mangrove_propagule");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_WARPED_ROOTS = bind("supports_warped_roots");
+    /**
+     * @versions 26.1+
+     */
+    public static final BlockTags SUPPORTS_MELON_STEM_FRUIT = bind("supports_melon_stem_fruit");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags CAUSES_CONTINUOUS_GEYSER_ERUPTIONS = bind("causes_continuous_geyser_eruptions");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags CAUSES_PERIODIC_GEYSER_ERUPTIONS = bind("causes_periodic_geyser_eruptions");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags CONCRETE = bind("concrete");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags CONCRETE_POWDERS = bind("concrete_powders");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags DEFAULT_IMMUNE_TO = bind("default_immune_to");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags FOX_IMMUNE_TO = bind("fox_immune_to");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags GLAZED_TERRACOTTA = bind("glazed_terracotta");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags POLAR_BEAR_IMMUNE_TO = bind("polar_bear_immune_to");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SHEARS_EXTREME_BREAKING_SPEED = bind("shears_extreme_breaking_speed");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SHEARS_MAJOR_BREAKING_SPEED = bind("shears_major_breaking_speed");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SHEARS_MINOR_BREAKING_SPEED = bind("shears_minor_breaking_speed");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SNOW_GOLEM_IMMUNE_TO = bind("snow_golem_immune_to");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SPELEOTHEMS = bind("speleothems");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags STRAY_IMMUNE_TO = bind("stray_immune_to");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SULFUR_SPIKE_REPLACEABLE_BLOCKS = bind("sulfur_spike_replaceable_blocks");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags SUPPRESSES_BOUNCE = bind("suppresses_bounce");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags WITHER_IMMUNE_TO = bind("wither_immune_to");
+    /**
+     * @versions 26.2+
+     */
+    public static final BlockTags WITHER_SKELETON_IMMUNE_TO = bind("wither_skeleton_immune_to");
+
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags NETHER_PORTAL_FRAME = bind("nether_portal_frame");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CONDUIT_EFFECT_BLOCK = bind("conduit_effect_block");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags HEIGHT_SPECIFIC_ORE_REPLACEABLES = bind("height_specific_ore_replaceables");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CANNOT_PLACE_BASALT_PILLAR_ON = bind("cannot_place_basalt_pillar_on");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags UNCARVABLE = bind("uncarvable");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CUSHION_USES_COLLISION_SHAPE = bind("cushion_uses_collision_shape");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags TURNS_INTO_DIRT_PATH = bind("turns_into_dirt_path");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags TURNS_INTO_FARMLAND = bind("turns_into_farmland");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags SCULK_GROWTH_INHIBITORS = bind("sculk_growth_inhibitors");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CONVERTIBLE_TO_MUD = bind("convertible_to_mud");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CATS_CAN_SIT_ON = bind("cats_can_sit_on");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CATS_CAN_LIE_ON = bind("cats_can_lie_on");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags SPEEDS_UP_ZOMBIE_VILLAGER_CURING = bind("speeds_up_zombie_villager_curing");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags VILLAGERS_CAN_SLEEP_ON_BED = bind("villagers_can_sleep_on_bed");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags VILLAGER_BABIES_CAN_JUMP_ON_BED = bind("villager_babies_can_jump_on_bed");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags REQUIRED_FOR_POPLAR_LEAF_AMBIENCE = bind("required_for_poplar_leaf_ambience");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags DANGEROUS_FOR_TELEPORTATION = bind("dangerous_for_teleportation");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CAT_DOES_NOT_TELEPORT_TO = bind("cat_does_not_teleport_to");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags ENDERMAN_DOES_NOT_TELEPORT_TO = bind("enderman_does_not_teleport_to");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags SHULKER_DOES_NOT_TELEPORT_TO = bind("shulker_does_not_teleport_to");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CONSUMABLE_DOES_NOT_TELEPORT_TO = bind("consumable_does_not_teleport_to");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_MOTION = bind("blocks_motion");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_MOTION_NO_LEAVES = bind("blocks_motion_no_leaves");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags ENTITIES_CAN_TELEPORT_TO = bind("entities_can_teleport_to");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_DOLPHIN_JUMP = bind("blocks_dolphin_jump");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags ICE_MELTS_WHEN_DESTROYED_ABOVE = bind("ice_melts_when_destroyed_above");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CAUSES_SUFFOCATION = bind("causes_suffocation");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_MOTION_IN_HEIGHTMAP = bind("blocks_motion_in_heightmap");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_MOTION_IN_HEIGHTMAP_NO_LEAVES = bind("blocks_motion_in_heightmap_no_leaves");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_LAVA_FIRE_SPREAD = bind("blocks_lava_fire_spread");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags BLOCKS_FLUID_FLOW = bind("blocks_fluid_flow");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags WASHED_AWAY_BY_FLUIDS = bind("washed_away_by_fluids");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags POPLAR_LOGS = bind("poplar_logs");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags ORES = bind("ores");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CONCRETE_STAIRS = bind("concrete_stairs");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags CONCRETE_SLABS = bind("concrete_slabs");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags WOOL_STAIRS = bind("wool_stairs");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags WOOL_SLABS = bind("wool_slabs");
+    /**
+     * @versions 26.3+
+     */
+    public static final BlockTags SKULLS = bind("skulls");
+
+    /**
+     * Unofficial tag for all glass blocks
+     */
+    public static final BlockTags GLASS_BLOCKS = bind("glass_blocks");
+    /**
+     * Unofficial tag for all glass panes
+     */
+    public static final BlockTags GLASS_PANES = bind("glass_panes");
+    /**
+     * Unofficial tag for all coral plants
+     */
+    public static final BlockTags ALL_CORAL_PLANTS = bind("alive_coral_plants");
+    /**
+     * Unofficial tag for all dead coral plants
+     */
+    public static final BlockTags DEAD_CORAL_PLANTS = bind("dead_coral_plants");
+
+    /**
+     * Unofficial tag for all blocks added in 1.20.5
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_1_20_5 = bind("v_1_20_5");
+
+    /**
+     * Unofficial tag for all blocks added in 1.21.2
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_1_21_2 = bind("v_1_21_2");
+
+    /**
+     * Unofficial tag for all blocks added in 1.21.4
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_1_21_4 = bind("v_1_21_4");
+
+    /**
+     * Unofficial tag for all blocks added in 1.21.5
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_1_21_5 = bind("v_1_21_5");
+
+    /**
+     * Unofficial tag for all blocks added in 1.21.6
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_1_21_6 = bind("v_1_21_6");
+
+    /**
+     * Unofficial tag for all blocks added in 1.21.9
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_1_21_9 = bind("v_1_21_9");
+    /**
+     * Unofficial tag for all blocks added in 26.1
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_26_1 = bind("v_26_1");
+    /**
+     * Unofficial tag for all blocks added in 26.2
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_26_2 = bind("v_26_2");
+    /**
+     * Unofficial tag for all blocks added in 26.3
+     */
+    @VisibleForTesting
+    @ApiStatus.Internal
+    public static final BlockTags V_26_3 = bind("v_26_3");
+
+    /**
+     * @versions IDK-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags BAMBOO_PLANTABLE_ON = SUPPORTS_BAMBOO;
+    /**
+     * @versions IDK-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags MUSHROOM_GROW_BLOCK = HUGE_BROWN_MUSHROOM_CAN_PLACE_ON;
+    /**
+     * @versions IDK-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags SMALL_DRIPLEAF_PLACEABLE = SUPPORTS_SMALL_DRIPLEAF;
+    /**
+     * @versions IDK-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags BIG_DRIPLEAF_PLACEABLE = SUPPORTS_BIG_DRIPLEAF;
+    /**
+     * @versions IDK-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags SNOW_LAYER_CANNOT_SURVIVE_ON = CANNOT_SUPPORT_SNOW_LAYER;
+    /**
+     * @versions IDK-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags SNOW_LAYER_CAN_SURVIVE_ON = SUPPORT_OVERRIDE_SNOW_LAYER;
+    /**
+     * @versions 1.21.5-1.21.11
+     */
+    @Deprecated
+    public static final BlockTags DRY_VEGETATION_MAY_PLACE_ON = SUPPORTS_DRY_VEGETATION;
+    /**
+     * @versions IDK-1.21.4
+     */
+    @Deprecated
+    public static final BlockTags DEAD_BUSH_MAY_PLACE_ON = DRY_VEGETATION_MAY_PLACE_ON;
+    /**
+     * @versions IDK-26.1.2
+     */
+    @Deprecated
+    public static final BlockTags CONCRETE_POWDER = CONCRETE_POWDERS;
+
+    static {
+        // auto-generated, do not edit manually!
+        BlockTags.WOOL.add(StateTypes.WHITE_WOOL, StateTypes.ORANGE_WOOL, StateTypes.MAGENTA_WOOL, StateTypes.LIGHT_BLUE_WOOL, StateTypes.YELLOW_WOOL, StateTypes.LIME_WOOL, StateTypes.PINK_WOOL, StateTypes.GRAY_WOOL, StateTypes.LIGHT_GRAY_WOOL, StateTypes.CYAN_WOOL, StateTypes.PURPLE_WOOL, StateTypes.BLUE_WOOL, StateTypes.BROWN_WOOL, StateTypes.GREEN_WOOL, StateTypes.RED_WOOL, StateTypes.BLACK_WOOL);
+        BlockTags.PLANKS.add(StateTypes.OAK_PLANKS, StateTypes.SPRUCE_PLANKS, StateTypes.BIRCH_PLANKS, StateTypes.JUNGLE_PLANKS, StateTypes.ACACIA_PLANKS, StateTypes.DARK_OAK_PLANKS, StateTypes.PALE_OAK_PLANKS, StateTypes.CRIMSON_PLANKS, StateTypes.WARPED_PLANKS, StateTypes.MANGROVE_PLANKS, StateTypes.BAMBOO_PLANKS, StateTypes.CHERRY_PLANKS, StateTypes.POPLAR_PLANKS);
+        BlockTags.STONE_BRICKS.add(StateTypes.STONE_BRICKS, StateTypes.MOSSY_STONE_BRICKS, StateTypes.CRACKED_STONE_BRICKS, StateTypes.CHISELED_STONE_BRICKS);
+        BlockTags.WOODEN_BUTTONS.add(StateTypes.OAK_BUTTON, StateTypes.SPRUCE_BUTTON, StateTypes.BIRCH_BUTTON, StateTypes.JUNGLE_BUTTON, StateTypes.ACACIA_BUTTON, StateTypes.DARK_OAK_BUTTON, StateTypes.PALE_OAK_BUTTON, StateTypes.CRIMSON_BUTTON, StateTypes.WARPED_BUTTON, StateTypes.MANGROVE_BUTTON, StateTypes.BAMBOO_BUTTON, StateTypes.CHERRY_BUTTON, StateTypes.POPLAR_BUTTON);
+        BlockTags.STONE_BUTTONS.add(StateTypes.STONE_BUTTON, StateTypes.POLISHED_BLACKSTONE_BUTTON);
+        BlockTags.WOOL_CARPETS.add(StateTypes.WHITE_CARPET, StateTypes.ORANGE_CARPET, StateTypes.MAGENTA_CARPET, StateTypes.LIGHT_BLUE_CARPET, StateTypes.YELLOW_CARPET, StateTypes.LIME_CARPET, StateTypes.PINK_CARPET, StateTypes.GRAY_CARPET, StateTypes.LIGHT_GRAY_CARPET, StateTypes.CYAN_CARPET, StateTypes.PURPLE_CARPET, StateTypes.BLUE_CARPET, StateTypes.BROWN_CARPET, StateTypes.GREEN_CARPET, StateTypes.RED_CARPET, StateTypes.BLACK_CARPET);
+        BlockTags.WOODEN_DOORS.add(StateTypes.OAK_DOOR, StateTypes.SPRUCE_DOOR, StateTypes.BIRCH_DOOR, StateTypes.JUNGLE_DOOR, StateTypes.ACACIA_DOOR, StateTypes.DARK_OAK_DOOR, StateTypes.PALE_OAK_DOOR, StateTypes.CRIMSON_DOOR, StateTypes.WARPED_DOOR, StateTypes.MANGROVE_DOOR, StateTypes.BAMBOO_DOOR, StateTypes.CHERRY_DOOR, StateTypes.POPLAR_DOOR);
+        BlockTags.WOODEN_STAIRS.add(StateTypes.OAK_STAIRS, StateTypes.SPRUCE_STAIRS, StateTypes.BIRCH_STAIRS, StateTypes.JUNGLE_STAIRS, StateTypes.ACACIA_STAIRS, StateTypes.DARK_OAK_STAIRS, StateTypes.PALE_OAK_STAIRS, StateTypes.CRIMSON_STAIRS, StateTypes.WARPED_STAIRS, StateTypes.MANGROVE_STAIRS, StateTypes.BAMBOO_STAIRS, StateTypes.CHERRY_STAIRS, StateTypes.POPLAR_STAIRS);
+        BlockTags.WOODEN_SLABS.add(StateTypes.OAK_SLAB, StateTypes.SPRUCE_SLAB, StateTypes.BIRCH_SLAB, StateTypes.JUNGLE_SLAB, StateTypes.ACACIA_SLAB, StateTypes.DARK_OAK_SLAB, StateTypes.PALE_OAK_SLAB, StateTypes.CRIMSON_SLAB, StateTypes.WARPED_SLAB, StateTypes.MANGROVE_SLAB, StateTypes.BAMBOO_SLAB, StateTypes.CHERRY_SLAB, StateTypes.POPLAR_SLAB);
+        BlockTags.WOODEN_FENCES.add(StateTypes.OAK_FENCE, StateTypes.ACACIA_FENCE, StateTypes.DARK_OAK_FENCE, StateTypes.PALE_OAK_FENCE, StateTypes.SPRUCE_FENCE, StateTypes.BIRCH_FENCE, StateTypes.JUNGLE_FENCE, StateTypes.CRIMSON_FENCE, StateTypes.WARPED_FENCE, StateTypes.MANGROVE_FENCE, StateTypes.BAMBOO_FENCE, StateTypes.CHERRY_FENCE, StateTypes.POPLAR_FENCE);
+        BlockTags.FENCE_GATES.add(StateTypes.ACACIA_FENCE_GATE, StateTypes.BIRCH_FENCE_GATE, StateTypes.DARK_OAK_FENCE_GATE, StateTypes.PALE_OAK_FENCE_GATE, StateTypes.JUNGLE_FENCE_GATE, StateTypes.OAK_FENCE_GATE, StateTypes.SPRUCE_FENCE_GATE, StateTypes.CRIMSON_FENCE_GATE, StateTypes.WARPED_FENCE_GATE, StateTypes.MANGROVE_FENCE_GATE, StateTypes.BAMBOO_FENCE_GATE, StateTypes.CHERRY_FENCE_GATE, StateTypes.POPLAR_FENCE_GATE);
+        BlockTags.WOODEN_PRESSURE_PLATES.add(StateTypes.OAK_PRESSURE_PLATE, StateTypes.SPRUCE_PRESSURE_PLATE, StateTypes.BIRCH_PRESSURE_PLATE, StateTypes.JUNGLE_PRESSURE_PLATE, StateTypes.ACACIA_PRESSURE_PLATE, StateTypes.DARK_OAK_PRESSURE_PLATE, StateTypes.PALE_OAK_PRESSURE_PLATE, StateTypes.CRIMSON_PRESSURE_PLATE, StateTypes.WARPED_PRESSURE_PLATE, StateTypes.MANGROVE_PRESSURE_PLATE, StateTypes.BAMBOO_PRESSURE_PLATE, StateTypes.CHERRY_PRESSURE_PLATE, StateTypes.POPLAR_PRESSURE_PLATE);
+        BlockTags.WOODEN_SHELVES.add(StateTypes.ACACIA_SHELF, StateTypes.BAMBOO_SHELF, StateTypes.BIRCH_SHELF, StateTypes.CHERRY_SHELF, StateTypes.CRIMSON_SHELF, StateTypes.DARK_OAK_SHELF, StateTypes.JUNGLE_SHELF, StateTypes.MANGROVE_SHELF, StateTypes.OAK_SHELF, StateTypes.PALE_OAK_SHELF, StateTypes.SPRUCE_SHELF, StateTypes.WARPED_SHELF, StateTypes.POPLAR_SHELF);
+        BlockTags.SAPLINGS.add(StateTypes.OAK_SAPLING, StateTypes.SPRUCE_SAPLING, StateTypes.BIRCH_SAPLING, StateTypes.JUNGLE_SAPLING, StateTypes.ACACIA_SAPLING, StateTypes.DARK_OAK_SAPLING, StateTypes.PALE_OAK_SAPLING, StateTypes.AZALEA, StateTypes.FLOWERING_AZALEA, StateTypes.MANGROVE_PROPAGULE, StateTypes.CHERRY_SAPLING, StateTypes.POPLAR_SAPLING);
+        BlockTags.BAMBOO_BLOCKS.add(StateTypes.BAMBOO_BLOCK, StateTypes.STRIPPED_BAMBOO_BLOCK);
+        BlockTags.PALE_OAK_LOGS.add(StateTypes.PALE_OAK_LOG, StateTypes.PALE_OAK_WOOD, StateTypes.STRIPPED_PALE_OAK_LOG, StateTypes.STRIPPED_PALE_OAK_WOOD);
+        BlockTags.JUNGLE_LOGS.add(StateTypes.JUNGLE_LOG, StateTypes.JUNGLE_WOOD, StateTypes.STRIPPED_JUNGLE_LOG, StateTypes.STRIPPED_JUNGLE_WOOD);
+        BlockTags.WART_BLOCKS.add(StateTypes.NETHER_WART_BLOCK, StateTypes.WARPED_WART_BLOCK);
+        BlockTags.SAND.add(StateTypes.SAND, StateTypes.RED_SAND, StateTypes.SUSPICIOUS_SAND);
+        BlockTags.WALLS.add(StateTypes.COBBLESTONE_WALL, StateTypes.MOSSY_COBBLESTONE_WALL, StateTypes.BRICK_WALL, StateTypes.PRISMARINE_WALL, StateTypes.RED_SANDSTONE_WALL, StateTypes.MOSSY_STONE_BRICK_WALL, StateTypes.GRANITE_WALL, StateTypes.STONE_BRICK_WALL, StateTypes.NETHER_BRICK_WALL, StateTypes.ANDESITE_WALL, StateTypes.RED_NETHER_BRICK_WALL, StateTypes.SANDSTONE_WALL, StateTypes.END_STONE_BRICK_WALL, StateTypes.DIORITE_WALL, StateTypes.BLACKSTONE_WALL, StateTypes.POLISHED_BLACKSTONE_BRICK_WALL, StateTypes.POLISHED_BLACKSTONE_WALL, StateTypes.COBBLED_DEEPSLATE_WALL, StateTypes.POLISHED_DEEPSLATE_WALL, StateTypes.DEEPSLATE_TILE_WALL, StateTypes.DEEPSLATE_BRICK_WALL, StateTypes.MUD_BRICK_WALL, StateTypes.TUFF_WALL, StateTypes.POLISHED_TUFF_WALL, StateTypes.TUFF_BRICK_WALL, StateTypes.RESIN_BRICK_WALL, StateTypes.CINNABAR_WALL, StateTypes.POLISHED_CINNABAR_WALL, StateTypes.CINNABAR_BRICK_WALL, StateTypes.SULFUR_WALL, StateTypes.POLISHED_SULFUR_WALL, StateTypes.SULFUR_BRICK_WALL);
+        BlockTags.ANVIL.add(StateTypes.ANVIL, StateTypes.CHIPPED_ANVIL, StateTypes.DAMAGED_ANVIL);
+        BlockTags.RAILS.add(StateTypes.RAIL, StateTypes.POWERED_RAIL, StateTypes.DETECTOR_RAIL, StateTypes.ACTIVATOR_RAIL);
+        BlockTags.LEAVES.add(StateTypes.JUNGLE_LEAVES, StateTypes.OAK_LEAVES, StateTypes.SPRUCE_LEAVES, StateTypes.PALE_OAK_LEAVES, StateTypes.DARK_OAK_LEAVES, StateTypes.ACACIA_LEAVES, StateTypes.BIRCH_LEAVES, StateTypes.AZALEA_LEAVES, StateTypes.FLOWERING_AZALEA_LEAVES, StateTypes.MANGROVE_LEAVES, StateTypes.CHERRY_LEAVES, StateTypes.RED_POPLAR_LEAVES, StateTypes.ORANGE_POPLAR_LEAVES, StateTypes.YELLOW_POPLAR_LEAVES);
+        BlockTags.WOODEN_TRAPDOORS.add(StateTypes.ACACIA_TRAPDOOR, StateTypes.BIRCH_TRAPDOOR, StateTypes.DARK_OAK_TRAPDOOR, StateTypes.PALE_OAK_TRAPDOOR, StateTypes.JUNGLE_TRAPDOOR, StateTypes.OAK_TRAPDOOR, StateTypes.SPRUCE_TRAPDOOR, StateTypes.CRIMSON_TRAPDOOR, StateTypes.WARPED_TRAPDOOR, StateTypes.MANGROVE_TRAPDOOR, StateTypes.BAMBOO_TRAPDOOR, StateTypes.CHERRY_TRAPDOOR, StateTypes.POPLAR_TRAPDOOR);
+        BlockTags.SMALL_FLOWERS.add(StateTypes.DANDELION, StateTypes.OPEN_EYEBLOSSOM, StateTypes.POPPY, StateTypes.BLUE_ORCHID, StateTypes.ALLIUM, StateTypes.AZURE_BLUET, StateTypes.RED_TULIP, StateTypes.ORANGE_TULIP, StateTypes.WHITE_TULIP, StateTypes.PINK_TULIP, StateTypes.OXEYE_DAISY, StateTypes.CORNFLOWER, StateTypes.LILY_OF_THE_VALLEY, StateTypes.WITHER_ROSE, StateTypes.TORCHFLOWER, StateTypes.CLOSED_EYEBLOSSOM, StateTypes.GOLDEN_DANDELION);
+        BlockTags.BEDS.add(StateTypes.WHITE_BED, StateTypes.ORANGE_BED, StateTypes.MAGENTA_BED, StateTypes.LIGHT_BLUE_BED, StateTypes.YELLOW_BED, StateTypes.LIME_BED, StateTypes.PINK_BED, StateTypes.GRAY_BED, StateTypes.LIGHT_GRAY_BED, StateTypes.CYAN_BED, StateTypes.PURPLE_BED, StateTypes.BLUE_BED, StateTypes.BROWN_BED, StateTypes.GREEN_BED, StateTypes.RED_BED, StateTypes.BLACK_BED);
+        BlockTags.SOUL_FIRE_BASE_BLOCKS.add(StateTypes.SOUL_SAND, StateTypes.SOUL_SOIL);
+        BlockTags.CANDLES.add(StateTypes.CANDLE, StateTypes.WHITE_CANDLE, StateTypes.ORANGE_CANDLE, StateTypes.MAGENTA_CANDLE, StateTypes.LIGHT_BLUE_CANDLE, StateTypes.YELLOW_CANDLE, StateTypes.LIME_CANDLE, StateTypes.PINK_CANDLE, StateTypes.GRAY_CANDLE, StateTypes.LIGHT_GRAY_CANDLE, StateTypes.CYAN_CANDLE, StateTypes.PURPLE_CANDLE, StateTypes.BLUE_CANDLE, StateTypes.BROWN_CANDLE, StateTypes.GREEN_CANDLE, StateTypes.RED_CANDLE, StateTypes.BLACK_CANDLE);
+        BlockTags.GOLD_ORES.add(StateTypes.GOLD_ORE, StateTypes.NETHER_GOLD_ORE, StateTypes.DEEPSLATE_GOLD_ORE);
+        BlockTags.IRON_ORES.add(StateTypes.IRON_ORE, StateTypes.DEEPSLATE_IRON_ORE);
+        BlockTags.COPPER_ORES.add(StateTypes.COPPER_ORE, StateTypes.DEEPSLATE_COPPER_ORE);
+        BlockTags.DIRT.add(StateTypes.DIRT, StateTypes.COARSE_DIRT, StateTypes.ROOTED_DIRT);
+        BlockTags.MUD.add(StateTypes.MUD, StateTypes.MUDDY_MANGROVE_ROOTS);
+        BlockTags.MOSS_BLOCKS.add(StateTypes.MOSS_BLOCK, StateTypes.PALE_MOSS_BLOCK);
+        BlockTags.GRASS_BLOCKS.add(StateTypes.GRASS_BLOCK, StateTypes.PODZOL, StateTypes.MYCELIUM);
+        BlockTags.TERRACOTTA.add(StateTypes.TERRACOTTA, StateTypes.WHITE_TERRACOTTA, StateTypes.ORANGE_TERRACOTTA, StateTypes.MAGENTA_TERRACOTTA, StateTypes.LIGHT_BLUE_TERRACOTTA, StateTypes.YELLOW_TERRACOTTA, StateTypes.LIME_TERRACOTTA, StateTypes.PINK_TERRACOTTA, StateTypes.GRAY_TERRACOTTA, StateTypes.LIGHT_GRAY_TERRACOTTA, StateTypes.CYAN_TERRACOTTA, StateTypes.PURPLE_TERRACOTTA, StateTypes.BLUE_TERRACOTTA, StateTypes.BROWN_TERRACOTTA, StateTypes.GREEN_TERRACOTTA, StateTypes.RED_TERRACOTTA, StateTypes.BLACK_TERRACOTTA);
+        BlockTags.GLAZED_TERRACOTTA.add(StateTypes.WHITE_GLAZED_TERRACOTTA, StateTypes.ORANGE_GLAZED_TERRACOTTA, StateTypes.MAGENTA_GLAZED_TERRACOTTA, StateTypes.LIGHT_BLUE_GLAZED_TERRACOTTA, StateTypes.YELLOW_GLAZED_TERRACOTTA, StateTypes.LIME_GLAZED_TERRACOTTA, StateTypes.PINK_GLAZED_TERRACOTTA, StateTypes.GRAY_GLAZED_TERRACOTTA, StateTypes.LIGHT_GRAY_GLAZED_TERRACOTTA, StateTypes.CYAN_GLAZED_TERRACOTTA, StateTypes.PURPLE_GLAZED_TERRACOTTA, StateTypes.BLUE_GLAZED_TERRACOTTA, StateTypes.BROWN_GLAZED_TERRACOTTA, StateTypes.GREEN_GLAZED_TERRACOTTA, StateTypes.RED_GLAZED_TERRACOTTA, StateTypes.BLACK_GLAZED_TERRACOTTA);
+        BlockTags.CONCRETE.add(StateTypes.WHITE_CONCRETE, StateTypes.ORANGE_CONCRETE, StateTypes.MAGENTA_CONCRETE, StateTypes.LIGHT_BLUE_CONCRETE, StateTypes.YELLOW_CONCRETE, StateTypes.LIME_CONCRETE, StateTypes.PINK_CONCRETE, StateTypes.GRAY_CONCRETE, StateTypes.LIGHT_GRAY_CONCRETE, StateTypes.CYAN_CONCRETE, StateTypes.PURPLE_CONCRETE, StateTypes.BLUE_CONCRETE, StateTypes.BROWN_CONCRETE, StateTypes.GREEN_CONCRETE, StateTypes.RED_CONCRETE, StateTypes.BLACK_CONCRETE);
+        BlockTags.CONCRETE_SLABS.add(StateTypes.WHITE_CONCRETE_SLAB, StateTypes.ORANGE_CONCRETE_SLAB, StateTypes.MAGENTA_CONCRETE_SLAB, StateTypes.LIGHT_BLUE_CONCRETE_SLAB, StateTypes.YELLOW_CONCRETE_SLAB, StateTypes.LIME_CONCRETE_SLAB, StateTypes.PINK_CONCRETE_SLAB, StateTypes.GRAY_CONCRETE_SLAB, StateTypes.LIGHT_GRAY_CONCRETE_SLAB, StateTypes.CYAN_CONCRETE_SLAB, StateTypes.PURPLE_CONCRETE_SLAB, StateTypes.BLUE_CONCRETE_SLAB, StateTypes.BROWN_CONCRETE_SLAB, StateTypes.GREEN_CONCRETE_SLAB, StateTypes.RED_CONCRETE_SLAB, StateTypes.BLACK_CONCRETE_SLAB);
+        BlockTags.CONCRETE_STAIRS.add(StateTypes.WHITE_CONCRETE_STAIRS, StateTypes.ORANGE_CONCRETE_STAIRS, StateTypes.MAGENTA_CONCRETE_STAIRS, StateTypes.LIGHT_BLUE_CONCRETE_STAIRS, StateTypes.YELLOW_CONCRETE_STAIRS, StateTypes.LIME_CONCRETE_STAIRS, StateTypes.PINK_CONCRETE_STAIRS, StateTypes.GRAY_CONCRETE_STAIRS, StateTypes.LIGHT_GRAY_CONCRETE_STAIRS, StateTypes.CYAN_CONCRETE_STAIRS, StateTypes.PURPLE_CONCRETE_STAIRS, StateTypes.BLUE_CONCRETE_STAIRS, StateTypes.BROWN_CONCRETE_STAIRS, StateTypes.GREEN_CONCRETE_STAIRS, StateTypes.RED_CONCRETE_STAIRS, StateTypes.BLACK_CONCRETE_STAIRS);
+        BlockTags.CONCRETE_POWDERS.add(StateTypes.WHITE_CONCRETE_POWDER, StateTypes.ORANGE_CONCRETE_POWDER, StateTypes.MAGENTA_CONCRETE_POWDER, StateTypes.LIGHT_BLUE_CONCRETE_POWDER, StateTypes.YELLOW_CONCRETE_POWDER, StateTypes.LIME_CONCRETE_POWDER, StateTypes.PINK_CONCRETE_POWDER, StateTypes.GRAY_CONCRETE_POWDER, StateTypes.LIGHT_GRAY_CONCRETE_POWDER, StateTypes.CYAN_CONCRETE_POWDER, StateTypes.PURPLE_CONCRETE_POWDER, StateTypes.BLUE_CONCRETE_POWDER, StateTypes.BROWN_CONCRETE_POWDER, StateTypes.GREEN_CONCRETE_POWDER, StateTypes.RED_CONCRETE_POWDER, StateTypes.BLACK_CONCRETE_POWDER);
+        BlockTags.SHULKER_BOXES.add(StateTypes.SHULKER_BOX, StateTypes.WHITE_SHULKER_BOX, StateTypes.ORANGE_SHULKER_BOX, StateTypes.MAGENTA_SHULKER_BOX, StateTypes.LIGHT_BLUE_SHULKER_BOX, StateTypes.YELLOW_SHULKER_BOX, StateTypes.LIME_SHULKER_BOX, StateTypes.PINK_SHULKER_BOX, StateTypes.GRAY_SHULKER_BOX, StateTypes.LIGHT_GRAY_SHULKER_BOX, StateTypes.CYAN_SHULKER_BOX, StateTypes.PURPLE_SHULKER_BOX, StateTypes.BLUE_SHULKER_BOX, StateTypes.BROWN_SHULKER_BOX, StateTypes.GREEN_SHULKER_BOX, StateTypes.RED_SHULKER_BOX, StateTypes.BLACK_SHULKER_BOX);
+        BlockTags.COPPER_CHESTS.add(StateTypes.COPPER_CHEST, StateTypes.EXPOSED_COPPER_CHEST, StateTypes.WEATHERED_COPPER_CHEST, StateTypes.OXIDIZED_COPPER_CHEST, StateTypes.WAXED_COPPER_CHEST, StateTypes.WAXED_EXPOSED_COPPER_CHEST, StateTypes.WAXED_WEATHERED_COPPER_CHEST, StateTypes.WAXED_OXIDIZED_COPPER_CHEST);
+        BlockTags.LIGHTNING_RODS.add(StateTypes.LIGHTNING_ROD, StateTypes.EXPOSED_LIGHTNING_ROD, StateTypes.WEATHERED_LIGHTNING_ROD, StateTypes.OXIDIZED_LIGHTNING_ROD, StateTypes.WAXED_LIGHTNING_ROD, StateTypes.WAXED_EXPOSED_LIGHTNING_ROD, StateTypes.WAXED_WEATHERED_LIGHTNING_ROD, StateTypes.WAXED_OXIDIZED_LIGHTNING_ROD);
+        BlockTags.COPPER.add(StateTypes.COPPER_BLOCK, StateTypes.EXPOSED_COPPER, StateTypes.WEATHERED_COPPER, StateTypes.OXIDIZED_COPPER, StateTypes.WAXED_COPPER_BLOCK, StateTypes.WAXED_EXPOSED_COPPER, StateTypes.WAXED_WEATHERED_COPPER, StateTypes.WAXED_OXIDIZED_COPPER);
+        BlockTags.CHAINS.add(StateTypes.IRON_CHAIN, StateTypes.COPPER_CHAIN, StateTypes.EXPOSED_COPPER_CHAIN, StateTypes.WEATHERED_COPPER_CHAIN, StateTypes.OXIDIZED_COPPER_CHAIN, StateTypes.WAXED_COPPER_CHAIN, StateTypes.WAXED_EXPOSED_COPPER_CHAIN, StateTypes.WAXED_WEATHERED_COPPER_CHAIN, StateTypes.WAXED_OXIDIZED_COPPER_CHAIN);
+        BlockTags.COPPER_GOLEM_STATUES.add(StateTypes.COPPER_GOLEM_STATUE, StateTypes.EXPOSED_COPPER_GOLEM_STATUE, StateTypes.WEATHERED_COPPER_GOLEM_STATUE, StateTypes.OXIDIZED_COPPER_GOLEM_STATUE, StateTypes.WAXED_COPPER_GOLEM_STATUE, StateTypes.WAXED_EXPOSED_COPPER_GOLEM_STATUE, StateTypes.WAXED_WEATHERED_COPPER_GOLEM_STATUE, StateTypes.WAXED_OXIDIZED_COPPER_GOLEM_STATUE);
+        BlockTags.LANTERNS.add(StateTypes.LANTERN, StateTypes.SOUL_LANTERN, StateTypes.COPPER_LANTERN, StateTypes.EXPOSED_COPPER_LANTERN, StateTypes.WEATHERED_COPPER_LANTERN, StateTypes.OXIDIZED_COPPER_LANTERN, StateTypes.WAXED_COPPER_LANTERN, StateTypes.WAXED_EXPOSED_COPPER_LANTERN, StateTypes.WAXED_WEATHERED_COPPER_LANTERN, StateTypes.WAXED_OXIDIZED_COPPER_LANTERN);
+        BlockTags.BARS.add(StateTypes.IRON_BARS, StateTypes.COPPER_BARS, StateTypes.EXPOSED_COPPER_BARS, StateTypes.WEATHERED_COPPER_BARS, StateTypes.OXIDIZED_COPPER_BARS, StateTypes.WAXED_COPPER_BARS, StateTypes.WAXED_EXPOSED_COPPER_BARS, StateTypes.WAXED_WEATHERED_COPPER_BARS, StateTypes.WAXED_OXIDIZED_COPPER_BARS);
+        BlockTags.SKULLS.add(StateTypes.PLAYER_HEAD, StateTypes.CREEPER_HEAD, StateTypes.ZOMBIE_HEAD, StateTypes.SKELETON_SKULL, StateTypes.WITHER_SKELETON_SKULL, StateTypes.DRAGON_HEAD, StateTypes.PIGLIN_HEAD);
+        BlockTags.WOOL_SLABS.add(StateTypes.WHITE_WOOL_SLAB, StateTypes.ORANGE_WOOL_SLAB, StateTypes.MAGENTA_WOOL_SLAB, StateTypes.LIGHT_BLUE_WOOL_SLAB, StateTypes.YELLOW_WOOL_SLAB, StateTypes.LIME_WOOL_SLAB, StateTypes.PINK_WOOL_SLAB, StateTypes.GRAY_WOOL_SLAB, StateTypes.LIGHT_GRAY_WOOL_SLAB, StateTypes.CYAN_WOOL_SLAB, StateTypes.PURPLE_WOOL_SLAB, StateTypes.BLUE_WOOL_SLAB, StateTypes.BROWN_WOOL_SLAB, StateTypes.GREEN_WOOL_SLAB, StateTypes.RED_WOOL_SLAB, StateTypes.BLACK_WOOL_SLAB);
+        BlockTags.WOOL_STAIRS.add(StateTypes.WHITE_WOOL_STAIRS, StateTypes.ORANGE_WOOL_STAIRS, StateTypes.MAGENTA_WOOL_STAIRS, StateTypes.LIGHT_BLUE_WOOL_STAIRS, StateTypes.YELLOW_WOOL_STAIRS, StateTypes.LIME_WOOL_STAIRS, StateTypes.PINK_WOOL_STAIRS, StateTypes.GRAY_WOOL_STAIRS, StateTypes.LIGHT_GRAY_WOOL_STAIRS, StateTypes.CYAN_WOOL_STAIRS, StateTypes.PURPLE_WOOL_STAIRS, StateTypes.BLUE_WOOL_STAIRS, StateTypes.BROWN_WOOL_STAIRS, StateTypes.GREEN_WOOL_STAIRS, StateTypes.RED_WOOL_STAIRS, StateTypes.BLACK_WOOL_STAIRS);
+        BlockTags.CEILING_HANGING_SIGNS.add(StateTypes.OAK_HANGING_SIGN, StateTypes.SPRUCE_HANGING_SIGN, StateTypes.BIRCH_HANGING_SIGN, StateTypes.ACACIA_HANGING_SIGN, StateTypes.CHERRY_HANGING_SIGN, StateTypes.JUNGLE_HANGING_SIGN, StateTypes.DARK_OAK_HANGING_SIGN, StateTypes.PALE_OAK_HANGING_SIGN, StateTypes.CRIMSON_HANGING_SIGN, StateTypes.WARPED_HANGING_SIGN, StateTypes.MANGROVE_HANGING_SIGN, StateTypes.POPLAR_HANGING_SIGN, StateTypes.BAMBOO_HANGING_SIGN);
+        BlockTags.STANDING_SIGNS.add(StateTypes.OAK_SIGN, StateTypes.SPRUCE_SIGN, StateTypes.BIRCH_SIGN, StateTypes.ACACIA_SIGN, StateTypes.JUNGLE_SIGN, StateTypes.DARK_OAK_SIGN, StateTypes.PALE_OAK_SIGN, StateTypes.CRIMSON_SIGN, StateTypes.WARPED_SIGN, StateTypes.MANGROVE_SIGN, StateTypes.POPLAR_SIGN, StateTypes.BAMBOO_SIGN, StateTypes.CHERRY_SIGN);
+        BlockTags.BEE_ATTRACTIVE.add(StateTypes.DANDELION, StateTypes.OPEN_EYEBLOSSOM, StateTypes.POPPY, StateTypes.BLUE_ORCHID, StateTypes.ALLIUM, StateTypes.AZURE_BLUET, StateTypes.RED_TULIP, StateTypes.ORANGE_TULIP, StateTypes.WHITE_TULIP, StateTypes.PINK_TULIP, StateTypes.OXEYE_DAISY, StateTypes.CORNFLOWER, StateTypes.LILY_OF_THE_VALLEY, StateTypes.WITHER_ROSE, StateTypes.TORCHFLOWER, StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.PEONY, StateTypes.ROSE_BUSH, StateTypes.PITCHER_PLANT, StateTypes.FLOWERING_AZALEA_LEAVES, StateTypes.FLOWERING_AZALEA, StateTypes.MANGROVE_PROPAGULE, StateTypes.CHERRY_LEAVES, StateTypes.PINK_PETALS, StateTypes.WILDFLOWERS, StateTypes.CHORUS_FLOWER, StateTypes.SPORE_BLOSSOM, StateTypes.CACTUS_FLOWER);
+        BlockTags.STONE_PRESSURE_PLATES.add(StateTypes.STONE_PRESSURE_PLATE, StateTypes.POLISHED_BLACKSTONE_PRESSURE_PLATE);
+        BlockTags.OVERWORLD_NATURAL_LOGS.add(StateTypes.ACACIA_LOG, StateTypes.BIRCH_LOG, StateTypes.OAK_LOG, StateTypes.JUNGLE_LOG, StateTypes.SPRUCE_LOG, StateTypes.DARK_OAK_LOG, StateTypes.PALE_OAK_LOG, StateTypes.MANGROVE_LOG, StateTypes.CHERRY_LOG, StateTypes.POPLAR_LOG);
+        BlockTags.BANNERS.add(StateTypes.WHITE_BANNER, StateTypes.ORANGE_BANNER, StateTypes.MAGENTA_BANNER, StateTypes.LIGHT_BLUE_BANNER, StateTypes.YELLOW_BANNER, StateTypes.LIME_BANNER, StateTypes.PINK_BANNER, StateTypes.GRAY_BANNER, StateTypes.LIGHT_GRAY_BANNER, StateTypes.CYAN_BANNER, StateTypes.PURPLE_BANNER, StateTypes.BLUE_BANNER, StateTypes.BROWN_BANNER, StateTypes.GREEN_BANNER, StateTypes.RED_BANNER, StateTypes.BLACK_BANNER, StateTypes.WHITE_WALL_BANNER, StateTypes.ORANGE_WALL_BANNER, StateTypes.MAGENTA_WALL_BANNER, StateTypes.LIGHT_BLUE_WALL_BANNER, StateTypes.YELLOW_WALL_BANNER, StateTypes.LIME_WALL_BANNER, StateTypes.PINK_WALL_BANNER, StateTypes.GRAY_WALL_BANNER, StateTypes.LIGHT_GRAY_WALL_BANNER, StateTypes.CYAN_WALL_BANNER, StateTypes.PURPLE_WALL_BANNER, StateTypes.BLUE_WALL_BANNER, StateTypes.BROWN_WALL_BANNER, StateTypes.GREEN_WALL_BANNER, StateTypes.RED_WALL_BANNER, StateTypes.BLACK_WALL_BANNER);
+        BlockTags.PIGLIN_REPELLENTS.add(StateTypes.SOUL_FIRE, StateTypes.SOUL_TORCH, StateTypes.SOUL_LANTERN, StateTypes.SOUL_WALL_TORCH, StateTypes.SOUL_CAMPFIRE);
+        BlockTags.BADLANDS_TERRACOTTA.add(StateTypes.TERRACOTTA, StateTypes.WHITE_TERRACOTTA, StateTypes.YELLOW_TERRACOTTA, StateTypes.ORANGE_TERRACOTTA, StateTypes.RED_TERRACOTTA, StateTypes.BROWN_TERRACOTTA, StateTypes.LIGHT_GRAY_TERRACOTTA);
+        BlockTags.FLOWER_POTS.add(StateTypes.FLOWER_POT, StateTypes.POTTED_OPEN_EYEBLOSSOM, StateTypes.POTTED_CLOSED_EYEBLOSSOM, StateTypes.POTTED_POPPY, StateTypes.POTTED_BLUE_ORCHID, StateTypes.POTTED_ALLIUM, StateTypes.POTTED_AZURE_BLUET, StateTypes.POTTED_RED_TULIP, StateTypes.POTTED_ORANGE_TULIP, StateTypes.POTTED_WHITE_TULIP, StateTypes.POTTED_PINK_TULIP, StateTypes.POTTED_OXEYE_DAISY, StateTypes.POTTED_DANDELION, StateTypes.POTTED_OAK_SAPLING, StateTypes.POTTED_SPRUCE_SAPLING, StateTypes.POTTED_BIRCH_SAPLING, StateTypes.POTTED_JUNGLE_SAPLING, StateTypes.POTTED_ACACIA_SAPLING, StateTypes.POTTED_DARK_OAK_SAPLING, StateTypes.POTTED_PALE_OAK_SAPLING, StateTypes.POTTED_RED_MUSHROOM, StateTypes.POTTED_BROWN_MUSHROOM, StateTypes.POTTED_DEAD_BUSH, StateTypes.POTTED_FERN, StateTypes.POTTED_CACTUS, StateTypes.POTTED_CORNFLOWER, StateTypes.POTTED_LILY_OF_THE_VALLEY, StateTypes.POTTED_WITHER_ROSE, StateTypes.POTTED_BAMBOO, StateTypes.POTTED_CRIMSON_FUNGUS, StateTypes.POTTED_WARPED_FUNGUS, StateTypes.POTTED_CRIMSON_ROOTS, StateTypes.POTTED_WARPED_ROOTS, StateTypes.POTTED_AZALEA_BUSH, StateTypes.POTTED_FLOWERING_AZALEA_BUSH, StateTypes.POTTED_MANGROVE_PROPAGULE, StateTypes.POTTED_CHERRY_SAPLING, StateTypes.POTTED_TORCHFLOWER, StateTypes.POTTED_GOLDEN_DANDELION, StateTypes.POTTED_POPLAR_SAPLING);
+        BlockTags.ICE.add(StateTypes.ICE, StateTypes.PACKED_ICE, StateTypes.BLUE_ICE, StateTypes.FROSTED_ICE);
+        BlockTags.VALID_SPAWN.add(StateTypes.GRASS_BLOCK, StateTypes.PODZOL);
+        BlockTags.IMPERMEABLE.add(StateTypes.WHITE_STAINED_GLASS, StateTypes.ORANGE_STAINED_GLASS, StateTypes.MAGENTA_STAINED_GLASS, StateTypes.LIGHT_BLUE_STAINED_GLASS, StateTypes.YELLOW_STAINED_GLASS, StateTypes.LIME_STAINED_GLASS, StateTypes.PINK_STAINED_GLASS, StateTypes.GRAY_STAINED_GLASS, StateTypes.LIGHT_GRAY_STAINED_GLASS, StateTypes.CYAN_STAINED_GLASS, StateTypes.PURPLE_STAINED_GLASS, StateTypes.BLUE_STAINED_GLASS, StateTypes.BROWN_STAINED_GLASS, StateTypes.GREEN_STAINED_GLASS, StateTypes.RED_STAINED_GLASS, StateTypes.BLACK_STAINED_GLASS, StateTypes.GLASS, StateTypes.TINTED_GLASS, StateTypes.BARRIER);
+        BlockTags.CORAL_BLOCKS.add(StateTypes.TUBE_CORAL_BLOCK, StateTypes.BRAIN_CORAL_BLOCK, StateTypes.BUBBLE_CORAL_BLOCK, StateTypes.FIRE_CORAL_BLOCK, StateTypes.HORN_CORAL_BLOCK);
+        BlockTags.WALL_CORALS.add(StateTypes.TUBE_CORAL_WALL_FAN, StateTypes.BRAIN_CORAL_WALL_FAN, StateTypes.BUBBLE_CORAL_WALL_FAN, StateTypes.FIRE_CORAL_WALL_FAN, StateTypes.HORN_CORAL_WALL_FAN);
+        BlockTags.CORAL_PLANTS.add(StateTypes.TUBE_CORAL, StateTypes.BRAIN_CORAL, StateTypes.BUBBLE_CORAL, StateTypes.FIRE_CORAL, StateTypes.HORN_CORAL);
+        BlockTags.WALL_SIGNS.add(StateTypes.OAK_WALL_SIGN, StateTypes.SPRUCE_WALL_SIGN, StateTypes.BIRCH_WALL_SIGN, StateTypes.ACACIA_WALL_SIGN, StateTypes.JUNGLE_WALL_SIGN, StateTypes.DARK_OAK_WALL_SIGN, StateTypes.PALE_OAK_WALL_SIGN, StateTypes.CRIMSON_WALL_SIGN, StateTypes.WARPED_WALL_SIGN, StateTypes.MANGROVE_WALL_SIGN, StateTypes.BAMBOO_WALL_SIGN, StateTypes.CHERRY_WALL_SIGN, StateTypes.POPLAR_WALL_SIGN);
+        BlockTags.WALL_HANGING_SIGNS.add(StateTypes.OAK_WALL_HANGING_SIGN, StateTypes.SPRUCE_WALL_HANGING_SIGN, StateTypes.BIRCH_WALL_HANGING_SIGN, StateTypes.ACACIA_WALL_HANGING_SIGN, StateTypes.CHERRY_WALL_HANGING_SIGN, StateTypes.JUNGLE_WALL_HANGING_SIGN, StateTypes.DARK_OAK_WALL_HANGING_SIGN, StateTypes.PALE_OAK_WALL_HANGING_SIGN, StateTypes.CRIMSON_WALL_HANGING_SIGN, StateTypes.WARPED_WALL_HANGING_SIGN, StateTypes.MANGROVE_WALL_HANGING_SIGN, StateTypes.BAMBOO_WALL_HANGING_SIGN, StateTypes.POPLAR_WALL_HANGING_SIGN);
+        BlockTags.DRAGON_IMMUNE.add(StateTypes.BARRIER, StateTypes.BEDROCK, StateTypes.END_PORTAL, StateTypes.END_PORTAL_FRAME, StateTypes.END_GATEWAY, StateTypes.COMMAND_BLOCK, StateTypes.REPEATING_COMMAND_BLOCK, StateTypes.CHAIN_COMMAND_BLOCK, StateTypes.STRUCTURE_BLOCK, StateTypes.JIGSAW, StateTypes.MOVING_PISTON, StateTypes.OBSIDIAN, StateTypes.CRYING_OBSIDIAN, StateTypes.END_STONE, StateTypes.IRON_BARS, StateTypes.RESPAWN_ANCHOR, StateTypes.REINFORCED_DEEPSLATE, StateTypes.TEST_BLOCK, StateTypes.TEST_INSTANCE_BLOCK);
+        BlockTags.WITHER_IMMUNE.add(StateTypes.BARRIER, StateTypes.BEDROCK, StateTypes.END_PORTAL, StateTypes.END_PORTAL_FRAME, StateTypes.END_GATEWAY, StateTypes.COMMAND_BLOCK, StateTypes.REPEATING_COMMAND_BLOCK, StateTypes.CHAIN_COMMAND_BLOCK, StateTypes.STRUCTURE_BLOCK, StateTypes.JIGSAW, StateTypes.MOVING_PISTON, StateTypes.LIGHT, StateTypes.REINFORCED_DEEPSLATE, StateTypes.TEST_BLOCK, StateTypes.TEST_INSTANCE_BLOCK);
+        copy(BlockTags.SOUL_FIRE_BASE_BLOCKS, BlockTags.WITHER_SUMMON_BASE_BLOCKS);
+        BlockTags.BEEHIVES.add(StateTypes.BEE_NEST, StateTypes.BEEHIVE);
+        BlockTags.CROPS.add(StateTypes.BEETROOTS, StateTypes.CARROTS, StateTypes.POTATOES, StateTypes.WHEAT, StateTypes.MELON_STEM, StateTypes.PUMPKIN_STEM, StateTypes.TORCHFLOWER_CROP, StateTypes.PITCHER_CROP);
+        BlockTags.PORTALS.add(StateTypes.NETHER_PORTAL, StateTypes.END_PORTAL, StateTypes.END_GATEWAY);
+        BlockTags.FIRE.add(StateTypes.FIRE, StateTypes.SOUL_FIRE);
+        BlockTags.NYLIUM.add(StateTypes.CRIMSON_NYLIUM, StateTypes.WARPED_NYLIUM);
+        BlockTags.BEACON_BASE_BLOCKS.add(StateTypes.NETHERITE_BLOCK, StateTypes.EMERALD_BLOCK, StateTypes.DIAMOND_BLOCK, StateTypes.GOLD_BLOCK, StateTypes.IRON_BLOCK);
+        copy(BlockTags.SOUL_FIRE_BASE_BLOCKS, BlockTags.SOUL_SPEED_BLOCKS);
+        BlockTags.CLIMBABLE.add(StateTypes.LADDER, StateTypes.VINE, StateTypes.SCAFFOLDING, StateTypes.WEEPING_VINES, StateTypes.WEEPING_VINES_PLANT, StateTypes.TWISTING_VINES, StateTypes.TWISTING_VINES_PLANT, StateTypes.CAVE_VINES, StateTypes.CAVE_VINES_PLANT);
+        BlockTags.HOGLIN_REPELLENTS.add(StateTypes.WARPED_FUNGUS, StateTypes.POTTED_WARPED_FUNGUS, StateTypes.NETHER_PORTAL, StateTypes.RESPAWN_ANCHOR);
+        BlockTags.STRIDER_WARM_BLOCKS.add(StateTypes.LAVA);
+        BlockTags.CAMPFIRES.add(StateTypes.CAMPFIRE, StateTypes.SOUL_CAMPFIRE);
+        BlockTags.EDIBLE_FOR_SHEEP.add(StateTypes.SHORT_GRASS, StateTypes.SHORT_DRY_GRASS, StateTypes.TALL_DRY_GRASS, StateTypes.FERN);
+        BlockTags.CAUSES_PERIODIC_GEYSER_ERUPTIONS.add(StateTypes.MAGMA_BLOCK);
+        copy(BlockTags.STRIDER_WARM_BLOCKS, BlockTags.CAUSES_CONTINUOUS_GEYSER_ERUPTIONS);
+        BlockTags.NETHER_PORTAL_FRAME.add(StateTypes.OBSIDIAN);
+        BlockTags.CONDUIT_EFFECT_BLOCK.add(StateTypes.PRISMARINE, StateTypes.PRISMARINE_BRICKS, StateTypes.SEA_LANTERN, StateTypes.DARK_PRISMARINE);
+        BlockTags.INFINIBURN_OVERWORLD.add(StateTypes.NETHERRACK, StateTypes.MAGMA_BLOCK);
+        BlockTags.BASE_STONE_OVERWORLD.add(StateTypes.STONE, StateTypes.GRANITE, StateTypes.DIORITE, StateTypes.ANDESITE, StateTypes.TUFF, StateTypes.DEEPSLATE);
+        BlockTags.STONE_ORE_REPLACEABLES.add(StateTypes.STONE, StateTypes.GRANITE, StateTypes.DIORITE, StateTypes.ANDESITE);
+        BlockTags.HEIGHT_SPECIFIC_ORE_REPLACEABLES.add(StateTypes.TUFF);
+        BlockTags.DEEPSLATE_ORE_REPLACEABLES.add(StateTypes.DEEPSLATE);
+        BlockTags.BASE_STONE_NETHER.add(StateTypes.NETHERRACK, StateTypes.BASALT, StateTypes.BLACKSTONE);
+        BlockTags.CANNOT_PLACE_BASALT_PILLAR_ON.add(StateTypes.LAVA, StateTypes.BEDROCK, StateTypes.MAGMA_BLOCK, StateTypes.SOUL_SAND, StateTypes.NETHER_BRICKS, StateTypes.NETHER_BRICK_FENCE, StateTypes.NETHER_BRICK_STAIRS, StateTypes.NETHER_WART, StateTypes.CHEST, StateTypes.SPAWNER);
+        BlockTags.UNCARVABLE.add(StateTypes.BEDROCK);
+        BlockTags.CANDLE_CAKES.add(StateTypes.CANDLE_CAKE, StateTypes.WHITE_CANDLE_CAKE, StateTypes.ORANGE_CANDLE_CAKE, StateTypes.MAGENTA_CANDLE_CAKE, StateTypes.LIGHT_BLUE_CANDLE_CAKE, StateTypes.YELLOW_CANDLE_CAKE, StateTypes.LIME_CANDLE_CAKE, StateTypes.PINK_CANDLE_CAKE, StateTypes.GRAY_CANDLE_CAKE, StateTypes.LIGHT_GRAY_CANDLE_CAKE, StateTypes.CYAN_CANDLE_CAKE, StateTypes.PURPLE_CANDLE_CAKE, StateTypes.BLUE_CANDLE_CAKE, StateTypes.BROWN_CANDLE_CAKE, StateTypes.GREEN_CANDLE_CAKE, StateTypes.RED_CANDLE_CAKE, StateTypes.BLACK_CANDLE_CAKE);
+        BlockTags.CAULDRONS.add(StateTypes.CAULDRON, StateTypes.WATER_CAULDRON, StateTypes.LAVA_CAULDRON, StateTypes.POWDER_SNOW_CAULDRON);
+        BlockTags.CRYSTAL_SOUND_BLOCKS.add(StateTypes.AMETHYST_BLOCK, StateTypes.BUDDING_AMETHYST);
+        BlockTags.INSIDE_STEP_SOUND_BLOCKS.add(StateTypes.POWDER_SNOW, StateTypes.SCULK_VEIN, StateTypes.GLOW_LICHEN, StateTypes.LILY_PAD, StateTypes.SMALL_AMETHYST_BUD, StateTypes.PINK_PETALS, StateTypes.WILDFLOWERS, StateTypes.LEAF_LITTER);
+        BlockTags.SULFUR_SPIKE_REPLACEABLE_BLOCKS.add(StateTypes.SULFUR, StateTypes.CINNABAR);
+        BlockTags.CAVE_VINES.add(StateTypes.CAVE_VINES_PLANT, StateTypes.CAVE_VINES);
+        BlockTags.SNOW.add(StateTypes.SNOW, StateTypes.SNOW_BLOCK, StateTypes.POWDER_SNOW);
+        BlockTags.SWORD_INSTANTLY_MINES.add(StateTypes.BAMBOO, StateTypes.BAMBOO_SAPLING);
+        BlockTags.SHEARS_MINOR_BREAKING_SPEED.add(StateTypes.GLOW_LICHEN, StateTypes.VINE);
+        BlockTags.TURNS_INTO_DIRT_PATH.add(StateTypes.GRASS_BLOCK, StateTypes.DIRT, StateTypes.PODZOL, StateTypes.COARSE_DIRT, StateTypes.MYCELIUM, StateTypes.ROOTED_DIRT);
+        BlockTags.TURNS_INTO_FARMLAND.add(StateTypes.GRASS_BLOCK, StateTypes.DIRT_PATH, StateTypes.DIRT);
+        BlockTags.NEEDS_DIAMOND_TOOL.add(StateTypes.OBSIDIAN, StateTypes.CRYING_OBSIDIAN, StateTypes.NETHERITE_BLOCK, StateTypes.RESPAWN_ANCHOR, StateTypes.ANCIENT_DEBRIS);
+        BlockTags.NEEDS_IRON_TOOL.add(StateTypes.DIAMOND_BLOCK, StateTypes.DIAMOND_ORE, StateTypes.DEEPSLATE_DIAMOND_ORE, StateTypes.EMERALD_ORE, StateTypes.DEEPSLATE_EMERALD_ORE, StateTypes.EMERALD_BLOCK, StateTypes.GOLD_BLOCK, StateTypes.RAW_GOLD_BLOCK, StateTypes.GOLD_ORE, StateTypes.DEEPSLATE_GOLD_ORE, StateTypes.REDSTONE_ORE, StateTypes.DEEPSLATE_REDSTONE_ORE);
+        copy(null, BlockTags.INCORRECT_FOR_NETHERITE_TOOL);
+        copy(null, BlockTags.INCORRECT_FOR_DIAMOND_TOOL);
+        BlockTags.FEATURES_CANNOT_REPLACE.add(StateTypes.BEDROCK, StateTypes.SPAWNER, StateTypes.CHEST, StateTypes.END_PORTAL_FRAME, StateTypes.REINFORCED_DEEPSLATE, StateTypes.TRIAL_SPAWNER, StateTypes.VAULT);
+        BlockTags.GEODE_INVALID_BLOCKS.add(StateTypes.BEDROCK, StateTypes.WATER, StateTypes.LAVA, StateTypes.ICE, StateTypes.PACKED_ICE, StateTypes.BLUE_ICE);
+        BlockTags.FROG_PREFER_JUMP_TO.add(StateTypes.LILY_PAD, StateTypes.BIG_DRIPLEAF);
+        BlockTags.SCULK_GROWTH_INHIBITORS.add(StateTypes.SCULK_SENSOR, StateTypes.SCULK_SHRIEKER);
+        BlockTags.ANCIENT_CITY_REPLACEABLE.add(StateTypes.DEEPSLATE, StateTypes.DEEPSLATE_BRICKS, StateTypes.DEEPSLATE_TILES, StateTypes.DEEPSLATE_BRICK_SLAB, StateTypes.DEEPSLATE_TILE_SLAB, StateTypes.DEEPSLATE_BRICK_STAIRS, StateTypes.DEEPSLATE_TILE_WALL, StateTypes.DEEPSLATE_BRICK_WALL, StateTypes.COBBLED_DEEPSLATE, StateTypes.CRACKED_DEEPSLATE_BRICKS, StateTypes.CRACKED_DEEPSLATE_TILES, StateTypes.GRAY_WOOL);
+        BlockTags.VIBRATION_RESONATORS.add(StateTypes.AMETHYST_BLOCK);
+        BlockTags.ANIMALS_SPAWNABLE_ON.add(StateTypes.GRASS_BLOCK);
+        BlockTags.AXOLOTLS_SPAWNABLE_ON.add(StateTypes.CLAY);
+        BlockTags.MOOSHROOMS_SPAWNABLE_ON.add(StateTypes.MYCELIUM);
+        BlockTags.POLAR_BEARS_SPAWNABLE_ON_ALTERNATE.add(StateTypes.ICE);
+        BlockTags.RABBITS_SPAWNABLE_ON.add(StateTypes.GRASS_BLOCK, StateTypes.SNOW, StateTypes.SNOW_BLOCK, StateTypes.SAND);
+        BlockTags.FOXES_SPAWNABLE_ON.add(StateTypes.GRASS_BLOCK, StateTypes.SNOW, StateTypes.SNOW_BLOCK, StateTypes.PODZOL, StateTypes.COARSE_DIRT);
+        BlockTags.WOLVES_SPAWNABLE_ON.add(StateTypes.GRASS_BLOCK, StateTypes.SNOW, StateTypes.SNOW_BLOCK, StateTypes.COARSE_DIRT, StateTypes.PODZOL);
+        BlockTags.FROGS_SPAWNABLE_ON.add(StateTypes.GRASS_BLOCK, StateTypes.MUD, StateTypes.MANGROVE_ROOTS, StateTypes.MUDDY_MANGROVE_ROOTS);
+        copy(BlockTags.DIRT, BlockTags.CONVERTIBLE_TO_MUD);
+        BlockTags.MANGROVE_LOGS_CAN_GROW_THROUGH.add(StateTypes.MUD, StateTypes.MUDDY_MANGROVE_ROOTS, StateTypes.MANGROVE_ROOTS, StateTypes.MANGROVE_LEAVES, StateTypes.MANGROVE_LOG, StateTypes.MANGROVE_PROPAGULE, StateTypes.MOSS_CARPET, StateTypes.VINE);
+        BlockTags.MANGROVE_ROOTS_CAN_GROW_THROUGH.add(StateTypes.MUD, StateTypes.MUDDY_MANGROVE_ROOTS, StateTypes.MANGROVE_ROOTS, StateTypes.MOSS_CARPET, StateTypes.VINE, StateTypes.MANGROVE_PROPAGULE, StateTypes.SNOW);
+        copy(BlockTags.CAUSES_PERIODIC_GEYSER_ERUPTIONS, BlockTags.ENABLES_BUBBLE_COLUMN_DRAG_DOWN);
+        BlockTags.ENABLES_BUBBLE_COLUMN_PUSH_UP.add(StateTypes.SOUL_SAND);
+        BlockTags.SUPPORTS_CROPS.add(StateTypes.FARMLAND);
+        BlockTags.SUPPORTS_SUGAR_CANE_ADJACENTLY.add(StateTypes.FROSTED_ICE);
+        BlockTags.SUPPORTS_SMALL_DRIPLEAF.add(StateTypes.CLAY, StateTypes.MOSS_BLOCK);
+        BlockTags.SUPPORTS_CHORUS_PLANT.add(StateTypes.END_STONE);
+        copy(BlockTags.SUPPORTS_CHORUS_PLANT, BlockTags.SUPPORTS_CHORUS_FLOWER);
+        BlockTags.SUPPORTS_HANGING_MANGROVE_PROPAGULE.add(StateTypes.MANGROVE_LEAVES);
+        copy(BlockTags.ENABLES_BUBBLE_COLUMN_PUSH_UP, BlockTags.SUPPORTS_NETHER_WART);
+        BlockTags.SUPPORTS_LILY_PAD.add(StateTypes.ICE, StateTypes.FROSTED_ICE);
+        copy(null, BlockTags.SUPPORTS_FROGSPAWN);
+        BlockTags.SUPPORT_OVERRIDE_CACTUS_FLOWER.add(StateTypes.CACTUS, StateTypes.FARMLAND);
+        BlockTags.SUPPORT_OVERRIDE_SNOW_LAYER.add(StateTypes.HONEY_BLOCK, StateTypes.SOUL_SAND, StateTypes.MUD);
+        BlockTags.CANNOT_SUPPORT_SNOW_LAYER.add(StateTypes.ICE, StateTypes.PACKED_ICE, StateTypes.BARRIER);
+        copy(BlockTags.CAUSES_PERIODIC_GEYSER_ERUPTIONS, BlockTags.CANNOT_SUPPORT_SEAGRASS);
+        copy(BlockTags.CAUSES_PERIODIC_GEYSER_ERUPTIONS, BlockTags.CANNOT_SUPPORT_KELP);
+        BlockTags.OVERRIDES_MUSHROOM_LIGHT_REQUIREMENT.add(StateTypes.MYCELIUM, StateTypes.PODZOL, StateTypes.CRIMSON_NYLIUM, StateTypes.WARPED_NYLIUM);
+        copy(BlockTags.SUPPORTS_CROPS, BlockTags.GROWS_CROPS);
+        BlockTags.INVALID_SPAWN_INSIDE.add(StateTypes.END_PORTAL, StateTypes.END_GATEWAY);
+        BlockTags.SNIFFER_EGG_HATCH_BOOST.add(StateTypes.MOSS_BLOCK);
+        BlockTags.TRAIL_RUINS_REPLACEABLE.add(StateTypes.GRAVEL);
+        BlockTags.REPLACEABLE.add(StateTypes.AIR, StateTypes.WATER, StateTypes.LAVA, StateTypes.SHORT_GRASS, StateTypes.FERN, StateTypes.DEAD_BUSH, StateTypes.BUSH, StateTypes.RED_SHRUB, StateTypes.SHORT_DRY_GRASS, StateTypes.TALL_DRY_GRASS, StateTypes.SEAGRASS, StateTypes.TALL_SEAGRASS, StateTypes.FIRE, StateTypes.SOUL_FIRE, StateTypes.SNOW, StateTypes.VINE, StateTypes.GLOW_LICHEN, StateTypes.RESIN_CLUMP, StateTypes.LIGHT, StateTypes.TALL_GRASS, StateTypes.LARGE_FERN, StateTypes.STRUCTURE_VOID, StateTypes.VOID_AIR, StateTypes.CAVE_AIR, StateTypes.BUBBLE_COLUMN, StateTypes.WARPED_ROOTS, StateTypes.NETHER_SPROUTS, StateTypes.CRIMSON_ROOTS, StateTypes.LEAF_LITTER, StateTypes.HANGING_ROOTS);
+        BlockTags.ENCHANTMENT_POWER_PROVIDER.add(StateTypes.BOOKSHELF);
+        BlockTags.BLOCKS_WIND_CHARGE_EXPLOSIONS.add(StateTypes.BARRIER, StateTypes.BEDROCK);
+        BlockTags.SUPPRESSES_BOUNCE.add(StateTypes.HONEY_BLOCK);
+        BlockTags.TRIGGERS_AMBIENT_DESERT_SAND_BLOCK_SOUNDS.add(StateTypes.SAND, StateTypes.RED_SAND);
+        copy(BlockTags.SOUL_FIRE_BASE_BLOCKS, BlockTags.TRIGGERS_AMBIENT_DRIED_GHAST_BLOCK_SOUNDS);
+        BlockTags.SPELEOTHEMS.add(StateTypes.POINTED_DRIPSTONE, StateTypes.SULFUR_SPIKE);
+        BlockTags.DANGEROUS_FOR_TELEPORTATION.add(StateTypes.FIRE, StateTypes.SOUL_FIRE, StateTypes.LAVA_CAULDRON, StateTypes.CAMPFIRE, StateTypes.SOUL_CAMPFIRE, StateTypes.CACTUS, StateTypes.MAGMA_BLOCK, StateTypes.SWEET_BERRY_BUSH, StateTypes.WITHER_ROSE, StateTypes.POINTED_DRIPSTONE, StateTypes.POWDER_SNOW);
+        copy(BlockTags.UNCARVABLE, BlockTags.SHULKER_DOES_NOT_TELEPORT_TO);
+        copy(null, BlockTags.CONSUMABLE_DOES_NOT_TELEPORT_TO);
+        BlockTags.FOX_IMMUNE_TO.add(StateTypes.SWEET_BERRY_BUSH);
+        BlockTags.POLAR_BEAR_IMMUNE_TO.add(StateTypes.POWDER_SNOW);
+        copy(BlockTags.POLAR_BEAR_IMMUNE_TO, BlockTags.SNOW_GOLEM_IMMUNE_TO);
+        copy(BlockTags.POLAR_BEAR_IMMUNE_TO, BlockTags.STRAY_IMMUNE_TO);
+        BlockTags.WITHER_IMMUNE_TO.add(StateTypes.WITHER_ROSE);
+        copy(BlockTags.WITHER_IMMUNE_TO, BlockTags.WITHER_SKELETON_IMMUNE_TO);
+        copy(null, BlockTags.DEFAULT_IMMUNE_TO);
+        BlockTags.AIR.add(StateTypes.AIR, StateTypes.VOID_AIR, StateTypes.CAVE_AIR);
+        BlockTags.OAK_LOGS.add(StateTypes.OAK_LOG, StateTypes.OAK_WOOD, StateTypes.STRIPPED_OAK_LOG, StateTypes.STRIPPED_OAK_WOOD);
+        BlockTags.DARK_OAK_LOGS.add(StateTypes.DARK_OAK_LOG, StateTypes.DARK_OAK_WOOD, StateTypes.STRIPPED_DARK_OAK_LOG, StateTypes.STRIPPED_DARK_OAK_WOOD);
+        BlockTags.BIRCH_LOGS.add(StateTypes.BIRCH_LOG, StateTypes.BIRCH_WOOD, StateTypes.STRIPPED_BIRCH_LOG, StateTypes.STRIPPED_BIRCH_WOOD);
+        BlockTags.ACACIA_LOGS.add(StateTypes.ACACIA_LOG, StateTypes.ACACIA_WOOD, StateTypes.STRIPPED_ACACIA_LOG, StateTypes.STRIPPED_ACACIA_WOOD);
+        BlockTags.SPRUCE_LOGS.add(StateTypes.SPRUCE_LOG, StateTypes.SPRUCE_WOOD, StateTypes.STRIPPED_SPRUCE_LOG, StateTypes.STRIPPED_SPRUCE_WOOD);
+        BlockTags.MANGROVE_LOGS.add(StateTypes.MANGROVE_LOG, StateTypes.MANGROVE_WOOD, StateTypes.STRIPPED_MANGROVE_LOG, StateTypes.STRIPPED_MANGROVE_WOOD);
+        BlockTags.POPLAR_LOGS.add(StateTypes.POPLAR_LOG, StateTypes.POPLAR_WOOD, StateTypes.STRIPPED_POPLAR_LOG, StateTypes.STRIPPED_POPLAR_WOOD);
+        BlockTags.CHERRY_LOGS.add(StateTypes.CHERRY_LOG, StateTypes.CHERRY_WOOD, StateTypes.STRIPPED_CHERRY_LOG, StateTypes.STRIPPED_CHERRY_WOOD);
+        BlockTags.CRIMSON_STEMS.add(StateTypes.CRIMSON_STEM, StateTypes.STRIPPED_CRIMSON_STEM, StateTypes.CRIMSON_HYPHAE, StateTypes.STRIPPED_CRIMSON_HYPHAE);
+        BlockTags.WARPED_STEMS.add(StateTypes.WARPED_STEM, StateTypes.STRIPPED_WARPED_STEM, StateTypes.WARPED_HYPHAE, StateTypes.STRIPPED_WARPED_HYPHAE);
+        copy(BlockTags.TRIGGERS_AMBIENT_DESERT_SAND_BLOCK_SOUNDS, BlockTags.SMELTS_TO_GLASS);
+        BlockTags.DIAMOND_ORES.add(StateTypes.DIAMOND_ORE, StateTypes.DEEPSLATE_DIAMOND_ORE);
+        BlockTags.REDSTONE_ORES.add(StateTypes.REDSTONE_ORE, StateTypes.DEEPSLATE_REDSTONE_ORE);
+        BlockTags.LAPIS_ORES.add(StateTypes.LAPIS_ORE, StateTypes.DEEPSLATE_LAPIS_ORE);
+        BlockTags.COAL_ORES.add(StateTypes.COAL_ORE, StateTypes.DEEPSLATE_COAL_ORE);
+        BlockTags.EMERALD_ORES.add(StateTypes.EMERALD_ORE, StateTypes.DEEPSLATE_EMERALD_ORE);
+        BlockTags.BUTTONS.addTag(BlockTags.WOODEN_BUTTONS).addTag(BlockTags.STONE_BUTTONS);
+        BlockTags.DOORS.addTag(BlockTags.WOODEN_DOORS).add(StateTypes.COPPER_DOOR, StateTypes.EXPOSED_COPPER_DOOR, StateTypes.WEATHERED_COPPER_DOOR, StateTypes.OXIDIZED_COPPER_DOOR, StateTypes.WAXED_COPPER_DOOR, StateTypes.WAXED_EXPOSED_COPPER_DOOR, StateTypes.WAXED_WEATHERED_COPPER_DOOR, StateTypes.WAXED_OXIDIZED_COPPER_DOOR, StateTypes.IRON_DOOR);
+        BlockTags.SLABS.addTag(BlockTags.WOODEN_SLABS).addTag(BlockTags.WOOL_SLABS).addTag(BlockTags.CONCRETE_SLABS).add(StateTypes.STONE_SLAB, StateTypes.SMOOTH_STONE_SLAB, StateTypes.STONE_BRICK_SLAB, StateTypes.SANDSTONE_SLAB, StateTypes.COBBLESTONE_SLAB, StateTypes.BRICK_SLAB, StateTypes.NETHER_BRICK_SLAB, StateTypes.QUARTZ_SLAB, StateTypes.RED_SANDSTONE_SLAB, StateTypes.PRISMARINE_SLAB, StateTypes.PRISMARINE_BRICK_SLAB, StateTypes.DARK_PRISMARINE_SLAB, StateTypes.PURPUR_SLAB, StateTypes.END_STONE_BRICK_SLAB, StateTypes.PETRIFIED_OAK_SLAB, StateTypes.CUT_SANDSTONE_SLAB, StateTypes.SMOOTH_SANDSTONE_SLAB, StateTypes.CUT_RED_SANDSTONE_SLAB, StateTypes.SMOOTH_RED_SANDSTONE_SLAB, StateTypes.SMOOTH_QUARTZ_SLAB, StateTypes.MOSSY_COBBLESTONE_SLAB, StateTypes.MOSSY_STONE_BRICK_SLAB, StateTypes.GRANITE_SLAB, StateTypes.POLISHED_GRANITE_SLAB, StateTypes.DIORITE_SLAB, StateTypes.POLISHED_DIORITE_SLAB, StateTypes.ANDESITE_SLAB, StateTypes.POLISHED_ANDESITE_SLAB, StateTypes.RED_NETHER_BRICK_SLAB, StateTypes.BLACKSTONE_SLAB, StateTypes.POLISHED_BLACKSTONE_SLAB, StateTypes.POLISHED_BLACKSTONE_BRICK_SLAB, StateTypes.CUT_COPPER_SLAB, StateTypes.EXPOSED_CUT_COPPER_SLAB, StateTypes.WEATHERED_CUT_COPPER_SLAB, StateTypes.OXIDIZED_CUT_COPPER_SLAB, StateTypes.WAXED_CUT_COPPER_SLAB, StateTypes.WAXED_EXPOSED_CUT_COPPER_SLAB, StateTypes.WAXED_WEATHERED_CUT_COPPER_SLAB, StateTypes.WAXED_OXIDIZED_CUT_COPPER_SLAB, StateTypes.COBBLED_DEEPSLATE_SLAB, StateTypes.POLISHED_DEEPSLATE_SLAB, StateTypes.DEEPSLATE_BRICK_SLAB, StateTypes.DEEPSLATE_TILE_SLAB, StateTypes.MUD_BRICK_SLAB, StateTypes.BAMBOO_MOSAIC_SLAB, StateTypes.TUFF_SLAB, StateTypes.POLISHED_TUFF_SLAB, StateTypes.TUFF_BRICK_SLAB, StateTypes.RESIN_BRICK_SLAB, StateTypes.CINNABAR_SLAB, StateTypes.POLISHED_CINNABAR_SLAB, StateTypes.CINNABAR_BRICK_SLAB, StateTypes.SULFUR_SLAB, StateTypes.POLISHED_SULFUR_SLAB, StateTypes.SULFUR_BRICK_SLAB);
+        BlockTags.STAIRS.addTag(BlockTags.WOODEN_STAIRS).addTag(BlockTags.WOOL_STAIRS).addTag(BlockTags.CONCRETE_STAIRS).add(StateTypes.COBBLESTONE_STAIRS, StateTypes.SANDSTONE_STAIRS, StateTypes.BRICK_STAIRS, StateTypes.STONE_BRICK_STAIRS, StateTypes.NETHER_BRICK_STAIRS, StateTypes.QUARTZ_STAIRS, StateTypes.RED_SANDSTONE_STAIRS, StateTypes.PRISMARINE_STAIRS, StateTypes.PRISMARINE_BRICK_STAIRS, StateTypes.DARK_PRISMARINE_STAIRS, StateTypes.PURPUR_STAIRS, StateTypes.END_STONE_BRICK_STAIRS, StateTypes.STONE_STAIRS, StateTypes.SMOOTH_SANDSTONE_STAIRS, StateTypes.SMOOTH_RED_SANDSTONE_STAIRS, StateTypes.SMOOTH_QUARTZ_STAIRS, StateTypes.MOSSY_COBBLESTONE_STAIRS, StateTypes.MOSSY_STONE_BRICK_STAIRS, StateTypes.GRANITE_STAIRS, StateTypes.POLISHED_GRANITE_STAIRS, StateTypes.DIORITE_STAIRS, StateTypes.POLISHED_DIORITE_STAIRS, StateTypes.ANDESITE_STAIRS, StateTypes.POLISHED_ANDESITE_STAIRS, StateTypes.RED_NETHER_BRICK_STAIRS, StateTypes.BLACKSTONE_STAIRS, StateTypes.POLISHED_BLACKSTONE_STAIRS, StateTypes.POLISHED_BLACKSTONE_BRICK_STAIRS, StateTypes.CUT_COPPER_STAIRS, StateTypes.EXPOSED_CUT_COPPER_STAIRS, StateTypes.WEATHERED_CUT_COPPER_STAIRS, StateTypes.OXIDIZED_CUT_COPPER_STAIRS, StateTypes.WAXED_CUT_COPPER_STAIRS, StateTypes.WAXED_EXPOSED_CUT_COPPER_STAIRS, StateTypes.WAXED_WEATHERED_CUT_COPPER_STAIRS, StateTypes.WAXED_OXIDIZED_CUT_COPPER_STAIRS, StateTypes.COBBLED_DEEPSLATE_STAIRS, StateTypes.POLISHED_DEEPSLATE_STAIRS, StateTypes.DEEPSLATE_BRICK_STAIRS, StateTypes.DEEPSLATE_TILE_STAIRS, StateTypes.MUD_BRICK_STAIRS, StateTypes.BAMBOO_MOSAIC_STAIRS, StateTypes.TUFF_STAIRS, StateTypes.POLISHED_TUFF_STAIRS, StateTypes.TUFF_BRICK_STAIRS, StateTypes.RESIN_BRICK_STAIRS, StateTypes.CINNABAR_STAIRS, StateTypes.POLISHED_CINNABAR_STAIRS, StateTypes.CINNABAR_BRICK_STAIRS, StateTypes.SULFUR_STAIRS, StateTypes.POLISHED_SULFUR_STAIRS, StateTypes.SULFUR_BRICK_STAIRS);
+        BlockTags.TRAPDOORS.addTag(BlockTags.WOODEN_TRAPDOORS).add(StateTypes.IRON_TRAPDOOR, StateTypes.COPPER_TRAPDOOR, StateTypes.EXPOSED_COPPER_TRAPDOOR, StateTypes.WEATHERED_COPPER_TRAPDOOR, StateTypes.OXIDIZED_COPPER_TRAPDOOR, StateTypes.WAXED_COPPER_TRAPDOOR, StateTypes.WAXED_EXPOSED_COPPER_TRAPDOOR, StateTypes.WAXED_WEATHERED_COPPER_TRAPDOOR, StateTypes.WAXED_OXIDIZED_COPPER_TRAPDOOR);
+        BlockTags.FLOWERS.addTag(BlockTags.SMALL_FLOWERS).add(StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.PEONY, StateTypes.ROSE_BUSH, StateTypes.PITCHER_PLANT, StateTypes.FLOWERING_AZALEA_LEAVES, StateTypes.FLOWERING_AZALEA, StateTypes.MANGROVE_PROPAGULE, StateTypes.CHERRY_LEAVES, StateTypes.PINK_PETALS, StateTypes.WILDFLOWERS, StateTypes.CHORUS_FLOWER, StateTypes.SPORE_BLOSSOM, StateTypes.CACTUS_FLOWER);
+        BlockTags.FENCES.addTag(BlockTags.WOODEN_FENCES).add(StateTypes.NETHER_BRICK_FENCE);
+        BlockTags.DAMPENS_VIBRATIONS.addTag(BlockTags.WOOL).addTag(BlockTags.WOOL_CARPETS).addTag(BlockTags.WOOL_SLABS).addTag(BlockTags.WOOL_STAIRS);
+        BlockTags.ORES.addTag(BlockTags.COPPER_ORES).addTag(BlockTags.GOLD_ORES).addTag(BlockTags.IRON_ORES).addTag(BlockTags.COAL_ORES).addTag(BlockTags.DIAMOND_ORES).addTag(BlockTags.EMERALD_ORES).addTag(BlockTags.LAPIS_ORES).addTag(BlockTags.REDSTONE_ORES).add(StateTypes.NETHER_QUARTZ_ORE);
+        BlockTags.MOB_INTERACTABLE_DOORS.addTag(BlockTags.WOODEN_DOORS).add(StateTypes.COPPER_DOOR, StateTypes.EXPOSED_COPPER_DOOR, StateTypes.WEATHERED_COPPER_DOOR, StateTypes.OXIDIZED_COPPER_DOOR, StateTypes.WAXED_COPPER_DOOR, StateTypes.WAXED_EXPOSED_COPPER_DOOR, StateTypes.WAXED_WEATHERED_COPPER_DOOR, StateTypes.WAXED_OXIDIZED_COPPER_DOOR);
+        BlockTags.PRESSURE_PLATES.addTag(BlockTags.WOODEN_PRESSURE_PLATES).addTag(BlockTags.STONE_PRESSURE_PLATES).add(StateTypes.LIGHT_WEIGHTED_PRESSURE_PLATE, StateTypes.HEAVY_WEIGHTED_PRESSURE_PLATE);
+        BlockTags.ENDERMAN_HOLDABLE.addTag(BlockTags.SMALL_FLOWERS).addTag(BlockTags.DIRT).addTag(BlockTags.MUD).addTag(BlockTags.MOSS_BLOCKS).addTag(BlockTags.GRASS_BLOCKS).add(StateTypes.SAND, StateTypes.RED_SAND, StateTypes.GRAVEL, StateTypes.BROWN_MUSHROOM, StateTypes.RED_MUSHROOM, StateTypes.TNT, StateTypes.CACTUS, StateTypes.CLAY, StateTypes.PUMPKIN, StateTypes.CARVED_PUMPKIN, StateTypes.MELON, StateTypes.CRIMSON_FUNGUS, StateTypes.CRIMSON_NYLIUM, StateTypes.CRIMSON_ROOTS, StateTypes.WARPED_FUNGUS, StateTypes.WARPED_NYLIUM, StateTypes.WARPED_ROOTS, StateTypes.CACTUS_FLOWER);
+        BlockTags.CORALS.addTag(BlockTags.CORAL_PLANTS).add(StateTypes.TUBE_CORAL_FAN, StateTypes.BRAIN_CORAL_FAN, StateTypes.BUBBLE_CORAL_FAN, StateTypes.FIRE_CORAL_FAN, StateTypes.HORN_CORAL_FAN);
+        BlockTags.SIGNS.addTag(BlockTags.STANDING_SIGNS).addTag(BlockTags.WALL_SIGNS);
+        BlockTags.ALL_HANGING_SIGNS.addTag(BlockTags.CEILING_HANGING_SIGNS).addTag(BlockTags.WALL_HANGING_SIGNS);
+        BlockTags.DRAGON_TRANSPARENT.addTag(BlockTags.FIRE).add(StateTypes.LIGHT);
+        BlockTags.BEE_GROWABLES.addTag(BlockTags.CROPS).add(StateTypes.SWEET_BERRY_BUSH, StateTypes.CAVE_VINES, StateTypes.CAVE_VINES_PLANT);
+        BlockTags.FALL_DAMAGE_RESETTING.addTag(BlockTags.CLIMBABLE).add(StateTypes.SWEET_BERRY_BUSH, StateTypes.COBWEB);
+        BlockTags.GUARDED_BY_PIGLINS.addTag(BlockTags.COPPER_CHESTS).addTag(BlockTags.SHULKER_BOXES).addTag(BlockTags.GOLD_ORES).add(StateTypes.GOLD_BLOCK, StateTypes.BARREL, StateTypes.CHEST, StateTypes.ENDER_CHEST, StateTypes.GILDED_BLACKSTONE, StateTypes.TRAPPED_CHEST, StateTypes.RAW_GOLD_BLOCK);
+        BlockTags.PREVENT_MOB_SPAWNING_INSIDE.addTag(BlockTags.RAILS);
+        BlockTags.UNSTABLE_BOTTOM_CENTER.addTag(BlockTags.FENCE_GATES);
+        BlockTags.CAN_GLIDE_THROUGH.addTag(BlockTags.CAVE_VINES).add(StateTypes.VINE, StateTypes.TWISTING_VINES, StateTypes.TWISTING_VINES_PLANT, StateTypes.WEEPING_VINES, StateTypes.WEEPING_VINES_PLANT);
+        BlockTags.INFINIBURN_NETHER.addTag(BlockTags.INFINIBURN_OVERWORLD);
+        BlockTags.INFINIBURN_END.addTag(BlockTags.INFINIBURN_OVERWORLD).add(StateTypes.BEDROCK);
+        BlockTags.SUBSTRATE_OVERWORLD.addTag(BlockTags.DIRT).addTag(BlockTags.MUD).addTag(BlockTags.MOSS_BLOCKS).addTag(BlockTags.GRASS_BLOCKS);
+        BlockTags.CANNOT_REPLACE_BELOW_TREE_TRUNK.addTag(BlockTags.DIRT).addTag(BlockTags.MUD).addTag(BlockTags.MOSS_BLOCKS).add(StateTypes.PODZOL);
+        BlockTags.COMBINATION_STEP_SOUND_BLOCKS.addTag(BlockTags.WOOL_CARPETS).add(StateTypes.MOSS_CARPET, StateTypes.PALE_MOSS_CARPET, StateTypes.SNOW, StateTypes.NETHER_SPROUTS, StateTypes.WARPED_ROOTS, StateTypes.CRIMSON_ROOTS, StateTypes.RESIN_CLUMP);
+        BlockTags.CAMEL_SAND_STEP_SOUND_BLOCKS.addTag(BlockTags.SAND).addTag(BlockTags.CONCRETE_POWDERS);
+        BlockTags.HAPPY_GHAST_AVOIDS.addTag(BlockTags.SPELEOTHEMS).add(StateTypes.SWEET_BERRY_BUSH, StateTypes.CACTUS, StateTypes.WITHER_ROSE, StateTypes.MAGMA_BLOCK, StateTypes.FIRE);
+        BlockTags.OCCLUDES_VIBRATION_SIGNALS.addTag(BlockTags.WOOL);
+        BlockTags.CUSHION_USES_COLLISION_SHAPE.addTag(BlockTags.CAULDRONS).add(StateTypes.HOPPER, StateTypes.COMPOSTER);
+        BlockTags.DRIPSTONE_REPLACEABLE_BLOCKS.addTag(BlockTags.BASE_STONE_OVERWORLD);
+        BlockTags.MOSS_REPLACEABLE.addTag(BlockTags.BASE_STONE_OVERWORLD).addTag(BlockTags.CAVE_VINES).addTag(BlockTags.DIRT).addTag(BlockTags.MUD).addTag(BlockTags.MOSS_BLOCKS).addTag(BlockTags.GRASS_BLOCKS);
+        BlockTags.MINEABLE_HOE.addTag(BlockTags.LEAVES).add(StateTypes.NETHER_WART_BLOCK, StateTypes.WARPED_WART_BLOCK, StateTypes.HAY_BLOCK, StateTypes.DRIED_KELP_BLOCK, StateTypes.TARGET, StateTypes.SHROOMLIGHT, StateTypes.SPONGE, StateTypes.WET_SPONGE, StateTypes.SCULK_SENSOR, StateTypes.CALIBRATED_SCULK_SENSOR, StateTypes.MOSS_BLOCK, StateTypes.MOSS_CARPET, StateTypes.PALE_MOSS_BLOCK, StateTypes.PALE_MOSS_CARPET, StateTypes.SCULK, StateTypes.SCULK_CATALYST, StateTypes.SCULK_VEIN, StateTypes.SCULK_SHRIEKER, StateTypes.STRAW_BED);
+        BlockTags.MINEABLE_PICKAXE.addTag(BlockTags.STONE_BUTTONS).addTag(BlockTags.WALLS).addTag(BlockTags.SHULKER_BOXES).addTag(BlockTags.ANVIL).addTag(BlockTags.CAULDRONS).addTag(BlockTags.RAILS).addTag(BlockTags.COPPER_CHESTS).addTag(BlockTags.COPPER_GOLEM_STATUES).addTag(BlockTags.LIGHTNING_RODS).addTag(BlockTags.LANTERNS).addTag(BlockTags.CHAINS).addTag(BlockTags.BARS).addTag(BlockTags.SPELEOTHEMS).add(StateTypes.STONE, StateTypes.GRANITE, StateTypes.POLISHED_GRANITE, StateTypes.DIORITE, StateTypes.POLISHED_DIORITE, StateTypes.ANDESITE, StateTypes.POLISHED_ANDESITE, StateTypes.COBBLESTONE, StateTypes.GOLD_ORE, StateTypes.DEEPSLATE_GOLD_ORE, StateTypes.IRON_ORE, StateTypes.DEEPSLATE_IRON_ORE, StateTypes.COAL_ORE, StateTypes.DEEPSLATE_COAL_ORE, StateTypes.NETHER_GOLD_ORE, StateTypes.LAPIS_ORE, StateTypes.DEEPSLATE_LAPIS_ORE, StateTypes.LAPIS_BLOCK, StateTypes.DISPENSER, StateTypes.SANDSTONE, StateTypes.CHISELED_SANDSTONE, StateTypes.CUT_SANDSTONE, StateTypes.GOLD_BLOCK, StateTypes.IRON_BLOCK, StateTypes.BRICKS, StateTypes.MOSSY_COBBLESTONE, StateTypes.OBSIDIAN, StateTypes.SPAWNER, StateTypes.DIAMOND_ORE, StateTypes.DEEPSLATE_DIAMOND_ORE, StateTypes.DIAMOND_BLOCK, StateTypes.FURNACE, StateTypes.COBBLESTONE_STAIRS, StateTypes.STONE_PRESSURE_PLATE, StateTypes.IRON_DOOR, StateTypes.REDSTONE_ORE, StateTypes.DEEPSLATE_REDSTONE_ORE, StateTypes.NETHERRACK, StateTypes.BASALT, StateTypes.POLISHED_BASALT, StateTypes.STONE_BRICKS, StateTypes.MOSSY_STONE_BRICKS, StateTypes.CRACKED_STONE_BRICKS, StateTypes.CHISELED_STONE_BRICKS, StateTypes.BRICK_STAIRS, StateTypes.STONE_BRICK_STAIRS, StateTypes.NETHER_BRICKS, StateTypes.NETHER_BRICK_FENCE, StateTypes.NETHER_BRICK_STAIRS, StateTypes.ENCHANTING_TABLE, StateTypes.BREWING_STAND, StateTypes.END_STONE, StateTypes.SANDSTONE_STAIRS, StateTypes.EMERALD_ORE, StateTypes.DEEPSLATE_EMERALD_ORE, StateTypes.ENDER_CHEST, StateTypes.EMERALD_BLOCK, StateTypes.LIGHT_WEIGHTED_PRESSURE_PLATE, StateTypes.HEAVY_WEIGHTED_PRESSURE_PLATE, StateTypes.REDSTONE_BLOCK, StateTypes.NETHER_QUARTZ_ORE, StateTypes.HOPPER, StateTypes.QUARTZ_BLOCK, StateTypes.CHISELED_QUARTZ_BLOCK, StateTypes.QUARTZ_PILLAR, StateTypes.QUARTZ_STAIRS, StateTypes.DROPPER, StateTypes.IRON_TRAPDOOR, StateTypes.PRISMARINE, StateTypes.PRISMARINE_BRICKS, StateTypes.DARK_PRISMARINE, StateTypes.PRISMARINE_STAIRS, StateTypes.PRISMARINE_BRICK_STAIRS, StateTypes.DARK_PRISMARINE_STAIRS, StateTypes.PRISMARINE_SLAB, StateTypes.PRISMARINE_BRICK_SLAB, StateTypes.DARK_PRISMARINE_SLAB, StateTypes.TERRACOTTA, StateTypes.COAL_BLOCK, StateTypes.RED_SANDSTONE, StateTypes.CHISELED_RED_SANDSTONE, StateTypes.CUT_RED_SANDSTONE, StateTypes.RED_SANDSTONE_STAIRS, StateTypes.STONE_SLAB, StateTypes.SMOOTH_STONE_SLAB, StateTypes.SANDSTONE_SLAB, StateTypes.CUT_SANDSTONE_SLAB, StateTypes.PETRIFIED_OAK_SLAB, StateTypes.COBBLESTONE_SLAB, StateTypes.BRICK_SLAB, StateTypes.STONE_BRICK_SLAB, StateTypes.NETHER_BRICK_SLAB, StateTypes.QUARTZ_SLAB, StateTypes.RED_SANDSTONE_SLAB, StateTypes.CUT_RED_SANDSTONE_SLAB, StateTypes.PURPUR_SLAB, StateTypes.SMOOTH_STONE, StateTypes.SMOOTH_SANDSTONE, StateTypes.SMOOTH_QUARTZ, StateTypes.SMOOTH_RED_SANDSTONE, StateTypes.PURPUR_BLOCK, StateTypes.PURPUR_PILLAR, StateTypes.PURPUR_STAIRS, StateTypes.END_STONE_BRICKS, StateTypes.MAGMA_BLOCK, StateTypes.RED_NETHER_BRICKS, StateTypes.BONE_BLOCK, StateTypes.OBSERVER, StateTypes.DEAD_TUBE_CORAL_BLOCK, StateTypes.DEAD_BRAIN_CORAL_BLOCK, StateTypes.DEAD_BUBBLE_CORAL_BLOCK, StateTypes.DEAD_FIRE_CORAL_BLOCK, StateTypes.DEAD_HORN_CORAL_BLOCK, StateTypes.TUBE_CORAL_BLOCK, StateTypes.BRAIN_CORAL_BLOCK, StateTypes.BUBBLE_CORAL_BLOCK, StateTypes.FIRE_CORAL_BLOCK, StateTypes.HORN_CORAL_BLOCK, StateTypes.DEAD_TUBE_CORAL, StateTypes.DEAD_BRAIN_CORAL, StateTypes.DEAD_BUBBLE_CORAL, StateTypes.DEAD_FIRE_CORAL, StateTypes.DEAD_HORN_CORAL, StateTypes.DEAD_TUBE_CORAL_FAN, StateTypes.DEAD_BRAIN_CORAL_FAN, StateTypes.DEAD_BUBBLE_CORAL_FAN, StateTypes.DEAD_FIRE_CORAL_FAN, StateTypes.DEAD_HORN_CORAL_FAN, StateTypes.DEAD_TUBE_CORAL_WALL_FAN, StateTypes.DEAD_BRAIN_CORAL_WALL_FAN, StateTypes.DEAD_BUBBLE_CORAL_WALL_FAN, StateTypes.DEAD_FIRE_CORAL_WALL_FAN, StateTypes.DEAD_HORN_CORAL_WALL_FAN, StateTypes.POLISHED_GRANITE_STAIRS, StateTypes.SMOOTH_RED_SANDSTONE_STAIRS, StateTypes.MOSSY_STONE_BRICK_STAIRS, StateTypes.POLISHED_DIORITE_STAIRS, StateTypes.MOSSY_COBBLESTONE_STAIRS, StateTypes.END_STONE_BRICK_STAIRS, StateTypes.STONE_STAIRS, StateTypes.SMOOTH_SANDSTONE_STAIRS, StateTypes.SMOOTH_QUARTZ_STAIRS, StateTypes.GRANITE_STAIRS, StateTypes.ANDESITE_STAIRS, StateTypes.RED_NETHER_BRICK_STAIRS, StateTypes.POLISHED_ANDESITE_STAIRS, StateTypes.DIORITE_STAIRS, StateTypes.POLISHED_GRANITE_SLAB, StateTypes.SMOOTH_RED_SANDSTONE_SLAB, StateTypes.MOSSY_STONE_BRICK_SLAB, StateTypes.POLISHED_DIORITE_SLAB, StateTypes.MOSSY_COBBLESTONE_SLAB, StateTypes.END_STONE_BRICK_SLAB, StateTypes.SMOOTH_SANDSTONE_SLAB, StateTypes.SMOOTH_QUARTZ_SLAB, StateTypes.GRANITE_SLAB, StateTypes.ANDESITE_SLAB, StateTypes.RED_NETHER_BRICK_SLAB, StateTypes.POLISHED_ANDESITE_SLAB, StateTypes.DIORITE_SLAB, StateTypes.SMOKER, StateTypes.BLAST_FURNACE, StateTypes.GRINDSTONE, StateTypes.STONECUTTER, StateTypes.BELL, StateTypes.WARPED_NYLIUM, StateTypes.CRIMSON_NYLIUM, StateTypes.NETHERITE_BLOCK, StateTypes.ANCIENT_DEBRIS, StateTypes.CRYING_OBSIDIAN, StateTypes.RESPAWN_ANCHOR, StateTypes.LODESTONE, StateTypes.BLACKSTONE, StateTypes.BLACKSTONE_STAIRS, StateTypes.BLACKSTONE_SLAB, StateTypes.POLISHED_BLACKSTONE, StateTypes.POLISHED_BLACKSTONE_BRICKS, StateTypes.CRACKED_POLISHED_BLACKSTONE_BRICKS, StateTypes.CHISELED_POLISHED_BLACKSTONE, StateTypes.POLISHED_BLACKSTONE_BRICK_SLAB, StateTypes.POLISHED_BLACKSTONE_BRICK_STAIRS, StateTypes.GILDED_BLACKSTONE, StateTypes.POLISHED_BLACKSTONE_STAIRS, StateTypes.POLISHED_BLACKSTONE_SLAB, StateTypes.POLISHED_BLACKSTONE_PRESSURE_PLATE, StateTypes.CHISELED_NETHER_BRICKS, StateTypes.CRACKED_NETHER_BRICKS, StateTypes.QUARTZ_BRICKS, StateTypes.TUFF, StateTypes.CALCITE, StateTypes.COPPER_ORE, StateTypes.DEEPSLATE_COPPER_ORE, StateTypes.DRIPSTONE_BLOCK, StateTypes.DEEPSLATE, StateTypes.COBBLED_DEEPSLATE, StateTypes.COBBLED_DEEPSLATE_STAIRS, StateTypes.COBBLED_DEEPSLATE_SLAB, StateTypes.POLISHED_DEEPSLATE, StateTypes.POLISHED_DEEPSLATE_STAIRS, StateTypes.POLISHED_DEEPSLATE_SLAB, StateTypes.DEEPSLATE_TILES, StateTypes.DEEPSLATE_TILE_STAIRS, StateTypes.DEEPSLATE_TILE_SLAB, StateTypes.DEEPSLATE_BRICKS, StateTypes.DEEPSLATE_BRICK_STAIRS, StateTypes.DEEPSLATE_BRICK_SLAB, StateTypes.CHISELED_DEEPSLATE, StateTypes.CRACKED_DEEPSLATE_BRICKS, StateTypes.CRACKED_DEEPSLATE_TILES, StateTypes.SMOOTH_BASALT, StateTypes.RAW_IRON_BLOCK, StateTypes.RAW_COPPER_BLOCK, StateTypes.RAW_GOLD_BLOCK, StateTypes.ICE, StateTypes.PACKED_ICE, StateTypes.BLUE_ICE, StateTypes.PISTON, StateTypes.STICKY_PISTON, StateTypes.PISTON_HEAD, StateTypes.AMETHYST_CLUSTER, StateTypes.SMALL_AMETHYST_BUD, StateTypes.MEDIUM_AMETHYST_BUD, StateTypes.LARGE_AMETHYST_BUD, StateTypes.AMETHYST_BLOCK, StateTypes.BUDDING_AMETHYST, StateTypes.INFESTED_COBBLESTONE, StateTypes.INFESTED_CHISELED_STONE_BRICKS, StateTypes.INFESTED_CRACKED_STONE_BRICKS, StateTypes.INFESTED_DEEPSLATE, StateTypes.INFESTED_STONE, StateTypes.INFESTED_MOSSY_STONE_BRICKS, StateTypes.INFESTED_STONE_BRICKS, StateTypes.CONDUIT, StateTypes.MUD_BRICKS, StateTypes.MUD_BRICK_STAIRS, StateTypes.MUD_BRICK_SLAB, StateTypes.PACKED_MUD, StateTypes.CRAFTER, StateTypes.TUFF_SLAB, StateTypes.TUFF_STAIRS, StateTypes.TUFF_WALL, StateTypes.CHISELED_TUFF, StateTypes.POLISHED_TUFF, StateTypes.POLISHED_TUFF_SLAB, StateTypes.POLISHED_TUFF_STAIRS, StateTypes.POLISHED_TUFF_WALL, StateTypes.TUFF_BRICKS, StateTypes.TUFF_BRICK_SLAB, StateTypes.TUFF_BRICK_STAIRS, StateTypes.TUFF_BRICK_WALL, StateTypes.CHISELED_TUFF_BRICKS, StateTypes.HEAVY_CORE, StateTypes.RESIN_BRICKS, StateTypes.RESIN_BRICK_SLAB, StateTypes.RESIN_BRICK_WALL, StateTypes.RESIN_BRICK_STAIRS, StateTypes.CHISELED_RESIN_BRICKS, StateTypes.CINNABAR, StateTypes.CINNABAR_SLAB, StateTypes.CINNABAR_STAIRS, StateTypes.CINNABAR_WALL, StateTypes.POLISHED_CINNABAR, StateTypes.POLISHED_CINNABAR_SLAB, StateTypes.POLISHED_CINNABAR_STAIRS, StateTypes.POLISHED_CINNABAR_WALL, StateTypes.CINNABAR_BRICKS, StateTypes.CINNABAR_BRICK_SLAB, StateTypes.CINNABAR_BRICK_STAIRS, StateTypes.CINNABAR_BRICK_WALL, StateTypes.CHISELED_CINNABAR, StateTypes.SULFUR, StateTypes.POTENT_SULFUR, StateTypes.SULFUR_SLAB, StateTypes.SULFUR_STAIRS, StateTypes.SULFUR_WALL, StateTypes.POLISHED_SULFUR, StateTypes.POLISHED_SULFUR_SLAB, StateTypes.POLISHED_SULFUR_STAIRS, StateTypes.POLISHED_SULFUR_WALL, StateTypes.SULFUR_BRICKS, StateTypes.SULFUR_BRICK_SLAB, StateTypes.SULFUR_BRICK_STAIRS, StateTypes.SULFUR_BRICK_WALL, StateTypes.CHISELED_SULFUR, StateTypes.COPPER_BLOCK, StateTypes.EXPOSED_COPPER, StateTypes.WEATHERED_COPPER, StateTypes.OXIDIZED_COPPER, StateTypes.WAXED_COPPER_BLOCK, StateTypes.WAXED_EXPOSED_COPPER, StateTypes.WAXED_WEATHERED_COPPER, StateTypes.WAXED_OXIDIZED_COPPER, StateTypes.COPPER_BULB, StateTypes.EXPOSED_COPPER_BULB, StateTypes.WEATHERED_COPPER_BULB, StateTypes.OXIDIZED_COPPER_BULB, StateTypes.WAXED_COPPER_BULB, StateTypes.WAXED_EXPOSED_COPPER_BULB, StateTypes.WAXED_WEATHERED_COPPER_BULB, StateTypes.WAXED_OXIDIZED_COPPER_BULB, StateTypes.CUT_COPPER, StateTypes.EXPOSED_CUT_COPPER, StateTypes.WEATHERED_CUT_COPPER, StateTypes.OXIDIZED_CUT_COPPER, StateTypes.WAXED_CUT_COPPER, StateTypes.WAXED_EXPOSED_CUT_COPPER, StateTypes.WAXED_WEATHERED_CUT_COPPER, StateTypes.WAXED_OXIDIZED_CUT_COPPER, StateTypes.CHISELED_COPPER, StateTypes.EXPOSED_CHISELED_COPPER, StateTypes.WEATHERED_CHISELED_COPPER, StateTypes.OXIDIZED_CHISELED_COPPER, StateTypes.WAXED_CHISELED_COPPER, StateTypes.WAXED_EXPOSED_CHISELED_COPPER, StateTypes.WAXED_WEATHERED_CHISELED_COPPER, StateTypes.WAXED_OXIDIZED_CHISELED_COPPER, StateTypes.CUT_COPPER_STAIRS, StateTypes.EXPOSED_CUT_COPPER_STAIRS, StateTypes.WEATHERED_CUT_COPPER_STAIRS, StateTypes.OXIDIZED_CUT_COPPER_STAIRS, StateTypes.WAXED_CUT_COPPER_STAIRS, StateTypes.WAXED_EXPOSED_CUT_COPPER_STAIRS, StateTypes.WAXED_WEATHERED_CUT_COPPER_STAIRS, StateTypes.WAXED_OXIDIZED_CUT_COPPER_STAIRS, StateTypes.CUT_COPPER_SLAB, StateTypes.EXPOSED_CUT_COPPER_SLAB, StateTypes.WEATHERED_CUT_COPPER_SLAB, StateTypes.OXIDIZED_CUT_COPPER_SLAB, StateTypes.WAXED_CUT_COPPER_SLAB, StateTypes.WAXED_EXPOSED_CUT_COPPER_SLAB, StateTypes.WAXED_WEATHERED_CUT_COPPER_SLAB, StateTypes.WAXED_OXIDIZED_CUT_COPPER_SLAB, StateTypes.COPPER_DOOR, StateTypes.EXPOSED_COPPER_DOOR, StateTypes.WEATHERED_COPPER_DOOR, StateTypes.OXIDIZED_COPPER_DOOR, StateTypes.WAXED_COPPER_DOOR, StateTypes.WAXED_EXPOSED_COPPER_DOOR, StateTypes.WAXED_WEATHERED_COPPER_DOOR, StateTypes.WAXED_OXIDIZED_COPPER_DOOR, StateTypes.COPPER_TRAPDOOR, StateTypes.EXPOSED_COPPER_TRAPDOOR, StateTypes.WEATHERED_COPPER_TRAPDOOR, StateTypes.OXIDIZED_COPPER_TRAPDOOR, StateTypes.WAXED_COPPER_TRAPDOOR, StateTypes.WAXED_EXPOSED_COPPER_TRAPDOOR, StateTypes.WAXED_WEATHERED_COPPER_TRAPDOOR, StateTypes.WAXED_OXIDIZED_COPPER_TRAPDOOR, StateTypes.COPPER_GRATE, StateTypes.EXPOSED_COPPER_GRATE, StateTypes.WEATHERED_COPPER_GRATE, StateTypes.OXIDIZED_COPPER_GRATE, StateTypes.WAXED_COPPER_GRATE, StateTypes.WAXED_EXPOSED_COPPER_GRATE, StateTypes.WAXED_WEATHERED_COPPER_GRATE, StateTypes.WAXED_OXIDIZED_COPPER_GRATE, StateTypes.WHITE_GLAZED_TERRACOTTA, StateTypes.ORANGE_GLAZED_TERRACOTTA, StateTypes.MAGENTA_GLAZED_TERRACOTTA, StateTypes.LIGHT_BLUE_GLAZED_TERRACOTTA, StateTypes.YELLOW_GLAZED_TERRACOTTA, StateTypes.LIME_GLAZED_TERRACOTTA, StateTypes.PINK_GLAZED_TERRACOTTA, StateTypes.GRAY_GLAZED_TERRACOTTA, StateTypes.LIGHT_GRAY_GLAZED_TERRACOTTA, StateTypes.CYAN_GLAZED_TERRACOTTA, StateTypes.PURPLE_GLAZED_TERRACOTTA, StateTypes.BLUE_GLAZED_TERRACOTTA, StateTypes.BROWN_GLAZED_TERRACOTTA, StateTypes.GREEN_GLAZED_TERRACOTTA, StateTypes.RED_GLAZED_TERRACOTTA, StateTypes.BLACK_GLAZED_TERRACOTTA, StateTypes.WHITE_TERRACOTTA, StateTypes.ORANGE_TERRACOTTA, StateTypes.MAGENTA_TERRACOTTA, StateTypes.LIGHT_BLUE_TERRACOTTA, StateTypes.YELLOW_TERRACOTTA, StateTypes.LIME_TERRACOTTA, StateTypes.PINK_TERRACOTTA, StateTypes.GRAY_TERRACOTTA, StateTypes.LIGHT_GRAY_TERRACOTTA, StateTypes.CYAN_TERRACOTTA, StateTypes.PURPLE_TERRACOTTA, StateTypes.BLUE_TERRACOTTA, StateTypes.BROWN_TERRACOTTA, StateTypes.GREEN_TERRACOTTA, StateTypes.RED_TERRACOTTA, StateTypes.BLACK_TERRACOTTA, StateTypes.WHITE_CONCRETE, StateTypes.ORANGE_CONCRETE, StateTypes.MAGENTA_CONCRETE, StateTypes.LIGHT_BLUE_CONCRETE, StateTypes.YELLOW_CONCRETE, StateTypes.LIME_CONCRETE, StateTypes.PINK_CONCRETE, StateTypes.GRAY_CONCRETE, StateTypes.LIGHT_GRAY_CONCRETE, StateTypes.CYAN_CONCRETE, StateTypes.PURPLE_CONCRETE, StateTypes.BLUE_CONCRETE, StateTypes.BROWN_CONCRETE, StateTypes.GREEN_CONCRETE, StateTypes.RED_CONCRETE, StateTypes.BLACK_CONCRETE, StateTypes.WHITE_CONCRETE_STAIRS, StateTypes.ORANGE_CONCRETE_STAIRS, StateTypes.MAGENTA_CONCRETE_STAIRS, StateTypes.LIGHT_BLUE_CONCRETE_STAIRS, StateTypes.YELLOW_CONCRETE_STAIRS, StateTypes.LIME_CONCRETE_STAIRS, StateTypes.PINK_CONCRETE_STAIRS, StateTypes.GRAY_CONCRETE_STAIRS, StateTypes.LIGHT_GRAY_CONCRETE_STAIRS, StateTypes.CYAN_CONCRETE_STAIRS, StateTypes.PURPLE_CONCRETE_STAIRS, StateTypes.BLUE_CONCRETE_STAIRS, StateTypes.BROWN_CONCRETE_STAIRS, StateTypes.GREEN_CONCRETE_STAIRS, StateTypes.RED_CONCRETE_STAIRS, StateTypes.BLACK_CONCRETE_STAIRS, StateTypes.WHITE_CONCRETE_SLAB, StateTypes.ORANGE_CONCRETE_SLAB, StateTypes.MAGENTA_CONCRETE_SLAB, StateTypes.LIGHT_BLUE_CONCRETE_SLAB, StateTypes.YELLOW_CONCRETE_SLAB, StateTypes.LIME_CONCRETE_SLAB, StateTypes.PINK_CONCRETE_SLAB, StateTypes.GRAY_CONCRETE_SLAB, StateTypes.LIGHT_GRAY_CONCRETE_SLAB, StateTypes.CYAN_CONCRETE_SLAB, StateTypes.PURPLE_CONCRETE_SLAB, StateTypes.BLUE_CONCRETE_SLAB, StateTypes.BROWN_CONCRETE_SLAB, StateTypes.GREEN_CONCRETE_SLAB, StateTypes.RED_CONCRETE_SLAB, StateTypes.BLACK_CONCRETE_SLAB);
+        BlockTags.MINEABLE_SHOVEL.addTag(BlockTags.CONCRETE_POWDERS).add(StateTypes.CLAY, StateTypes.DIRT, StateTypes.COARSE_DIRT, StateTypes.PODZOL, StateTypes.FARMLAND, StateTypes.GRASS_BLOCK, StateTypes.GRAVEL, StateTypes.MYCELIUM, StateTypes.SAND, StateTypes.RED_SAND, StateTypes.SNOW_BLOCK, StateTypes.SNOW, StateTypes.SOUL_SAND, StateTypes.DIRT_PATH, StateTypes.SOUL_SOIL, StateTypes.ROOTED_DIRT, StateTypes.MUDDY_MANGROVE_ROOTS, StateTypes.MUD, StateTypes.SUSPICIOUS_SAND, StateTypes.SUSPICIOUS_GRAVEL);
+        BlockTags.SWORD_EFFICIENT.addTag(BlockTags.LEAVES).add(StateTypes.VINE, StateTypes.GLOW_LICHEN, StateTypes.PUMPKIN, StateTypes.CARVED_PUMPKIN, StateTypes.JACK_O_LANTERN, StateTypes.MELON, StateTypes.COCOA, StateTypes.BIG_DRIPLEAF, StateTypes.BIG_DRIPLEAF_STEM, StateTypes.CHORUS_PLANT, StateTypes.CHORUS_FLOWER);
+        BlockTags.SHEARS_EXTREME_BREAKING_SPEED.addTag(BlockTags.LEAVES);
+        BlockTags.SHEARS_MAJOR_BREAKING_SPEED.addTag(BlockTags.WOOL).addTag(BlockTags.WOOL_SLABS).addTag(BlockTags.WOOL_STAIRS);
+        BlockTags.NEEDS_STONE_TOOL.addTag(BlockTags.COPPER_CHESTS).addTag(BlockTags.LIGHTNING_RODS).add(StateTypes.IRON_BLOCK, StateTypes.RAW_IRON_BLOCK, StateTypes.IRON_ORE, StateTypes.DEEPSLATE_IRON_ORE, StateTypes.LAPIS_BLOCK, StateTypes.LAPIS_ORE, StateTypes.DEEPSLATE_LAPIS_ORE, StateTypes.RAW_COPPER_BLOCK, StateTypes.COPPER_ORE, StateTypes.DEEPSLATE_COPPER_ORE, StateTypes.CRAFTER, StateTypes.COPPER_BLOCK, StateTypes.EXPOSED_COPPER, StateTypes.WEATHERED_COPPER, StateTypes.OXIDIZED_COPPER, StateTypes.WAXED_COPPER_BLOCK, StateTypes.WAXED_EXPOSED_COPPER, StateTypes.WAXED_WEATHERED_COPPER, StateTypes.WAXED_OXIDIZED_COPPER, StateTypes.COPPER_BULB, StateTypes.EXPOSED_COPPER_BULB, StateTypes.WEATHERED_COPPER_BULB, StateTypes.OXIDIZED_COPPER_BULB, StateTypes.WAXED_COPPER_BULB, StateTypes.WAXED_EXPOSED_COPPER_BULB, StateTypes.WAXED_WEATHERED_COPPER_BULB, StateTypes.WAXED_OXIDIZED_COPPER_BULB, StateTypes.CUT_COPPER, StateTypes.EXPOSED_CUT_COPPER, StateTypes.WEATHERED_CUT_COPPER, StateTypes.OXIDIZED_CUT_COPPER, StateTypes.WAXED_CUT_COPPER, StateTypes.WAXED_EXPOSED_CUT_COPPER, StateTypes.WAXED_WEATHERED_CUT_COPPER, StateTypes.WAXED_OXIDIZED_CUT_COPPER, StateTypes.CHISELED_COPPER, StateTypes.EXPOSED_CHISELED_COPPER, StateTypes.WEATHERED_CHISELED_COPPER, StateTypes.OXIDIZED_CHISELED_COPPER, StateTypes.WAXED_CHISELED_COPPER, StateTypes.WAXED_EXPOSED_CHISELED_COPPER, StateTypes.WAXED_WEATHERED_CHISELED_COPPER, StateTypes.WAXED_OXIDIZED_CHISELED_COPPER, StateTypes.CUT_COPPER_STAIRS, StateTypes.EXPOSED_CUT_COPPER_STAIRS, StateTypes.WEATHERED_CUT_COPPER_STAIRS, StateTypes.OXIDIZED_CUT_COPPER_STAIRS, StateTypes.WAXED_CUT_COPPER_STAIRS, StateTypes.WAXED_EXPOSED_CUT_COPPER_STAIRS, StateTypes.WAXED_WEATHERED_CUT_COPPER_STAIRS, StateTypes.WAXED_OXIDIZED_CUT_COPPER_STAIRS, StateTypes.CUT_COPPER_SLAB, StateTypes.EXPOSED_CUT_COPPER_SLAB, StateTypes.WEATHERED_CUT_COPPER_SLAB, StateTypes.OXIDIZED_CUT_COPPER_SLAB, StateTypes.WAXED_CUT_COPPER_SLAB, StateTypes.WAXED_EXPOSED_CUT_COPPER_SLAB, StateTypes.WAXED_WEATHERED_CUT_COPPER_SLAB, StateTypes.WAXED_OXIDIZED_CUT_COPPER_SLAB, StateTypes.COPPER_TRAPDOOR, StateTypes.EXPOSED_COPPER_TRAPDOOR, StateTypes.WEATHERED_COPPER_TRAPDOOR, StateTypes.OXIDIZED_COPPER_TRAPDOOR, StateTypes.WAXED_COPPER_TRAPDOOR, StateTypes.WAXED_EXPOSED_COPPER_TRAPDOOR, StateTypes.WAXED_WEATHERED_COPPER_TRAPDOOR, StateTypes.WAXED_OXIDIZED_COPPER_TRAPDOOR, StateTypes.COPPER_GRATE, StateTypes.EXPOSED_COPPER_GRATE, StateTypes.WEATHERED_COPPER_GRATE, StateTypes.OXIDIZED_COPPER_GRATE, StateTypes.WAXED_COPPER_GRATE, StateTypes.WAXED_EXPOSED_COPPER_GRATE, StateTypes.WAXED_WEATHERED_COPPER_GRATE, StateTypes.WAXED_OXIDIZED_COPPER_GRATE);
+        BlockTags.INCORRECT_FOR_IRON_TOOL.addTag(BlockTags.NEEDS_DIAMOND_TOOL);
+        BlockTags.INCORRECT_FOR_COPPER_TOOL.addTag(BlockTags.NEEDS_DIAMOND_TOOL).addTag(BlockTags.NEEDS_IRON_TOOL);
+        copy(BlockTags.INCORRECT_FOR_COPPER_TOOL, BlockTags.INCORRECT_FOR_STONE_TOOL);
+        BlockTags.ARMADILLO_SPAWNABLE_ON.addTag(BlockTags.ANIMALS_SPAWNABLE_ON).addTag(BlockTags.BADLANDS_TERRACOTTA).add(StateTypes.RED_SAND, StateTypes.COARSE_DIRT);
+        BlockTags.GOATS_SPAWNABLE_ON.addTag(BlockTags.ANIMALS_SPAWNABLE_ON).add(StateTypes.STONE, StateTypes.SNOW, StateTypes.SNOW_BLOCK, StateTypes.PACKED_ICE, StateTypes.GRAVEL);
+        copy(BlockTags.DRIPSTONE_REPLACEABLE_BLOCKS, BlockTags.BATS_SPAWNABLE_ON);
+        BlockTags.CAMELS_SPAWNABLE_ON.addTag(BlockTags.SAND);
+        BlockTags.SNAPS_GOAT_HORN.addTag(BlockTags.OVERWORLD_NATURAL_LOGS).add(StateTypes.STONE, StateTypes.PACKED_ICE, StateTypes.IRON_ORE, StateTypes.COAL_ORE, StateTypes.COPPER_ORE, StateTypes.EMERALD_ORE);
+        BlockTags.REPLACEABLE_BY_TREES.addTag(BlockTags.LEAVES).addTag(BlockTags.SMALL_FLOWERS).add(StateTypes.PALE_MOSS_CARPET, StateTypes.SHORT_GRASS, StateTypes.FERN, StateTypes.DEAD_BUSH, StateTypes.VINE, StateTypes.GLOW_LICHEN, StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.ROSE_BUSH, StateTypes.PEONY, StateTypes.TALL_GRASS, StateTypes.LARGE_FERN, StateTypes.HANGING_ROOTS, StateTypes.PITCHER_PLANT, StateTypes.WATER, StateTypes.SEAGRASS, StateTypes.TALL_SEAGRASS, StateTypes.BUSH, StateTypes.FIREFLY_BUSH, StateTypes.WARPED_ROOTS, StateTypes.NETHER_SPROUTS, StateTypes.CRIMSON_ROOTS, StateTypes.LEAF_LITTER, StateTypes.SHORT_DRY_GRASS, StateTypes.TALL_DRY_GRASS, StateTypes.SHELF_MUSHROOM);
+        BlockTags.REPLACEABLE_BY_MUSHROOMS.addTag(BlockTags.LEAVES).addTag(BlockTags.SMALL_FLOWERS).add(StateTypes.PALE_MOSS_CARPET, StateTypes.SHORT_GRASS, StateTypes.FERN, StateTypes.DEAD_BUSH, StateTypes.VINE, StateTypes.GLOW_LICHEN, StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.ROSE_BUSH, StateTypes.PEONY, StateTypes.TALL_GRASS, StateTypes.LARGE_FERN, StateTypes.HANGING_ROOTS, StateTypes.PITCHER_PLANT, StateTypes.WATER, StateTypes.SEAGRASS, StateTypes.TALL_SEAGRASS, StateTypes.BROWN_MUSHROOM, StateTypes.RED_MUSHROOM, StateTypes.BROWN_MUSHROOM_BLOCK, StateTypes.RED_MUSHROOM_BLOCK, StateTypes.WARPED_ROOTS, StateTypes.NETHER_SPROUTS, StateTypes.CRIMSON_ROOTS, StateTypes.LEAF_LITTER, StateTypes.SHORT_DRY_GRASS, StateTypes.TALL_DRY_GRASS, StateTypes.BUSH, StateTypes.RED_SHRUB, StateTypes.FIREFLY_BUSH);
+        BlockTags.CATS_CAN_SIT_ON.addTag(BlockTags.BEDS).add(StateTypes.FURNACE, StateTypes.CHEST);
+        BlockTags.CATS_CAN_LIE_ON.addTag(BlockTags.BEDS);
+        BlockTags.SPEEDS_UP_ZOMBIE_VILLAGER_CURING.addTag(BlockTags.BEDS).add(StateTypes.IRON_BARS);
+        copy(BlockTags.CATS_CAN_LIE_ON, BlockTags.VILLAGERS_CAN_SLEEP_ON_BED);
+        copy(BlockTags.CATS_CAN_LIE_ON, BlockTags.VILLAGER_BABIES_CAN_JUMP_ON_BED);
+        BlockTags.SUPPORTS_STEM_CROPS.addTag(BlockTags.SUPPORTS_CROPS);
+        BlockTags.SUPPORTS_BIG_DRIPLEAF.addTag(BlockTags.SUPPORTS_SMALL_DRIPLEAF).add(StateTypes.DIRT, StateTypes.GRASS_BLOCK, StateTypes.PODZOL, StateTypes.COARSE_DIRT, StateTypes.MYCELIUM, StateTypes.ROOTED_DIRT, StateTypes.MOSS_BLOCK, StateTypes.MUD, StateTypes.MUDDY_MANGROVE_ROOTS, StateTypes.FARMLAND);
+        copy(BlockTags.CAMELS_SPAWNABLE_ON, BlockTags.SUPPORTS_CACTUS);
+        BlockTags.SUPPORTS_COCOA.addTag(BlockTags.JUNGLE_LOGS);
+        BlockTags.SNIFFER_DIGGABLE_BLOCK.addTag(BlockTags.DIRT).addTag(BlockTags.MUD).addTag(BlockTags.MOSS_BLOCKS).add(StateTypes.GRASS_BLOCK, StateTypes.PODZOL);
+        BlockTags.ENCHANTMENT_POWER_TRANSMITTER.addTag(BlockTags.REPLACEABLE);
+        BlockTags.MAINTAINS_FARMLAND.addTag(BlockTags.FENCE_GATES).add(StateTypes.PUMPKIN_STEM, StateTypes.ATTACHED_PUMPKIN_STEM, StateTypes.MELON_STEM, StateTypes.ATTACHED_MELON_STEM, StateTypes.BEETROOTS, StateTypes.CARROTS, StateTypes.POTATOES, StateTypes.TORCHFLOWER_CROP, StateTypes.TORCHFLOWER, StateTypes.PITCHER_CROP, StateTypes.WHEAT, StateTypes.MOVING_PISTON);
+        BlockTags.DOES_NOT_BLOCK_HOPPERS.addTag(BlockTags.BEEHIVES);
+        BlockTags.TRIGGERS_AMBIENT_DESERT_DRY_VEGETATION_BLOCK_SOUNDS.addTag(BlockTags.TERRACOTTA).add(StateTypes.SAND, StateTypes.RED_SAND);
+        BlockTags.REQUIRED_FOR_POPLAR_LEAF_AMBIENCE.addTag(BlockTags.OVERWORLD_NATURAL_LOGS);
+        BlockTags.CAT_DOES_NOT_TELEPORT_TO.addTag(BlockTags.DANGEROUS_FOR_TELEPORTATION);
+        BlockTags.ENDERMAN_DOES_NOT_TELEPORT_TO.addTag(BlockTags.DANGEROUS_FOR_TELEPORTATION).add(StateTypes.BEDROCK);
+        BlockTags.LOGS_THAT_BURN.addTag(BlockTags.DARK_OAK_LOGS).addTag(BlockTags.PALE_OAK_LOGS).addTag(BlockTags.OAK_LOGS).addTag(BlockTags.ACACIA_LOGS).addTag(BlockTags.BIRCH_LOGS).addTag(BlockTags.JUNGLE_LOGS).addTag(BlockTags.SPRUCE_LOGS).addTag(BlockTags.MANGROVE_LOGS).addTag(BlockTags.CHERRY_LOGS).addTag(BlockTags.POPLAR_LOGS);
+        BlockTags.LOGS.addTag(BlockTags.LOGS_THAT_BURN).addTag(BlockTags.CRIMSON_STEMS).addTag(BlockTags.WARPED_STEMS);
+        BlockTags.UNDERWATER_BONEMEALS.addTag(BlockTags.CORALS).addTag(BlockTags.WALL_CORALS).add(StateTypes.SEAGRASS);
+        BlockTags.ALL_SIGNS.addTag(BlockTags.SIGNS).addTag(BlockTags.ALL_HANGING_SIGNS);
+        BlockTags.WALL_POST_OVERRIDE.addTag(BlockTags.SIGNS).addTag(BlockTags.BANNERS).addTag(BlockTags.PRESSURE_PLATES).add(StateTypes.TORCH, StateTypes.SOUL_TORCH, StateTypes.REDSTONE_TORCH, StateTypes.COPPER_TORCH, StateTypes.TRIPWIRE, StateTypes.CACTUS_FLOWER);
+        BlockTags.BENEATH_TREE_PODZOL_REPLACEABLE.addTag(BlockTags.SUBSTRATE_OVERWORLD);
+        copy(BlockTags.BENEATH_TREE_PODZOL_REPLACEABLE, BlockTags.BENEATH_BAMBOO_PODZOL_REPLACEABLE);
+        BlockTags.LUSH_GROUND_REPLACEABLE.addTag(BlockTags.MOSS_REPLACEABLE).add(StateTypes.CLAY, StateTypes.GRAVEL, StateTypes.SAND);
+        BlockTags.AZALEA_ROOT_REPLACEABLE.addTag(BlockTags.BASE_STONE_OVERWORLD).addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.TERRACOTTA).add(StateTypes.RED_SAND, StateTypes.CLAY, StateTypes.GRAVEL, StateTypes.SAND, StateTypes.SNOW_BLOCK, StateTypes.POWDER_SNOW);
+        BlockTags.ICE_SPIKE_REPLACEABLE.addTag(BlockTags.SUBSTRATE_OVERWORLD).add(StateTypes.SNOW_BLOCK, StateTypes.ICE);
+        BlockTags.FOREST_ROCK_CAN_PLACE_ON.addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.BASE_STONE_OVERWORLD);
+        BlockTags.HUGE_BROWN_MUSHROOM_CAN_PLACE_ON.addTag(BlockTags.SUBSTRATE_OVERWORLD).add(StateTypes.MYCELIUM, StateTypes.PODZOL, StateTypes.CRIMSON_NYLIUM, StateTypes.WARPED_NYLIUM);
+        copy(BlockTags.HUGE_BROWN_MUSHROOM_CAN_PLACE_ON, BlockTags.HUGE_RED_MUSHROOM_CAN_PLACE_ON);
+        BlockTags.INCORRECT_FOR_GOLD_TOOL.addTag(BlockTags.NEEDS_DIAMOND_TOOL).addTag(BlockTags.NEEDS_IRON_TOOL).addTag(BlockTags.NEEDS_STONE_TOOL);
+        copy(BlockTags.INCORRECT_FOR_GOLD_TOOL, BlockTags.INCORRECT_FOR_WOODEN_TOOL);
+        BlockTags.SCULK_REPLACEABLE.addTag(BlockTags.BASE_STONE_OVERWORLD).addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.TERRACOTTA).addTag(BlockTags.NYLIUM).addTag(BlockTags.BASE_STONE_NETHER).add(StateTypes.SAND, StateTypes.RED_SAND, StateTypes.GRAVEL, StateTypes.SOUL_SAND, StateTypes.SOUL_SOIL, StateTypes.CALCITE, StateTypes.SMOOTH_BASALT, StateTypes.CLAY, StateTypes.DRIPSTONE_BLOCK, StateTypes.END_STONE, StateTypes.RED_SANDSTONE, StateTypes.SANDSTONE, StateTypes.SULFUR, StateTypes.CINNABAR);
+        BlockTags.AZALEA_GROWS_ON.addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.SAND).addTag(BlockTags.TERRACOTTA).add(StateTypes.SNOW_BLOCK, StateTypes.POWDER_SNOW);
+        BlockTags.SUPPORTS_VEGETATION.addTag(BlockTags.SUBSTRATE_OVERWORLD).add(StateTypes.FARMLAND);
+        BlockTags.SUPPORTS_PUMPKIN_STEM.addTag(BlockTags.SUPPORTS_STEM_CROPS);
+        copy(BlockTags.SUPPORTS_PUMPKIN_STEM, BlockTags.SUPPORTS_MELON_STEM);
+        BlockTags.SUPPORTS_SUGAR_CANE.addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.SAND);
+        BlockTags.SUPPORTS_BAMBOO.addTag(BlockTags.SAND).addTag(BlockTags.SUBSTRATE_OVERWORLD).add(StateTypes.BAMBOO, StateTypes.BAMBOO_SAPLING, StateTypes.GRAVEL, StateTypes.SUSPICIOUS_GRAVEL);
+        BlockTags.WASHED_AWAY_BY_FLUIDS.addTag(BlockTags.FIRE).addTag(BlockTags.SAPLINGS).addTag(BlockTags.CORALS).addTag(BlockTags.WALL_CORALS).addTag(BlockTags.AIR).addTag(BlockTags.FLOWER_POTS).addTag(BlockTags.BUTTONS).addTag(BlockTags.WOOL_CARPETS).addTag(BlockTags.CANDLES).addTag(BlockTags.RAILS).addTag(BlockTags.SKULLS).add(StateTypes.COPPER_GOLEM_STATUE, StateTypes.EXPOSED_COPPER_GOLEM_STATUE, StateTypes.WEATHERED_COPPER_GOLEM_STATUE, StateTypes.OXIDIZED_COPPER_GOLEM_STATUE, StateTypes.WAXED_COPPER_GOLEM_STATUE, StateTypes.WAXED_EXPOSED_COPPER_GOLEM_STATUE, StateTypes.WAXED_WEATHERED_COPPER_GOLEM_STATUE, StateTypes.WAXED_OXIDIZED_COPPER_GOLEM_STATUE, StateTypes.WATER, StateTypes.LAVA, StateTypes.TALL_SEAGRASS, StateTypes.WALL_TORCH, StateTypes.REDSTONE_WALL_TORCH, StateTypes.SOUL_WALL_TORCH, StateTypes.COPPER_WALL_TORCH, StateTypes.ATTACHED_PUMPKIN_STEM, StateTypes.ATTACHED_MELON_STEM, StateTypes.KELP_PLANT, StateTypes.WEEPING_VINES_PLANT, StateTypes.TWISTING_VINES_PLANT, StateTypes.CAVE_VINES_PLANT, StateTypes.BIG_DRIPLEAF_STEM, StateTypes.SKELETON_WALL_SKULL, StateTypes.WITHER_SKELETON_WALL_SKULL, StateTypes.ZOMBIE_WALL_HEAD, StateTypes.PLAYER_WALL_HEAD, StateTypes.CREEPER_WALL_HEAD, StateTypes.DRAGON_WALL_HEAD, StateTypes.PIGLIN_WALL_HEAD, StateTypes.BAMBOO_SAPLING, StateTypes.COBWEB, StateTypes.SNOW, StateTypes.END_ROD, StateTypes.CHORUS_PLANT, StateTypes.CHORUS_FLOWER, StateTypes.BIG_DRIPLEAF, StateTypes.SCAFFOLDING, StateTypes.POWDER_SNOW, StateTypes.SHORT_GRASS, StateTypes.FERN, StateTypes.DEAD_BUSH, StateTypes.BUSH, StateTypes.SHORT_DRY_GRASS, StateTypes.TALL_DRY_GRASS, StateTypes.SEAGRASS, StateTypes.DANDELION, StateTypes.GOLDEN_DANDELION, StateTypes.TORCHFLOWER, StateTypes.POPPY, StateTypes.BLUE_ORCHID, StateTypes.ALLIUM, StateTypes.AZURE_BLUET, StateTypes.RED_TULIP, StateTypes.ORANGE_TULIP, StateTypes.WHITE_TULIP, StateTypes.PINK_TULIP, StateTypes.OXEYE_DAISY, StateTypes.CORNFLOWER, StateTypes.WITHER_ROSE, StateTypes.LILY_OF_THE_VALLEY, StateTypes.BROWN_MUSHROOM, StateTypes.RED_MUSHROOM, StateTypes.TORCH, StateTypes.REDSTONE_WIRE, StateTypes.WHEAT, StateTypes.LEVER, StateTypes.REDSTONE_TORCH, StateTypes.CACTUS_FLOWER, StateTypes.SOUL_TORCH, StateTypes.COPPER_TORCH, StateTypes.PUMPKIN_STEM, StateTypes.MELON_STEM, StateTypes.VINE, StateTypes.GLOW_LICHEN, StateTypes.RESIN_CLUMP, StateTypes.NETHER_WART, StateTypes.TRIPWIRE_HOOK, StateTypes.TRIPWIRE, StateTypes.CARROTS, StateTypes.POTATOES, StateTypes.LIGHT, StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.ROSE_BUSH, StateTypes.PEONY, StateTypes.TALL_GRASS, StateTypes.LARGE_FERN, StateTypes.TORCHFLOWER_CROP, StateTypes.PITCHER_CROP, StateTypes.PITCHER_PLANT, StateTypes.BEETROOTS, StateTypes.KELP, StateTypes.SWEET_BERRY_BUSH, StateTypes.WARPED_FUNGUS, StateTypes.WARPED_ROOTS, StateTypes.NETHER_SPROUTS, StateTypes.CRIMSON_FUNGUS, StateTypes.WEEPING_VINES, StateTypes.TWISTING_VINES, StateTypes.CRIMSON_ROOTS, StateTypes.CAVE_VINES, StateTypes.SPORE_BLOSSOM, StateTypes.PINK_PETALS, StateTypes.WILDFLOWERS, StateTypes.LEAF_LITTER, StateTypes.SMALL_DRIPLEAF, StateTypes.HANGING_ROOTS, StateTypes.FROGSPAWN, StateTypes.PALE_HANGING_MOSS, StateTypes.OPEN_EYEBLOSSOM, StateTypes.CLOSED_EYEBLOSSOM, StateTypes.FIREFLY_BUSH, StateTypes.REPEATER, StateTypes.LILY_PAD, StateTypes.COCOA, StateTypes.COMPARATOR, StateTypes.SEA_PICKLE, StateTypes.MOSS_CARPET, StateTypes.HEAVY_CORE, StateTypes.PALE_MOSS_CARPET, StateTypes.RED_SHRUB, StateTypes.SHELF_MUSHROOM, StateTypes.STRAW_BED);
+        BlockTags.COMPLETES_FIND_TREE_TUTORIAL.addTag(BlockTags.LOGS).addTag(BlockTags.LEAVES).addTag(BlockTags.WART_BLOCKS);
+        BlockTags.MINEABLE_AXE.addTag(BlockTags.BANNERS).addTag(BlockTags.FENCE_GATES).addTag(BlockTags.LOGS).addTag(BlockTags.PLANKS).addTag(BlockTags.SIGNS).addTag(BlockTags.WOODEN_BUTTONS).addTag(BlockTags.WOODEN_DOORS).addTag(BlockTags.WOODEN_FENCES).addTag(BlockTags.WOODEN_PRESSURE_PLATES).addTag(BlockTags.WOODEN_SLABS).addTag(BlockTags.WOODEN_STAIRS).addTag(BlockTags.WOODEN_TRAPDOORS).addTag(BlockTags.ALL_HANGING_SIGNS).addTag(BlockTags.BAMBOO_BLOCKS).addTag(BlockTags.WOODEN_SHELVES).add(StateTypes.NOTE_BLOCK, StateTypes.BAMBOO, StateTypes.BARREL, StateTypes.BEE_NEST, StateTypes.BEEHIVE, StateTypes.BIG_DRIPLEAF_STEM, StateTypes.BIG_DRIPLEAF, StateTypes.BOOKSHELF, StateTypes.BROWN_MUSHROOM_BLOCK, StateTypes.CAMPFIRE, StateTypes.CARTOGRAPHY_TABLE, StateTypes.CARVED_PUMPKIN, StateTypes.CHEST, StateTypes.CHORUS_FLOWER, StateTypes.CHORUS_PLANT, StateTypes.COCOA, StateTypes.COMPOSTER, StateTypes.CRAFTING_TABLE, StateTypes.DAYLIGHT_DETECTOR, StateTypes.FLETCHING_TABLE, StateTypes.GLOW_LICHEN, StateTypes.JACK_O_LANTERN, StateTypes.JUKEBOX, StateTypes.LADDER, StateTypes.LECTERN, StateTypes.LOOM, StateTypes.MELON, StateTypes.MUSHROOM_STEM, StateTypes.PUMPKIN, StateTypes.RED_MUSHROOM_BLOCK, StateTypes.SMITHING_TABLE, StateTypes.SOUL_CAMPFIRE, StateTypes.TRAPPED_CHEST, StateTypes.VINE, StateTypes.MANGROVE_ROOTS, StateTypes.BAMBOO_MOSAIC, StateTypes.BAMBOO_MOSAIC_SLAB, StateTypes.BAMBOO_MOSAIC_STAIRS, StateTypes.CHISELED_BOOKSHELF, StateTypes.CREAKING_HEART);
+        BlockTags.LAVA_POOL_STONE_CANNOT_REPLACE.addTag(BlockTags.FEATURES_CANNOT_REPLACE).addTag(BlockTags.LEAVES).addTag(BlockTags.LOGS);
+        BlockTags.SCULK_REPLACEABLE_WORLD_GEN.addTag(BlockTags.SCULK_REPLACEABLE).add(StateTypes.DEEPSLATE_BRICKS, StateTypes.DEEPSLATE_TILES, StateTypes.COBBLED_DEEPSLATE, StateTypes.CRACKED_DEEPSLATE_BRICKS, StateTypes.CRACKED_DEEPSLATE_TILES, StateTypes.POLISHED_DEEPSLATE);
+        BlockTags.PARROTS_SPAWNABLE_ON.addTag(BlockTags.LEAVES).addTag(BlockTags.LOGS).add(StateTypes.GRASS_BLOCK, StateTypes.AIR);
+        BlockTags.SUPPORTS_DRY_VEGETATION.addTag(BlockTags.SAND).addTag(BlockTags.TERRACOTTA).addTag(BlockTags.SUPPORTS_VEGETATION);
+        BlockTags.SUPPORTS_STEM_FRUIT.addTag(BlockTags.SUPPORTS_VEGETATION);
+        BlockTags.SUPPORTS_NETHER_SPROUTS.addTag(BlockTags.SUPPORTS_VEGETATION).addTag(BlockTags.NYLIUM).add(StateTypes.SOUL_SOIL);
+        BlockTags.SUPPORTS_AZALEA.addTag(BlockTags.SUPPORTS_VEGETATION).add(StateTypes.CLAY);
+        BlockTags.SUPPORTS_WARPED_FUNGUS.addTag(BlockTags.SUPPORTS_VEGETATION).addTag(BlockTags.NYLIUM).add(StateTypes.MYCELIUM, StateTypes.SOUL_SOIL);
+        copy(BlockTags.SUPPORTS_AZALEA, BlockTags.SUPPORTS_MANGROVE_PROPAGULE);
+        copy(BlockTags.SUPPORTS_NETHER_SPROUTS, BlockTags.SUPPORTS_WARPED_ROOTS);
+        BlockTags.SUPPORTS_WITHER_ROSE.addTag(BlockTags.SUPPORTS_VEGETATION).add(StateTypes.NETHERRACK, StateTypes.SOUL_SAND, StateTypes.SOUL_SOIL);
+        BlockTags.PREVENTS_NEARBY_LEAF_DECAY.addTag(BlockTags.LOGS);
+        BlockTags.BLOCKS_MOTION_NO_LEAVES.addTag(BlockTags.ALL_HANGING_SIGNS).addTag(BlockTags.CHAINS).addTag(BlockTags.BANNERS).addTag(BlockTags.SHULKER_BOXES).addTag(BlockTags.LANTERNS).addTag(BlockTags.CANDLE_CAKES).addTag(BlockTags.LIGHTNING_RODS).addTag(BlockTags.BEDS).addTag(BlockTags.WOOL).addTag(BlockTags.BARS).addTag(BlockTags.CAULDRONS).addTag(BlockTags.TERRACOTTA).addTag(BlockTags.GLAZED_TERRACOTTA).addTag(BlockTags.CONCRETE).addTag(BlockTags.CONCRETE_POWDERS).addTag(BlockTags.COPPER).addTag(BlockTags.COPPER_CHESTS).addTag(BlockTags.PRESSURE_PLATES).addTag(BlockTags.FENCES).addTag(BlockTags.FENCE_GATES).addTag(BlockTags.WALLS).addTag(BlockTags.CORAL_BLOCKS).addTag(BlockTags.PLANKS).addTag(BlockTags.LOGS).addTag(BlockTags.BAMBOO_BLOCKS).addTag(BlockTags.WOODEN_SHELVES).addTag(BlockTags.STAIRS).addTag(BlockTags.SLABS).addTag(BlockTags.DOORS).addTag(BlockTags.TRAPDOORS).addTag(BlockTags.ORES).addTag(BlockTags.SPELEOTHEMS).addTag(BlockTags.GRASS_BLOCKS).addTag(BlockTags.DIRT).addTag(BlockTags.SAND).addTag(BlockTags.ICE).addTag(BlockTags.STONE_BRICKS).addTag(BlockTags.ANVIL).add(StateTypes.WHITE_STAINED_GLASS, StateTypes.ORANGE_STAINED_GLASS, StateTypes.MAGENTA_STAINED_GLASS, StateTypes.LIGHT_BLUE_STAINED_GLASS, StateTypes.YELLOW_STAINED_GLASS, StateTypes.LIME_STAINED_GLASS, StateTypes.PINK_STAINED_GLASS, StateTypes.GRAY_STAINED_GLASS, StateTypes.LIGHT_GRAY_STAINED_GLASS, StateTypes.CYAN_STAINED_GLASS, StateTypes.PURPLE_STAINED_GLASS, StateTypes.BLUE_STAINED_GLASS, StateTypes.BROWN_STAINED_GLASS, StateTypes.GREEN_STAINED_GLASS, StateTypes.RED_STAINED_GLASS, StateTypes.BLACK_STAINED_GLASS, StateTypes.WHITE_STAINED_GLASS_PANE, StateTypes.ORANGE_STAINED_GLASS_PANE, StateTypes.MAGENTA_STAINED_GLASS_PANE, StateTypes.LIGHT_BLUE_STAINED_GLASS_PANE, StateTypes.YELLOW_STAINED_GLASS_PANE, StateTypes.LIME_STAINED_GLASS_PANE, StateTypes.PINK_STAINED_GLASS_PANE, StateTypes.GRAY_STAINED_GLASS_PANE, StateTypes.LIGHT_GRAY_STAINED_GLASS_PANE, StateTypes.CYAN_STAINED_GLASS_PANE, StateTypes.PURPLE_STAINED_GLASS_PANE, StateTypes.BLUE_STAINED_GLASS_PANE, StateTypes.BROWN_STAINED_GLASS_PANE, StateTypes.GREEN_STAINED_GLASS_PANE, StateTypes.RED_STAINED_GLASS_PANE, StateTypes.BLACK_STAINED_GLASS_PANE, StateTypes.CUT_COPPER, StateTypes.EXPOSED_CUT_COPPER, StateTypes.WEATHERED_CUT_COPPER, StateTypes.OXIDIZED_CUT_COPPER, StateTypes.WAXED_CUT_COPPER, StateTypes.WAXED_EXPOSED_CUT_COPPER, StateTypes.WAXED_WEATHERED_CUT_COPPER, StateTypes.WAXED_OXIDIZED_CUT_COPPER, StateTypes.CHISELED_COPPER, StateTypes.EXPOSED_CHISELED_COPPER, StateTypes.WEATHERED_CHISELED_COPPER, StateTypes.OXIDIZED_CHISELED_COPPER, StateTypes.WAXED_CHISELED_COPPER, StateTypes.WAXED_EXPOSED_CHISELED_COPPER, StateTypes.WAXED_WEATHERED_CHISELED_COPPER, StateTypes.WAXED_OXIDIZED_CHISELED_COPPER, StateTypes.COPPER_GRATE, StateTypes.EXPOSED_COPPER_GRATE, StateTypes.WEATHERED_COPPER_GRATE, StateTypes.OXIDIZED_COPPER_GRATE, StateTypes.WAXED_COPPER_GRATE, StateTypes.WAXED_EXPOSED_COPPER_GRATE, StateTypes.WAXED_WEATHERED_COPPER_GRATE, StateTypes.WAXED_OXIDIZED_COPPER_GRATE, StateTypes.COPPER_BULB, StateTypes.EXPOSED_COPPER_BULB, StateTypes.WEATHERED_COPPER_BULB, StateTypes.OXIDIZED_COPPER_BULB, StateTypes.WAXED_COPPER_BULB, StateTypes.WAXED_EXPOSED_COPPER_BULB, StateTypes.WAXED_WEATHERED_COPPER_BULB, StateTypes.WAXED_OXIDIZED_COPPER_BULB, StateTypes.DEAD_TUBE_CORAL_WALL_FAN, StateTypes.DEAD_BRAIN_CORAL_WALL_FAN, StateTypes.DEAD_BUBBLE_CORAL_WALL_FAN, StateTypes.DEAD_FIRE_CORAL_WALL_FAN, StateTypes.DEAD_HORN_CORAL_WALL_FAN, StateTypes.MOVING_PISTON, StateTypes.PISTON_HEAD, StateTypes.CAKE, StateTypes.TURTLE_EGG, StateTypes.DRIED_GHAST, StateTypes.DEAD_TUBE_CORAL_BLOCK, StateTypes.DEAD_BRAIN_CORAL_BLOCK, StateTypes.DEAD_BUBBLE_CORAL_BLOCK, StateTypes.DEAD_FIRE_CORAL_BLOCK, StateTypes.DEAD_HORN_CORAL_BLOCK, StateTypes.DEAD_TUBE_CORAL, StateTypes.DEAD_BRAIN_CORAL, StateTypes.DEAD_BUBBLE_CORAL, StateTypes.DEAD_FIRE_CORAL, StateTypes.DEAD_HORN_CORAL, StateTypes.DEAD_TUBE_CORAL_FAN, StateTypes.DEAD_BRAIN_CORAL_FAN, StateTypes.DEAD_BUBBLE_CORAL_FAN, StateTypes.DEAD_FIRE_CORAL_FAN, StateTypes.DEAD_HORN_CORAL_FAN, StateTypes.CONDUIT, StateTypes.BAMBOO, StateTypes.BELL, StateTypes.AMETHYST_CLUSTER, StateTypes.LARGE_AMETHYST_BUD, StateTypes.MEDIUM_AMETHYST_BUD, StateTypes.SMALL_AMETHYST_BUD, StateTypes.SCULK_VEIN, StateTypes.STONE, StateTypes.GRANITE, StateTypes.POLISHED_GRANITE, StateTypes.DIORITE, StateTypes.POLISHED_DIORITE, StateTypes.ANDESITE, StateTypes.POLISHED_ANDESITE, StateTypes.COBBLESTONE, StateTypes.BAMBOO_MOSAIC, StateTypes.BEDROCK, StateTypes.GRAVEL, StateTypes.SUSPICIOUS_GRAVEL, StateTypes.MANGROVE_ROOTS, StateTypes.MUDDY_MANGROVE_ROOTS, StateTypes.SPONGE, StateTypes.WET_SPONGE, StateTypes.GLASS, StateTypes.LAPIS_BLOCK, StateTypes.DISPENSER, StateTypes.SANDSTONE, StateTypes.CHISELED_SANDSTONE, StateTypes.CUT_SANDSTONE, StateTypes.NOTE_BLOCK, StateTypes.STICKY_PISTON, StateTypes.PISTON, StateTypes.GOLD_BLOCK, StateTypes.IRON_BLOCK, StateTypes.BRICKS, StateTypes.TNT, StateTypes.BOOKSHELF, StateTypes.CHISELED_BOOKSHELF, StateTypes.MOSSY_COBBLESTONE, StateTypes.OBSIDIAN, StateTypes.SPAWNER, StateTypes.CREAKING_HEART, StateTypes.CHEST, StateTypes.DIAMOND_BLOCK, StateTypes.CRAFTING_TABLE, StateTypes.FARMLAND, StateTypes.FURNACE, StateTypes.SNOW_BLOCK, StateTypes.CACTUS, StateTypes.CLAY, StateTypes.JUKEBOX, StateTypes.NETHERRACK, StateTypes.SOUL_SAND, StateTypes.SOUL_SOIL, StateTypes.BASALT, StateTypes.POLISHED_BASALT, StateTypes.GLOWSTONE, StateTypes.CARVED_PUMPKIN, StateTypes.JACK_O_LANTERN, StateTypes.PACKED_MUD, StateTypes.MUD_BRICKS, StateTypes.INFESTED_STONE, StateTypes.INFESTED_COBBLESTONE, StateTypes.INFESTED_STONE_BRICKS, StateTypes.INFESTED_MOSSY_STONE_BRICKS, StateTypes.INFESTED_CRACKED_STONE_BRICKS, StateTypes.INFESTED_CHISELED_STONE_BRICKS, StateTypes.BROWN_MUSHROOM_BLOCK, StateTypes.RED_MUSHROOM_BLOCK, StateTypes.MUSHROOM_STEM, StateTypes.GLASS_PANE, StateTypes.PUMPKIN, StateTypes.MELON, StateTypes.RESIN_BLOCK, StateTypes.RESIN_BRICKS, StateTypes.CHISELED_RESIN_BRICKS, StateTypes.NETHER_BRICKS, StateTypes.ENCHANTING_TABLE, StateTypes.BREWING_STAND, StateTypes.END_PORTAL_FRAME, StateTypes.END_STONE, StateTypes.DRAGON_EGG, StateTypes.REDSTONE_LAMP, StateTypes.ENDER_CHEST, StateTypes.EMERALD_BLOCK, StateTypes.COMMAND_BLOCK, StateTypes.BEACON, StateTypes.TRAPPED_CHEST, StateTypes.DAYLIGHT_DETECTOR, StateTypes.REDSTONE_BLOCK, StateTypes.HOPPER, StateTypes.QUARTZ_BLOCK, StateTypes.CHISELED_QUARTZ_BLOCK, StateTypes.QUARTZ_PILLAR, StateTypes.DROPPER, StateTypes.SLIME_BLOCK, StateTypes.BARRIER, StateTypes.PRISMARINE, StateTypes.PRISMARINE_BRICKS, StateTypes.DARK_PRISMARINE, StateTypes.SEA_LANTERN, StateTypes.HAY_BLOCK, StateTypes.COAL_BLOCK, StateTypes.RED_SANDSTONE, StateTypes.CHISELED_RED_SANDSTONE, StateTypes.CUT_RED_SANDSTONE, StateTypes.SMOOTH_STONE, StateTypes.SMOOTH_SANDSTONE, StateTypes.SMOOTH_QUARTZ, StateTypes.SMOOTH_RED_SANDSTONE, StateTypes.PURPUR_BLOCK, StateTypes.PURPUR_PILLAR, StateTypes.END_STONE_BRICKS, StateTypes.DIRT_PATH, StateTypes.REPEATING_COMMAND_BLOCK, StateTypes.CHAIN_COMMAND_BLOCK, StateTypes.MAGMA_BLOCK, StateTypes.NETHER_WART_BLOCK, StateTypes.RED_NETHER_BRICKS, StateTypes.BONE_BLOCK, StateTypes.OBSERVER, StateTypes.DRIED_KELP_BLOCK, StateTypes.SNIFFER_EGG, StateTypes.LOOM, StateTypes.BARREL, StateTypes.SMOKER, StateTypes.BLAST_FURNACE, StateTypes.CARTOGRAPHY_TABLE, StateTypes.FLETCHING_TABLE, StateTypes.GRINDSTONE, StateTypes.LECTERN, StateTypes.SMITHING_TABLE, StateTypes.STONECUTTER, StateTypes.CAMPFIRE, StateTypes.SOUL_CAMPFIRE, StateTypes.WARPED_NYLIUM, StateTypes.WARPED_WART_BLOCK, StateTypes.CRIMSON_NYLIUM, StateTypes.SHROOMLIGHT, StateTypes.STRUCTURE_BLOCK, StateTypes.JIGSAW, StateTypes.TEST_BLOCK, StateTypes.TEST_INSTANCE_BLOCK, StateTypes.COMPOSTER, StateTypes.TARGET, StateTypes.BEE_NEST, StateTypes.BEEHIVE, StateTypes.HONEY_BLOCK, StateTypes.HONEYCOMB_BLOCK, StateTypes.NETHERITE_BLOCK, StateTypes.ANCIENT_DEBRIS, StateTypes.CRYING_OBSIDIAN, StateTypes.RESPAWN_ANCHOR, StateTypes.LODESTONE, StateTypes.BLACKSTONE, StateTypes.POLISHED_BLACKSTONE, StateTypes.POLISHED_BLACKSTONE_BRICKS, StateTypes.CRACKED_POLISHED_BLACKSTONE_BRICKS, StateTypes.CHISELED_POLISHED_BLACKSTONE, StateTypes.GILDED_BLACKSTONE, StateTypes.CHISELED_NETHER_BRICKS, StateTypes.CRACKED_NETHER_BRICKS, StateTypes.QUARTZ_BRICKS, StateTypes.AMETHYST_BLOCK, StateTypes.BUDDING_AMETHYST, StateTypes.TUFF, StateTypes.POLISHED_TUFF, StateTypes.CHISELED_TUFF, StateTypes.TUFF_BRICKS, StateTypes.CHISELED_TUFF_BRICKS, StateTypes.SULFUR, StateTypes.POTENT_SULFUR, StateTypes.POLISHED_SULFUR, StateTypes.SULFUR_BRICKS, StateTypes.CHISELED_SULFUR, StateTypes.CINNABAR, StateTypes.POLISHED_CINNABAR, StateTypes.CINNABAR_BRICKS, StateTypes.CHISELED_CINNABAR, StateTypes.CALCITE, StateTypes.TINTED_GLASS, StateTypes.SCULK_SENSOR, StateTypes.CALIBRATED_SCULK_SENSOR, StateTypes.SCULK, StateTypes.SCULK_CATALYST, StateTypes.SCULK_SHRIEKER, StateTypes.DRIPSTONE_BLOCK, StateTypes.MOSS_BLOCK, StateTypes.MUD, StateTypes.DEEPSLATE, StateTypes.COBBLED_DEEPSLATE, StateTypes.POLISHED_DEEPSLATE, StateTypes.DEEPSLATE_TILES, StateTypes.DEEPSLATE_BRICKS, StateTypes.CHISELED_DEEPSLATE, StateTypes.CRACKED_DEEPSLATE_BRICKS, StateTypes.CRACKED_DEEPSLATE_TILES, StateTypes.INFESTED_DEEPSLATE, StateTypes.SMOOTH_BASALT, StateTypes.RAW_IRON_BLOCK, StateTypes.RAW_COPPER_BLOCK, StateTypes.RAW_GOLD_BLOCK, StateTypes.OCHRE_FROGLIGHT, StateTypes.VERDANT_FROGLIGHT, StateTypes.PEARLESCENT_FROGLIGHT, StateTypes.REINFORCED_DEEPSLATE, StateTypes.DECORATED_POT, StateTypes.CRAFTER, StateTypes.TRIAL_SPAWNER, StateTypes.VAULT, StateTypes.PALE_MOSS_BLOCK, StateTypes.STRAW_BED);
+        BlockTags.SUPPORTS_PUMPKIN_STEM_FRUIT.addTag(BlockTags.SUPPORTS_STEM_FRUIT);
+        copy(BlockTags.SUPPORTS_PUMPKIN_STEM_FRUIT, BlockTags.SUPPORTS_MELON_STEM_FRUIT);
+        BlockTags.SUPPORTS_CRIMSON_FUNGUS.addTag(BlockTags.SUPPORTS_WARPED_FUNGUS);
+        BlockTags.SUPPORTS_CRIMSON_ROOTS.addTag(BlockTags.SUPPORTS_WARPED_ROOTS);
+        BlockTags.BLOCKS_MOTION.addTag(BlockTags.BLOCKS_MOTION_NO_LEAVES).addTag(BlockTags.LEAVES);
+        BlockTags.BLOCKS_MOTION_IN_HEIGHTMAP_NO_LEAVES.addTag(BlockTags.BLOCKS_MOTION_NO_LEAVES);
+        BlockTags.ENTITIES_CAN_TELEPORT_TO.addTag(BlockTags.BLOCKS_MOTION);
+        copy(BlockTags.ENTITIES_CAN_TELEPORT_TO, BlockTags.BLOCKS_DOLPHIN_JUMP);
+        copy(BlockTags.ENTITIES_CAN_TELEPORT_TO, BlockTags.ICE_MELTS_WHEN_DESTROYED_ABOVE);
+        copy(BlockTags.ENTITIES_CAN_TELEPORT_TO, BlockTags.CAUSES_SUFFOCATION);
+        copy(BlockTags.ENTITIES_CAN_TELEPORT_TO, BlockTags.BLOCKS_MOTION_IN_HEIGHTMAP);
+        copy(BlockTags.ENTITIES_CAN_TELEPORT_TO, BlockTags.BLOCKS_LAVA_FIRE_SPREAD);
+        BlockTags.BLOCKS_FLUID_FLOW.addTag(BlockTags.BLOCKS_MOTION).addTag(BlockTags.ALL_SIGNS);
+        // auto-generated end
+
+        // legacy
+        BlockTags.TALL_FLOWERS.add(StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.PEONY, StateTypes.ROSE_BUSH, StateTypes.PITCHER_PLANT);
+        BlockTags.AZALEA_GROWS_ON.addTag(BlockTags.DIRT).addTag(BlockTags.SAND).addTag(BlockTags.TERRACOTTA).add(StateTypes.SNOW_BLOCK, StateTypes.POWDER_SNOW);
+        BlockTags.REPLACEABLE_PLANTS.add(StateTypes.SHORT_GRASS, StateTypes.FERN, StateTypes.DEAD_BUSH, StateTypes.VINE, StateTypes.GLOW_LICHEN, StateTypes.SUNFLOWER, StateTypes.LILAC, StateTypes.ROSE_BUSH, StateTypes.PEONY, StateTypes.TALL_GRASS, StateTypes.LARGE_FERN, StateTypes.HANGING_ROOTS, StateTypes.PITCHER_PLANT);
+        BlockTags.NETHER_CARVER_REPLACEABLES.addTag(BlockTags.BASE_STONE_OVERWORLD).addTag(BlockTags.BASE_STONE_NETHER).addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.NYLIUM).addTag(BlockTags.WART_BLOCKS).add(StateTypes.SOUL_SAND, StateTypes.SOUL_SOIL);
+        BlockTags.OVERWORLD_CARVER_REPLACEABLES.addTag(BlockTags.BASE_STONE_OVERWORLD).addTag(BlockTags.SUBSTRATE_OVERWORLD).addTag(BlockTags.SAND).addTag(BlockTags.TERRACOTTA).addTag(BlockTags.IRON_ORES).addTag(BlockTags.COPPER_ORES).addTag(BlockTags.SNOW).add(StateTypes.WATER, StateTypes.GRAVEL, StateTypes.SUSPICIOUS_GRAVEL, StateTypes.SANDSTONE, StateTypes.RED_SANDSTONE, StateTypes.CALCITE, StateTypes.PACKED_ICE, StateTypes.RAW_IRON_BLOCK, StateTypes.RAW_COPPER_BLOCK, StateTypes.CINNABAR, StateTypes.SULFUR, StateTypes.POTENT_SULFUR);
+        BlockTags.CONVERTABLE_TO_MUD.add(StateTypes.DIRT, StateTypes.COARSE_DIRT, StateTypes.ROOTED_DIRT);
+        // legacy blocks
+        BlockTags.CHAINS.add(StateTypes.CHAIN);
+        BlockTags.MINEABLE_PICKAXE.add(StateTypes.CHAIN);
+        BlockTags.MINEABLE_SHOVEL.add(StateTypes.GRASS_PATH);
+        // Unofficial blocks to help packetevents users
+        BlockTags.GLASS_BLOCKS.add(StateTypes.GLASS, StateTypes.WHITE_STAINED_GLASS, StateTypes.ORANGE_STAINED_GLASS, StateTypes.MAGENTA_STAINED_GLASS, StateTypes.LIGHT_BLUE_STAINED_GLASS, StateTypes.YELLOW_STAINED_GLASS, StateTypes.LIME_STAINED_GLASS, StateTypes.PINK_STAINED_GLASS, StateTypes.GRAY_STAINED_GLASS, StateTypes.LIGHT_GRAY_STAINED_GLASS, StateTypes.CYAN_STAINED_GLASS, StateTypes.PURPLE_STAINED_GLASS, StateTypes.BLUE_STAINED_GLASS, StateTypes.BROWN_STAINED_GLASS, StateTypes.GREEN_STAINED_GLASS, StateTypes.RED_STAINED_GLASS, StateTypes.BLACK_STAINED_GLASS, StateTypes.TINTED_GLASS);
+        BlockTags.GLASS_PANES.add(StateTypes.GLASS_PANE, StateTypes.WHITE_STAINED_GLASS_PANE, StateTypes.ORANGE_STAINED_GLASS_PANE, StateTypes.MAGENTA_STAINED_GLASS_PANE, StateTypes.LIGHT_BLUE_STAINED_GLASS_PANE, StateTypes.YELLOW_STAINED_GLASS_PANE, StateTypes.LIME_STAINED_GLASS_PANE, StateTypes.PINK_STAINED_GLASS_PANE, StateTypes.GRAY_STAINED_GLASS_PANE, StateTypes.LIGHT_GRAY_STAINED_GLASS_PANE, StateTypes.CYAN_STAINED_GLASS_PANE, StateTypes.PURPLE_STAINED_GLASS_PANE, StateTypes.BLUE_STAINED_GLASS_PANE, StateTypes.BROWN_STAINED_GLASS_PANE, StateTypes.GREEN_STAINED_GLASS_PANE, StateTypes.RED_STAINED_GLASS_PANE, StateTypes.BLACK_STAINED_GLASS_PANE);
+        BlockTags.ALL_CORAL_PLANTS.add(StateTypes.TUBE_CORAL, StateTypes.BRAIN_CORAL, StateTypes.BUBBLE_CORAL, StateTypes.FIRE_CORAL, StateTypes.HORN_CORAL, StateTypes.DEAD_TUBE_CORAL, StateTypes.DEAD_BRAIN_CORAL, StateTypes.DEAD_BUBBLE_CORAL, StateTypes.DEAD_FIRE_CORAL, StateTypes.DEAD_HORN_CORAL);
+        BlockTags.DEAD_CORAL_PLANTS.add(StateTypes.DEAD_TUBE_CORAL, StateTypes.DEAD_BRAIN_CORAL, StateTypes.DEAD_BUBBLE_CORAL, StateTypes.DEAD_FIRE_CORAL, StateTypes.DEAD_HORN_CORAL);
+        BlockTags.V_1_20_5.add(StateTypes.VAULT, StateTypes.HEAVY_CORE);
+        BlockTags.V_1_21_2.add(StateTypes.PALE_OAK_WOOD, StateTypes.PALE_OAK_PLANKS, StateTypes.PALE_OAK_SAPLING, StateTypes.PALE_OAK_LOG, StateTypes.STRIPPED_PALE_OAK_LOG, StateTypes.STRIPPED_PALE_OAK_WOOD, StateTypes.PALE_OAK_LEAVES, StateTypes.CREAKING_HEART, StateTypes.PALE_OAK_SIGN, StateTypes.PALE_OAK_WALL_SIGN, StateTypes.PALE_OAK_HANGING_SIGN, StateTypes.PALE_OAK_WALL_HANGING_SIGN, StateTypes.PALE_OAK_PRESSURE_PLATE, StateTypes.PALE_OAK_TRAPDOOR, StateTypes.POTTED_PALE_OAK_SAPLING, StateTypes.PALE_OAK_BUTTON, StateTypes.PALE_OAK_STAIRS, StateTypes.PALE_OAK_SLAB, StateTypes.PALE_OAK_FENCE_GATE, StateTypes.PALE_OAK_FENCE, StateTypes.PALE_OAK_DOOR, StateTypes.PALE_MOSS_BLOCK, StateTypes.PALE_MOSS_CARPET, StateTypes.PALE_HANGING_MOSS);
+        BlockTags.V_1_21_4.add(StateTypes.RESIN_CLUMP, StateTypes.RESIN_BLOCK, StateTypes.RESIN_BRICKS, StateTypes.RESIN_BRICK_STAIRS, StateTypes.RESIN_BRICK_SLAB, StateTypes.RESIN_BRICK_WALL, StateTypes.CHISELED_RESIN_BRICKS, StateTypes.OPEN_EYEBLOSSOM, StateTypes.CLOSED_EYEBLOSSOM, StateTypes.POTTED_OPEN_EYEBLOSSOM, StateTypes.POTTED_CLOSED_EYEBLOSSOM);
+        BlockTags.V_1_21_5.add(StateTypes.BUSH, StateTypes.FIREFLY_BUSH, StateTypes.SHORT_DRY_GRASS, StateTypes.TALL_DRY_GRASS, StateTypes.WILDFLOWERS, StateTypes.LEAF_LITTER, StateTypes.CACTUS_FLOWER, StateTypes.TEST_BLOCK, StateTypes.TEST_INSTANCE_BLOCK);
+        BlockTags.V_1_21_6.add(StateTypes.DRIED_GHAST);
+        BlockTags.V_1_21_9.add(StateTypes.ACACIA_SHELF, StateTypes.BAMBOO_SHELF, StateTypes.BIRCH_SHELF, StateTypes.CHERRY_SHELF, StateTypes.CRIMSON_SHELF, StateTypes.DARK_OAK_SHELF, StateTypes.JUNGLE_SHELF, StateTypes.MANGROVE_SHELF, StateTypes.OAK_SHELF, StateTypes.PALE_OAK_SHELF, StateTypes.SPRUCE_SHELF, StateTypes.WARPED_SHELF, StateTypes.COPPER_TORCH, StateTypes.COPPER_WALL_TORCH, StateTypes.COPPER_BARS, StateTypes.EXPOSED_COPPER_BARS, StateTypes.WEATHERED_COPPER_BARS, StateTypes.OXIDIZED_COPPER_BARS, StateTypes.WAXED_COPPER_BARS, StateTypes.WAXED_EXPOSED_COPPER_BARS, StateTypes.WAXED_WEATHERED_COPPER_BARS, StateTypes.WAXED_OXIDIZED_COPPER_BARS, StateTypes.IRON_CHAIN, StateTypes.COPPER_CHAIN, StateTypes.EXPOSED_COPPER_CHAIN, StateTypes.WEATHERED_COPPER_CHAIN, StateTypes.OXIDIZED_COPPER_CHAIN, StateTypes.WAXED_COPPER_CHAIN, StateTypes.WAXED_EXPOSED_COPPER_CHAIN, StateTypes.WAXED_WEATHERED_COPPER_CHAIN, StateTypes.WAXED_OXIDIZED_COPPER_CHAIN, StateTypes.COPPER_LANTERN, StateTypes.EXPOSED_COPPER_LANTERN, StateTypes.WEATHERED_COPPER_LANTERN, StateTypes.OXIDIZED_COPPER_LANTERN, StateTypes.WAXED_COPPER_LANTERN, StateTypes.WAXED_EXPOSED_COPPER_LANTERN, StateTypes.WAXED_WEATHERED_COPPER_LANTERN, StateTypes.WAXED_OXIDIZED_COPPER_LANTERN, StateTypes.COPPER_CHEST, StateTypes.EXPOSED_COPPER_CHEST, StateTypes.WEATHERED_COPPER_CHEST, StateTypes.OXIDIZED_COPPER_CHEST, StateTypes.WAXED_COPPER_CHEST, StateTypes.WAXED_EXPOSED_COPPER_CHEST, StateTypes.WAXED_WEATHERED_COPPER_CHEST, StateTypes.WAXED_OXIDIZED_COPPER_CHEST, StateTypes.COPPER_GOLEM_STATUE, StateTypes.EXPOSED_COPPER_GOLEM_STATUE, StateTypes.WEATHERED_COPPER_GOLEM_STATUE, StateTypes.OXIDIZED_COPPER_GOLEM_STATUE, StateTypes.WAXED_COPPER_GOLEM_STATUE, StateTypes.WAXED_EXPOSED_COPPER_GOLEM_STATUE, StateTypes.WAXED_WEATHERED_COPPER_GOLEM_STATUE, StateTypes.WAXED_OXIDIZED_COPPER_GOLEM_STATUE, StateTypes.EXPOSED_LIGHTNING_ROD, StateTypes.WEATHERED_LIGHTNING_ROD, StateTypes.OXIDIZED_LIGHTNING_ROD, StateTypes.WAXED_LIGHTNING_ROD, StateTypes.WAXED_EXPOSED_LIGHTNING_ROD, StateTypes.WAXED_WEATHERED_LIGHTNING_ROD, StateTypes.WAXED_OXIDIZED_LIGHTNING_ROD);
+        BlockTags.V_26_1.add(StateTypes.GOLDEN_DANDELION, StateTypes.POTTED_GOLDEN_DANDELION);
+        BlockTags.V_26_2.add(StateTypes.SULFUR, StateTypes.POTENT_SULFUR, StateTypes.SULFUR_SLAB, StateTypes.SULFUR_STAIRS, StateTypes.SULFUR_WALL, StateTypes.POLISHED_SULFUR, StateTypes.POLISHED_SULFUR_SLAB, StateTypes.POLISHED_SULFUR_STAIRS, StateTypes.POLISHED_SULFUR_WALL, StateTypes.SULFUR_BRICKS, StateTypes.SULFUR_BRICK_SLAB, StateTypes.SULFUR_BRICK_STAIRS, StateTypes.SULFUR_BRICK_WALL, StateTypes.CHISELED_SULFUR, StateTypes.CINNABAR, StateTypes.CINNABAR_SLAB, StateTypes.CINNABAR_STAIRS, StateTypes.CINNABAR_WALL, StateTypes.POLISHED_CINNABAR, StateTypes.POLISHED_CINNABAR_SLAB, StateTypes.POLISHED_CINNABAR_STAIRS, StateTypes.POLISHED_CINNABAR_WALL, StateTypes.CINNABAR_BRICKS, StateTypes.CINNABAR_BRICK_SLAB, StateTypes.CINNABAR_BRICK_STAIRS, StateTypes.CINNABAR_BRICK_WALL, StateTypes.CHISELED_CINNABAR, StateTypes.SULFUR_SPIKE);
+        BlockTags.V_26_3.add(StateTypes.BLACK_CONCRETE_SLAB, StateTypes.BLACK_CONCRETE_STAIRS, StateTypes.BLACK_WOOL_SLAB, StateTypes.BLACK_WOOL_STAIRS, StateTypes.BLUE_CONCRETE_SLAB, StateTypes.BLUE_CONCRETE_STAIRS, StateTypes.BLUE_WOOL_SLAB, StateTypes.BLUE_WOOL_STAIRS, StateTypes.BROWN_CONCRETE_SLAB, StateTypes.BROWN_CONCRETE_STAIRS, StateTypes.BROWN_WOOL_SLAB, StateTypes.BROWN_WOOL_STAIRS, StateTypes.CYAN_CONCRETE_SLAB, StateTypes.CYAN_CONCRETE_STAIRS, StateTypes.CYAN_WOOL_SLAB, StateTypes.CYAN_WOOL_STAIRS, StateTypes.GRAY_CONCRETE_SLAB, StateTypes.GRAY_CONCRETE_STAIRS, StateTypes.GRAY_WOOL_SLAB, StateTypes.GRAY_WOOL_STAIRS, StateTypes.GREEN_CONCRETE_SLAB, StateTypes.GREEN_CONCRETE_STAIRS, StateTypes.GREEN_WOOL_SLAB, StateTypes.GREEN_WOOL_STAIRS, StateTypes.LIGHT_BLUE_CONCRETE_SLAB, StateTypes.LIGHT_BLUE_CONCRETE_STAIRS, StateTypes.LIGHT_BLUE_WOOL_SLAB, StateTypes.LIGHT_BLUE_WOOL_STAIRS, StateTypes.LIGHT_GRAY_CONCRETE_SLAB, StateTypes.LIGHT_GRAY_CONCRETE_STAIRS, StateTypes.LIGHT_GRAY_WOOL_SLAB, StateTypes.LIGHT_GRAY_WOOL_STAIRS, StateTypes.LIME_CONCRETE_SLAB, StateTypes.LIME_CONCRETE_STAIRS, StateTypes.LIME_WOOL_SLAB, StateTypes.LIME_WOOL_STAIRS, StateTypes.MAGENTA_CONCRETE_SLAB, StateTypes.MAGENTA_CONCRETE_STAIRS, StateTypes.MAGENTA_WOOL_SLAB, StateTypes.MAGENTA_WOOL_STAIRS, StateTypes.ORANGE_CONCRETE_SLAB, StateTypes.ORANGE_CONCRETE_STAIRS, StateTypes.ORANGE_POPLAR_LEAVES, StateTypes.ORANGE_WOOL_SLAB, StateTypes.ORANGE_WOOL_STAIRS, StateTypes.PINK_CONCRETE_SLAB, StateTypes.PINK_CONCRETE_STAIRS, StateTypes.PINK_WOOL_SLAB, StateTypes.PINK_WOOL_STAIRS, StateTypes.POPLAR_BUTTON, StateTypes.POPLAR_DOOR, StateTypes.POPLAR_FENCE, StateTypes.POPLAR_FENCE_GATE, StateTypes.POPLAR_HANGING_SIGN, StateTypes.POPLAR_LOG, StateTypes.POPLAR_PLANKS, StateTypes.POPLAR_PRESSURE_PLATE, StateTypes.POPLAR_SAPLING, StateTypes.POPLAR_SHELF, StateTypes.POPLAR_SIGN, StateTypes.POPLAR_SLAB, StateTypes.POPLAR_STAIRS, StateTypes.POPLAR_TRAPDOOR, StateTypes.POPLAR_WALL_HANGING_SIGN, StateTypes.POPLAR_WALL_SIGN, StateTypes.POPLAR_WOOD, StateTypes.POTTED_POPLAR_SAPLING, StateTypes.PURPLE_CONCRETE_SLAB, StateTypes.PURPLE_CONCRETE_STAIRS, StateTypes.PURPLE_WOOL_SLAB, StateTypes.PURPLE_WOOL_STAIRS, StateTypes.RED_CONCRETE_SLAB, StateTypes.RED_CONCRETE_STAIRS, StateTypes.RED_POPLAR_LEAVES, StateTypes.RED_SHRUB, StateTypes.RED_WOOL_SLAB, StateTypes.RED_WOOL_STAIRS, StateTypes.SHELF_MUSHROOM, StateTypes.STRAW_BED, StateTypes.STRIPPED_POPLAR_LOG, StateTypes.STRIPPED_POPLAR_WOOD, StateTypes.WHITE_CONCRETE_SLAB, StateTypes.WHITE_CONCRETE_STAIRS, StateTypes.WHITE_WOOL_SLAB, StateTypes.WHITE_WOOL_STAIRS, StateTypes.YELLOW_CONCRETE_SLAB, StateTypes.YELLOW_CONCRETE_STAIRS, StateTypes.YELLOW_POPLAR_LEAVES, StateTypes.YELLOW_WOOL_SLAB, StateTypes.YELLOW_WOOL_STAIRS);
+    }
+
+    TagKey name;
+    Set<StateType> states = new HashSet<>(); // o(1)
+    boolean reallyEmpty;
+
+    public BlockTags(final String name) {
+        byName.put(name, this);
+        this.name = new TagKey(new ResourceLocation(name));
+    }
+
+    private static BlockTags bind(final String s) {
+        return new BlockTags(s);
+    }
+
+    private static void copy(@Nullable BlockTags src, BlockTags dst) {
+        if (src != null) {
+            dst.states.addAll(src.states);
+        } else {
+            dst.reallyEmpty = true;
+        }
+    }
+
+    private BlockTags add(StateType... state) {
+        Collections.addAll(this.states, state);
+        return this;
+    }
+
+    private BlockTags addTag(BlockTags tags) {
+        if (tags.states.isEmpty()) {
+            throw new IllegalArgumentException("Tag " + tags.name + " is empty when adding to " + this.name + ", you (packetevents updater) probably messed up the block tags order!!");
+        }
+        this.states.addAll(tags.states);
+        return this;
+    }
+
+    public boolean contains(StateType state) {
+        return this.states.contains(state);
+    }
+
+    public TagKey getKey() {
+        return this.name;
+    }
+
+    public String getName() {
+        return this.name.getId().toString();
+    }
+
+    public static BlockTags getByName(String name) {
+        return byName.get(name);
+    }
+
+    public Set<StateType> getStates() {
+        return this.states;
+    }
+
+    @VisibleForTesting
+    public boolean isReallyEmpty() {
+        return this.reallyEmpty;
+    }
+}
