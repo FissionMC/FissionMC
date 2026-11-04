@@ -1,0 +1,233 @@
+# owner: declaration — see loader/.../surface/Surface.kt. Fully qualified types, `$` for nested classes.
+# Area: PLAYER + NETWORK
+
+# Paper: sources/net/minecraft/server/level/ServerPlayer.java.patch
+net.minecraft.server.level.ServerPlayer: public java.util.Locale adventure$locale
+net.minecraft.server.level.ServerPlayer: public long loginTime
+net.minecraft.server.level.ServerPlayer: public int patrolSpawnDelay
+net.minecraft.server.level.ServerPlayer: public boolean queueHealthUpdatePacket
+net.minecraft.server.level.ServerPlayer: public net.minecraft.network.protocol.game.ClientboundSetHealthPacket queuedHealthUpdatePacket
+net.minecraft.server.level.ServerPlayer: public java.lang.String lastKnownName
+net.minecraft.server.level.ServerPlayer: public java.lang.String displayName
+net.minecraft.server.level.ServerPlayer: public net.kyori.adventure.text.Component adventure$displayName
+net.minecraft.server.level.ServerPlayer: public net.minecraft.network.chat.Component listName
+net.minecraft.server.level.ServerPlayer: public int listOrder
+net.minecraft.server.level.ServerPlayer: public org.bukkit.Location compassTarget
+net.minecraft.server.level.ServerPlayer: public int newExp
+net.minecraft.server.level.ServerPlayer: public int newLevel
+net.minecraft.server.level.ServerPlayer: public int newTotalExp
+net.minecraft.server.level.ServerPlayer: public boolean keepLevel
+net.minecraft.server.level.ServerPlayer: public double maxHealthCache
+net.minecraft.server.level.ServerPlayer: public boolean joining
+net.minecraft.server.level.ServerPlayer: public boolean sentListPacket
+net.minecraft.server.level.ServerPlayer: public boolean suppressTrackerForLogin
+net.minecraft.server.level.ServerPlayer: public boolean isRealPlayer
+net.minecraft.server.level.ServerPlayer: public com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent playerNaturallySpawnedEvent
+net.minecraft.server.level.ServerPlayer: public org.bukkit.event.player.PlayerQuitEvent$QuitReason quitReason
+net.minecraft.server.level.ServerPlayer: public long timeOffset
+net.minecraft.server.level.ServerPlayer: public boolean relativeTime
+net.minecraft.server.level.ServerPlayer: public org.bukkit.WeatherType weatherType
+net.minecraft.server.level.ServerPlayer: public net.minecraft.world.entity.Entity releaseLeftShoulderEntity()
+net.minecraft.server.level.ServerPlayer: public net.minecraft.world.entity.Entity releaseRightShoulderEntity()
+net.minecraft.server.level.ServerPlayer: public boolean setPostEffects(java.util.Collection<net.minecraft.resources.Identifier> postEffects)
+net.minecraft.server.level.ServerPlayer: public long getPlayerTime()
+net.minecraft.server.level.ServerPlayer: public void setPlayerWeather(org.bukkit.WeatherType type, boolean plugin)
+net.minecraft.server.level.ServerPlayer: public void updateWeather(float oldRain, float newRain, float oldThunder, float newThunder)
+net.minecraft.server.level.ServerPlayer: public void tickWeather()
+net.minecraft.server.level.ServerPlayer: public void resetPlayerWeather()
+net.minecraft.server.level.ServerPlayer: public boolean isImmobile()
+net.minecraft.server.level.ServerPlayer: public org.bukkit.craftbukkit.entity.CraftPlayer getBukkitEntity()
+net.minecraft.server.level.ServerPlayer: public org.bukkit.event.player.PlayerGameModeChangeEvent setGameMode(net.minecraft.world.level.GameType mode, org.bukkit.event.player.PlayerGameModeChangeEvent$Cause cause, net.kyori.adventure.text.Component message)
+net.minecraft.server.level.ServerPlayer: public void sendChatMessage(net.minecraft.network.chat.OutgoingChatMessage message, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)
+net.minecraft.server.level.ServerPlayer: public boolean setRespawnPosition(net.minecraft.server.level.ServerPlayer$RespawnConfig respawnConfig, boolean showMessage, com.destroystokyo.paper.event.player.PlayerSetSpawnEvent$Cause cause)
+net.minecraft.server.level.ServerPlayer: public void updateOptionsNoEvents(net.minecraft.server.level.ClientInformation information)
+net.minecraft.server.level.ServerPlayer: public void teleportTo(double x, double y, double z, org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause)
+net.minecraft.server.level.ServerPlayer: public void closeContainer(org.bukkit.event.inventory.InventoryCloseEvent$Reason reason)
+net.minecraft.server.level.ServerPlayer: public void closeUnloadedInventory(org.bukkit.event.inventory.InventoryCloseEvent$Reason reason)
+# FissionMC: stand-ins for Paper's return-type changes nextContainerCounter() void->int and drop(boolean) void->boolean
+net.minecraft.server.level.ServerPlayer: public int fission$nextContainerCounter()
+net.minecraft.server.level.ServerPlayer: public boolean fission$drop(boolean all)
+
+# Paper: sources/net/minecraft/server/level/ServerPlayerGameMode.java.patch
+net.minecraft.server.level.ServerPlayerGameMode: public org.bukkit.event.player.PlayerGameModeChangeEvent changeGameModeForPlayer(net.minecraft.world.level.GameType gameModeForPlayer, org.bukkit.event.player.PlayerGameModeChangeEvent$Cause playerGameModeChangeCause, net.kyori.adventure.text.Component cancelMessage)
+
+# Paper: sources/net/minecraft/world/entity/player/Player.java.patch
+net.minecraft.world.entity.player.Player: public boolean affectsSpawning
+net.minecraft.world.entity.player.Player: public net.kyori.adventure.util.TriState flyingFallDamage
+net.minecraft.world.entity.player.Player: public boolean fauxSleeping
+net.minecraft.world.entity.player.Player: public int oldLevel
+net.minecraft.world.entity.player.Player: public org.bukkit.craftbukkit.entity.CraftHumanEntity getBukkitEntity()
+net.minecraft.world.entity.player.Player: public void closeContainer(org.bukkit.event.inventory.InventoryCloseEvent$Reason reason)
+net.minecraft.world.entity.player.Player: public void closeUnloadedInventory(org.bukkit.event.inventory.InventoryCloseEvent$Reason reason)
+net.minecraft.world.entity.player.Player: public com.mojang.datafixers.util.Either<net.minecraft.world.entity.player.Player$BedSleepingProblem, net.minecraft.util.Unit> startSleepInBed(net.minecraft.world.level.block.AbstractBedBlock bedBlock, net.minecraft.world.level.block.state.BlockState bedBlockState, net.minecraft.world.attribute.BedRule rule, net.minecraft.core.BlockPos pos, boolean force)
+net.minecraft.world.entity.player.Player: public void causeFoodExhaustion(float amount, org.bukkit.event.entity.EntityExhaustionEvent$ExhaustionReason reason)
+net.minecraft.world.entity.player.Player$BedSleepingProblem: public static final net.minecraft.world.entity.player.Player$BedSleepingProblem EXPLOSION
+
+# Paper: sources/net/minecraft/world/entity/player/Inventory.java.patch
+net.minecraft.world.entity.player.Inventory: public static final net.minecraft.world.entity.EquipmentSlot[] EQUIPMENT_SLOTS_SORTED_BY_INDEX
+net.minecraft.world.entity.player.Inventory: public java.util.List<org.bukkit.entity.HumanEntity> transaction
+net.minecraft.world.entity.player.Inventory: public java.util.List<net.minecraft.world.item.ItemStack> getContents()
+net.minecraft.world.entity.player.Inventory: public java.util.List<net.minecraft.world.item.ItemStack> getArmorContents()
+net.minecraft.world.entity.player.Inventory: public java.util.List<net.minecraft.world.item.ItemStack> getExtraContent()
+net.minecraft.world.entity.player.Inventory: public void onOpen(org.bukkit.craftbukkit.entity.CraftHumanEntity player)
+net.minecraft.world.entity.player.Inventory: public void onClose(org.bukkit.craftbukkit.entity.CraftHumanEntity player)
+net.minecraft.world.entity.player.Inventory: public java.util.List<org.bukkit.entity.HumanEntity> getViewers()
+net.minecraft.world.entity.player.Inventory: public org.bukkit.inventory.InventoryHolder getOwner()
+net.minecraft.world.entity.player.Inventory: public int getMaxStackSize()
+net.minecraft.world.entity.player.Inventory: public void setMaxStackSize(int size)
+net.minecraft.world.entity.player.Inventory: public org.bukkit.Location getLocation()
+net.minecraft.world.entity.player.Inventory: public int canHold(net.minecraft.world.item.ItemStack itemStack)
+net.minecraft.world.entity.player.Inventory: public void addAndPickItem(net.minecraft.world.item.ItemStack itemStack, int targetSlot)
+net.minecraft.world.entity.player.Inventory: public void pickSlot(int slot, int targetSlot)
+
+# Paper: sources/net/minecraft/world/food/FoodData.java.patch
+net.minecraft.world.food.FoodData: public int saturatedRegenRate
+net.minecraft.world.food.FoodData: public int unsaturatedRegenRate
+net.minecraft.world.food.FoodData: public int starvationRate
+net.minecraft.world.food.FoodData: public void eat(net.minecraft.world.food.FoodProperties foodProperties, net.minecraft.world.item.ItemStack stack, net.minecraft.server.level.ServerPlayer serverPlayer)
+
+# Paper: sources/net/minecraft/network/Connection.java.patch
+net.minecraft.network.Connection: public java.util.UUID spoofedUUID
+net.minecraft.network.Connection: public com.mojang.authlib.properties.Property[] spoofedProfile
+net.minecraft.network.Connection: public boolean preparing
+net.minecraft.network.Connection: public java.lang.String hostname
+net.minecraft.network.Connection: public boolean handleConnectionDisconnectOnNextTick
+net.minecraft.network.Connection: public int protocolVersion
+net.minecraft.network.Connection: public java.net.InetSocketAddress virtualHost
+net.minecraft.network.Connection: public final net.minecraft.server.level.ServerPlayer getPlayer()
+net.minecraft.network.Connection: public java.net.SocketAddress haProxyAddress
+net.minecraft.network.Connection: public java.util.Optional<net.minecraft.network.chat.Component> legacySavedLoginEventResultOverride
+net.minecraft.network.Connection: public boolean handledLegacyLoginEvent
+net.minecraft.network.Connection: public net.minecraft.server.level.ServerPlayer savedPlayerForLegacyEvents
+net.minecraft.network.Connection: public org.bukkit.event.player.PlayerResourcePackStatusEvent$Status resourcePackStatus
+net.minecraft.network.Connection: public void enableAutoRead()
+
+# Paper: sources/net/minecraft/network/DisconnectionDetails.java.patch (record components; FissionMC: fields + accessors + factory)
+net.minecraft.network.DisconnectionDetails: public java.util.Optional<net.minecraft.network.chat.Component> quitMessage()
+net.minecraft.network.DisconnectionDetails: public java.util.Optional<io.papermc.paper.connection.DisconnectionReason> disconnectionReason()
+net.minecraft.network.DisconnectionDetails: public static net.minecraft.network.DisconnectionDetails create(net.minecraft.network.chat.Component reason, java.util.Optional<java.nio.file.Path> report, java.util.Optional<java.net.URI> bugReportLink, java.util.Optional<net.minecraft.network.chat.Component> quitMessage, java.util.Optional<io.papermc.paper.connection.DisconnectionReason> disconnectionReason)
+
+# Paper: sources/net/minecraft/server/network/CommonListenerCookie.java.patch (record components; FissionMC: fields + accessors + factory)
+net.minecraft.server.network.CommonListenerCookie: public java.lang.String clientBrand()
+net.minecraft.server.network.CommonListenerCookie: public java.util.Set<java.lang.String> channels()
+net.minecraft.server.network.CommonListenerCookie: public static net.minecraft.server.network.CommonListenerCookie create(com.mojang.authlib.GameProfile gameProfile, int latency, net.minecraft.server.level.ClientInformation clientInformation, boolean transferred, java.lang.String clientBrand, java.util.Set<java.lang.String> channels)
+
+# Paper: sources/net/minecraft/server/network/ServerCommonPacketListenerImpl.java.patch
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public final net.minecraft.network.Connection connection
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public final org.bukkit.craftbukkit.CraftServer cserver
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public final java.util.Map<java.util.UUID, net.kyori.adventure.resource.ResourcePackCallback> packCallbacks
+net.minecraft.server.network.ServerCommonPacketListenerImpl: protected static final net.minecraft.resources.Identifier MINECRAFT_BRAND
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public java.lang.String clientBrand
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public final java.util.Set<java.lang.String> pluginMessagerChannels
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public static final net.minecraft.resources.Identifier CUSTOM_REGISTER
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public io.papermc.paper.connection.PlayerCommonConnection getApiConnection()
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public net.kyori.adventure.audience.Audience getAudience()
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public void disconnect(net.minecraft.network.chat.Component reason, io.papermc.paper.connection.DisconnectionReason cause)
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public final void disconnectAsync(net.minecraft.network.chat.Component component, io.papermc.paper.connection.DisconnectionReason reason)
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public final void disconnectAsync(net.minecraft.network.chat.Component component)
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public void disconnectAsync(net.minecraft.network.DisconnectionDetails disconnectionInfo)
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public boolean isTransferred()
+net.minecraft.server.network.ServerCommonPacketListenerImpl: public io.papermc.paper.connection.PaperCommonConnection<?> paperConnection()
+
+# Paper: sources/net/minecraft/server/network/ServerGamePacketListenerImpl.java.patch
+net.minecraft.server.network.ServerGamePacketListenerImpl: public final io.papermc.paper.connection.PaperPlayerGameConnection playerGameConnection
+net.minecraft.server.network.ServerGamePacketListenerImpl: public io.papermc.paper.connection.PlayerCommonConnection getApiConnection()
+net.minecraft.server.network.ServerGamePacketListenerImpl: public net.kyori.adventure.audience.Audience getAudience()
+net.minecraft.server.network.ServerGamePacketListenerImpl: public boolean teleport(double x, double y, double z, float yRot, float xRot, org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public boolean teleport(net.minecraft.world.entity.PositionMoveRotation destination, java.util.Set<net.minecraft.world.entity.Relative> relatives, org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void internalTeleport(org.bukkit.Location dest)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void internalTeleport(double x, double y, double z, float yRot, float xRot)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void internalTeleport(net.minecraft.world.entity.PositionMoveRotation destination, java.util.Set<net.minecraft.world.entity.Relative> relatives)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void chat(java.lang.String msg, net.minecraft.network.chat.PlayerChatMessage original, boolean async)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void handleCommand(java.lang.String command)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public java.net.SocketAddress getRawAddress()
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void handleContainerClose(net.minecraft.network.protocol.game.ServerboundContainerClosePacket packet, org.bukkit.event.inventory.InventoryCloseEvent$Reason reason)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public org.bukkit.craftbukkit.entity.CraftPlayer getCraftPlayer()
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void disconnectAsync(net.minecraft.network.DisconnectionDetails disconnectionInfo)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public final boolean isDisconnected()
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void disconnect(net.kyori.adventure.text.Component reason)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void disconnect(net.kyori.adventure.text.Component reason, org.bukkit.event.player.PlayerKickEvent$Cause cause)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void disconnect(net.minecraft.network.chat.Component reason, org.bukkit.event.player.PlayerKickEvent$Cause cause)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void disconnectAsync(net.kyori.adventure.text.Component reason, org.bukkit.event.player.PlayerKickEvent$Cause cause)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public void disconnectAsync(net.minecraft.network.chat.Component reason, org.bukkit.event.player.PlayerKickEvent$Cause cause)
+net.minecraft.server.network.ServerGamePacketListenerImpl: public io.papermc.paper.connection.PaperPlayerGameConnection paperConnection()
+
+# Paper: sources/net/minecraft/server/network/ServerConfigurationPacketListenerImpl.java.patch
+net.minecraft.server.network.ServerConfigurationPacketListenerImpl: public io.papermc.paper.connection.PaperPlayerConfigurationConnection paperConnection
+net.minecraft.server.network.ServerConfigurationPacketListenerImpl: public io.papermc.paper.connection.PlayerCommonConnection getApiConnection()
+net.minecraft.server.network.ServerConfigurationPacketListenerImpl: public net.kyori.adventure.audience.Audience getAudience()
+net.minecraft.server.network.ServerConfigurationPacketListenerImpl: public void disconnectAsync(net.minecraft.network.DisconnectionDetails disconnectionInfo)
+net.minecraft.server.network.ServerConfigurationPacketListenerImpl: public io.papermc.paper.connection.PaperPlayerConfigurationConnection paperConnection()
+
+# Paper: sources/net/minecraft/server/network/ServerLoginPacketListenerImpl.java.patch
+net.minecraft.server.network.ServerLoginPacketListenerImpl: public java.lang.String requestedUsername
+net.minecraft.server.network.ServerLoginPacketListenerImpl: public final boolean transferred
+net.minecraft.server.network.ServerLoginPacketListenerImpl: public boolean iKnowThisMayNotBeTheBestIdeaButPleaseDisableUsernameValidation
+net.minecraft.server.network.ServerLoginPacketListenerImpl: public java.util.UUID requestedUuid
+
+# Paper: sources/net/minecraft/server/players/PlayerList.java.patch (LoginResult moved to net.fissionmc.craft.compat.LoginResult)
+net.minecraft.server.players.PlayerList: public java.lang.String collideRuleTeamName
+net.minecraft.server.players.PlayerList: public net.minecraft.server.level.ServerPlayer respawn(net.minecraft.server.level.ServerPlayer serverPlayer, boolean keepAllPlayerData, net.minecraft.world.entity.Entity$RemovalReason removalReason, org.bukkit.event.player.PlayerRespawnEvent$RespawnReason respawnReason)
+net.minecraft.server.players.PlayerList: public void sendPlayerPermissionLevel(net.minecraft.server.level.ServerPlayer player, boolean recalculatePermissions)
+net.minecraft.server.players.PlayerList: public void sendPlayerPermissionLevel(net.minecraft.server.level.ServerPlayer player, net.minecraft.server.permissions.LevelBasedPermissionSet permissions, boolean recalculatePermissions)
+net.minecraft.server.players.PlayerList: public void broadcastAll(net.minecraft.network.protocol.Packet packet, net.minecraft.world.entity.player.Player entityhuman)
+net.minecraft.server.players.PlayerList: public void broadcastAll(net.minecraft.network.protocol.Packet packet, net.minecraft.world.level.Level world)
+net.minecraft.server.players.PlayerList: public net.fissionmc.craft.compat.LoginResult canBypassFullServerLogin(net.minecraft.server.players.NameAndId nameAndId, net.fissionmc.craft.compat.LoginResult currentResult)
+net.minecraft.server.players.PlayerList: public net.fissionmc.craft.compat.LoginResult isWhiteListedLogin(net.minecraft.server.players.NameAndId nameAndId)
+net.minecraft.server.players.PlayerList: public void broadcastChatMessage(net.minecraft.network.chat.PlayerChatMessage message, net.minecraft.server.level.ServerPlayer sender, net.minecraft.network.chat.ChatType$Bound chatType, java.util.function.Function<net.kyori.adventure.audience.Audience, net.minecraft.network.chat.Component> unsignedFunction)
+net.minecraft.server.players.PlayerList: public void broadcastChatMessage(net.minecraft.network.chat.PlayerChatMessage message, java.util.function.Predicate<net.minecraft.server.level.ServerPlayer> isFiltered, net.minecraft.server.level.ServerPlayer senderPlayer, net.minecraft.network.chat.ChatType$Bound chatType, java.util.function.Function<net.kyori.adventure.audience.Audience, net.minecraft.network.chat.Component> unsignedFunction)
+net.minecraft.server.players.PlayerList: public void reloadAdvancementData()
+net.minecraft.server.players.PlayerList: public void reloadTagData()
+net.minecraft.server.players.PlayerList: public void reloadRecipes()
+net.minecraft.server.players.PlayerList: public net.minecraft.stats.ServerStatsCounter getPlayerStats(net.minecraft.server.level.ServerPlayer player)
+net.minecraft.server.players.PlayerList: public net.minecraft.stats.ServerStatsCounter getPlayerStats(com.mojang.authlib.GameProfile gameProfile)
+
+# Paper: sources/net/minecraft/server/players/NameAndId.java.patch
+net.minecraft.server.players.NameAndId: public com.mojang.authlib.GameProfile toUncompletedGameProfile()
+
+# Paper: sources/net/minecraft/server/players/UserNameToIdResolver.java.patch
+net.minecraft.server.players.UserNameToIdResolver: void save(boolean async)
+net.minecraft.server.players.UserNameToIdResolver: net.minecraft.server.players.NameAndId getIfCached(java.lang.String name)
+
+# Paper: sources/net/minecraft/server/players/CachedUserNameToIdResolver.java.patch
+net.minecraft.server.players.CachedUserNameToIdResolver: public void save(boolean asyncSave)
+net.minecraft.server.players.CachedUserNameToIdResolver: public net.minecraft.server.players.NameAndId getIfCached(java.lang.String name)
+
+# Paper: sources/net/minecraft/network/protocol/game/ClientboundLevelChunkWithLightPacket.java.patch
+net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket: public void setReady(boolean ready)
+
+# Paper: sources/net/minecraft/network/protocol/game/ClientboundPlayerInfoUpdatePacket.java.patch
+net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket: public static net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket createPlayerInitializing(java.util.Collection<net.minecraft.server.level.ServerPlayer> players, net.minecraft.server.level.ServerPlayer forPlayer)
+net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket: public static net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket createSinglePlayerInitializing(net.minecraft.server.level.ServerPlayer player, boolean listed)
+net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket: public static net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket updateListed(java.util.UUID playerInfoId, boolean listed)
+
+# Paper: sources/net/minecraft/network/protocol/game/ClientboundSectionBlocksUpdatePacket.java.patch (FissionMC: factories for added constructors)
+net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket: public static net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket create(net.minecraft.core.SectionPos sectionposition, it.unimi.dsi.fastutil.shorts.ShortSet shortset, net.minecraft.world.level.block.state.BlockState[] states)
+net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket: public static net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket create(net.minecraft.core.SectionPos sectionPos, it.unimi.dsi.fastutil.shorts.Short2ObjectMap<net.minecraft.world.level.block.state.BlockState> blockChanges)
+
+# Paper: sources/net/minecraft/network/protocol/game/ClientboundSystemChatPacket.java.patch (FissionMC: factories for added constructors)
+net.minecraft.network.protocol.game.ClientboundSystemChatPacket: public static net.minecraft.network.protocol.game.ClientboundSystemChatPacket create(net.md_5.bungee.api.chat.BaseComponent[] content, boolean overlay)
+net.minecraft.network.protocol.game.ClientboundSystemChatPacket: public static net.minecraft.network.protocol.game.ClientboundSystemChatPacket create(net.kyori.adventure.text.Component content, boolean overlay)
+
+# Paper: sources/net/minecraft/network/protocol/common/custom/DiscardedPayload.java.patch (FissionMC: record component as field + accessor + factory)
+net.minecraft.network.protocol.common.custom.DiscardedPayload: public byte[] data()
+net.minecraft.network.protocol.common.custom.DiscardedPayload: public static net.minecraft.network.protocol.common.custom.DiscardedPayload create(net.minecraft.resources.Identifier id, byte[] data)
+
+# Paper: sources/net/minecraft/network/chat/Component.java.patch (FissionMC: raw Iterable; generic superinterface not expressible)
+net.minecraft.network.chat.Component: implements java.lang.Iterable
+net.minecraft.network.chat.Component: default java.util.stream.Stream<net.minecraft.network.chat.Component> stream()
+net.minecraft.network.chat.Component: default java.util.Iterator<net.minecraft.network.chat.Component> iterator()
+
+# Paper: sources/net/minecraft/network/chat/ChatDecorator.java.patch (FissionMC: 2-arg return type stays vanilla)
+net.minecraft.network.chat.ChatDecorator: default java.util.concurrent.CompletableFuture<net.minecraft.network.chat.Component> decorate(net.minecraft.server.level.ServerPlayer sender, net.minecraft.commands.CommandSourceStack commandSourceStack, net.minecraft.network.chat.Component plain)
+
+# Paper: sources/net/minecraft/network/chat/PlayerChatMessage.java.patch (AdventureView moved to net.fissionmc.craft.compat.AdventureView)
+net.minecraft.network.chat.PlayerChatMessage: public net.fissionmc.craft.compat.AdventureView adventureView()
+
+# Paper: sources/net/minecraft/network/chat/MessageSignature.java.patch
+net.minecraft.network.chat.MessageSignature: public net.kyori.adventure.chat.SignedMessage$Signature adventure()
+
+# Paper: sources/net/minecraft/network/chat/OutgoingChatMessage.java.patch
+net.minecraft.network.chat.OutgoingChatMessage: default void sendToPlayer(net.minecraft.server.level.ServerPlayer player, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)
+net.minecraft.network.chat.OutgoingChatMessage$Disguised: public void sendToPlayer(net.minecraft.server.level.ServerPlayer player, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)
+net.minecraft.network.chat.OutgoingChatMessage$Player: public void sendToPlayer(net.minecraft.server.level.ServerPlayer player, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)

@@ -1,0 +1,6 @@
+# FissionMC: access changes from Paper's library/source patches that members/*.txt cannot express
+# (constructors, removing final). Same syntax as paper.at.
+# Paper: sources/com/mojang/authlib/services/MinecraftServicesDiscoveryService.java.patch (private -> protected)
+protected com.mojang.authlib.services.MinecraftServicesDiscoveryService <init>(Ljava/net/Proxy;ZLjava/util/function/Supplier;)V
+# Paper: sources/com/mojang/brigadier/tree/CommandNode.java.patch ("public Predicate<S> requirement; // Paper - public-f")
+public-f com.mojang.brigadier.tree.CommandNode requirement

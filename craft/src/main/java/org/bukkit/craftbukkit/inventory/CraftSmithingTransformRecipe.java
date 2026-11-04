@@ -28,7 +28,7 @@ public class CraftSmithingTransformRecipe extends SmithingTransformRecipe implem
 
     @Override
     public RecipeHolder<?> toMinecraftRecipe() {
-        return new RecipeHolder<>(CraftNamespacedKey.toResourceKey(Registries.RECIPE, this.getKey()), new net.minecraft.world.item.crafting.SmithingTransformRecipe(
+        return new RecipeHolder<>(CraftNamespacedKey.toResourceKey(Registries.RECIPE, this.getKey()), net.minecraft.world.item.crafting.SmithingTransformRecipe.create( // FissionMC: Paper-added constructor routed through a factory
             new net.minecraft.world.item.crafting.Recipe.CommonInfo(true),
             CraftRecipe.toPossibleIngredient(this.getTemplate(), false),
             CraftRecipe.toIngredient(this.getBase(), false),

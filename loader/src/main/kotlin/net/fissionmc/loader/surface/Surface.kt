@@ -62,6 +62,31 @@ class Surface private constructor(
     }
 
     private fun widen(node: ClassNode): Boolean {
+        val wasPrivate = node.methods.filter { it.access and ACC_PRIVATE != 0 && it.name != "<init>" }.map { it.name + it.desc }.toSet()
+        val changed = widenMembers(node)
+        if (changed && wasPrivate.isNotEmpty()) devirtualize(node, wasPrivate)
+        return changed
+    }
+
+    /**
+     * A private method made non-private must dispatch virtually, as it does in Paper's recompiled
+     * source: rewrite the class's own `invokespecial` calls to it (javac emits those for private calls).
+     */
+    private fun devirtualize(node: ClassNode, wasPrivate: Set<String>) {
+        val widened = node.methods.filter { (it.name + it.desc) in wasPrivate && it.access and ACC_PRIVATE == 0 && it.access and ACC_STATIC == 0 }
+            .map { it.name + it.desc }.toSet()
+        if (widened.isEmpty()) return
+        val itf = node.access and ACC_INTERFACE != 0
+        for (m in node.methods) {
+            for (insn in m.instructions) {
+                if (insn is MethodInsnNode && insn.opcode == INVOKESPECIAL && insn.owner == node.name && (insn.name + insn.desc) in widened) {
+                    insn.opcode = if (itf) INVOKEINTERFACE else INVOKEVIRTUAL
+                }
+            }
+        }
+    }
+
+    private fun widenMembers(node: ClassNode): Boolean {
         var changed = false
         at[node.name]?.forEach { r ->
             when {
@@ -90,7 +115,7 @@ class Surface private constructor(
                     val n = widenFlags(m.access, p.access and VIS_MASK, 0)
                     if (n != m.access) { m.access = n; changed = true }
                 }
-                is Parsed.Implements -> if (p.iface !in node.interfaces) { node.interfaces.add(p.iface); changed = true }
+                is Parsed.Implements -> if (p.iface !in node.interfaces) { addInterface(node, p.iface, p.signature); changed = true }
             }
         }
         return changed
@@ -116,15 +141,25 @@ class Surface private constructor(
                     }
                     node.methods.add(m)
                 }
-                is Parsed.Implements -> if (p.iface !in node.interfaces) node.interfaces.add(p.iface)
+                is Parsed.Implements -> if (p.iface !in node.interfaces) addInterface(node, p.iface, p.signature)
             }
+        }
+    }
+
+    /** Adds an interface; javac reads supertypes from the generic Signature when present, so extend it too. */
+    private fun addInterface(node: ClassNode, iface: String, ifaceSig: String) {
+        node.interfaces.add(iface)
+        val sig = node.signature
+        if (sig != null) node.signature = sig + ifaceSig
+        else if (ifaceSig.contains('<')) {
+            node.signature = "L${node.superName};" + node.interfaces.dropLast(1).joinToString("") { "L$it;" } + ifaceSig
         }
     }
 
     sealed interface Parsed {
         data class Field(val access: Int, val name: String, val desc: String, val signature: String?) : Parsed
         data class Method(val access: Int, val name: String, val desc: String, val signature: String?, val exceptions: List<String>) : Parsed
-        data class Implements(val iface: String) : Parsed
+        data class Implements(val iface: String, val signature: String) : Parsed
     }
 
     companion object {
@@ -228,6 +263,31 @@ class Surface private constructor(
         }
     }
 
+    /** Names declared in a leading `<A extends ..., B>` list (depth-1 identifiers after '<' or ','). */
+    private fun typeParamNames(text: String): Set<String> {
+        val out = HashSet<String>()
+        var depth = 0
+        var expectName = false
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                c == '<' -> { depth++; if (depth == 1) expectName = true }
+                c == '>' -> { depth--; if (depth == 0) break }
+                c == ',' && depth == 1 -> expectName = true
+                expectName && (c.isLetter() || c == '_') -> {
+                    val start = i
+                    while (i < text.length && (text[i].isLetterOrDigit() || text[i] == '_')) i++
+                    out += text.substring(start, i)
+                    expectName = false
+                    continue
+                }
+            }
+            i++
+        }
+        return out
+    }
+
     private fun parse(d: MemberDecl, node: ClassNode): Parsed? = try {
         parseDecl(d.decl, node)
     } catch (e: Exception) {
@@ -235,7 +295,10 @@ class Surface private constructor(
     }
 
     private fun parseDecl(text: String, node: ClassNode): Parsed {
-        if (text.startsWith("implements ")) return Parsed.Implements(text.removePrefix("implements ").trim().replace('.', '/'))
+        if (text.startsWith("implements ")) {
+            val t = TypeParser(text.removePrefix("implements ").trim(), classTypeVars(node).keys).parseType() as JType.Cls
+            return Parsed.Implements(t.internal, t.signature())
+        }
         val classVars = classTypeVars(node)
         // modifiers
         var access = 0
@@ -250,7 +313,7 @@ class Surface private constructor(
         // method type params
         var methodParams = emptyList<TypeParam>()
         if (rest.startsWith("<")) {
-            val tp = TypeParser(rest, classVars.keys)
+            val tp = TypeParser(rest, classVars.keys + typeParamNames(rest)) // names first: bounds may be recursive (T extends Comparable<T>)
             methodParams = tp.parseTypeParams()
             rest = tp.rest().trimStart()
         }

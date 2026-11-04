@@ -2,12 +2,17 @@ package org.bukkit.craftbukkit.inventory;
 
 import com.google.common.base.Preconditions;
 import net.minecraft.world.Container;
-import net.minecraft.world.inventory.AbstractMountInventoryMenu;
 import org.apache.commons.lang3.ArrayUtils;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.SaddledMountInventory;
 
 public class CraftInventorySaddledMount extends CraftInventory implements SaddledMountInventory {
+    // FissionMC: Paper makes AbstractMountInventoryMenu.SLOT_* static ("fix missing static"); vanilla's are instance
+    // constants and Mixin cannot change that, so the values are mirrored here.
+    private static final int SLOT_SADDLE = 0;
+    private static final int SLOT_BODY_ARMOR = 1;
+    private static final int SLOT_INVENTORY_START = 2;
+
 
     private final Container bodyArmorInventory;
     private final Container saddleInventory;
@@ -20,12 +25,12 @@ public class CraftInventorySaddledMount extends CraftInventory implements Saddle
 
     @Override
     public ItemStack getSaddle() {
-        return this.getItem(AbstractMountInventoryMenu.SLOT_SADDLE);
+        return this.getItem(SLOT_SADDLE);
     }
 
     @Override
     public void setSaddle(ItemStack stack) {
-        this.setItem(AbstractMountInventoryMenu.SLOT_SADDLE, stack);
+        this.setItem(SLOT_SADDLE, stack);
     }
 
     public Container getMainInventory() {
@@ -41,11 +46,11 @@ public class CraftInventorySaddledMount extends CraftInventory implements Saddle
     }
 
     public ItemStack getArmor() {
-        return this.getItem(AbstractMountInventoryMenu.SLOT_BODY_ARMOR);
+        return this.getItem(SLOT_BODY_ARMOR);
     }
 
     public void setArmor(ItemStack armor) {
-        this.setItem(AbstractMountInventoryMenu.SLOT_BODY_ARMOR, armor);
+        this.setItem(SLOT_BODY_ARMOR, armor);
     }
 
     @Override
@@ -62,11 +67,11 @@ public class CraftInventorySaddledMount extends CraftInventory implements Saddle
     public ItemStack[] getContents() {
         ItemStack[] items = new ItemStack[this.getSize()];
 
-        items[AbstractMountInventoryMenu.SLOT_SADDLE] = this.getSaddle();
-        items[AbstractMountInventoryMenu.SLOT_BODY_ARMOR] = this.getArmor();
+        items[SLOT_SADDLE] = this.getSaddle();
+        items[SLOT_BODY_ARMOR] = this.getArmor();
 
-        for (int i = AbstractMountInventoryMenu.SLOT_INVENTORY_START; i < items.length; i++) {
-            net.minecraft.world.item.ItemStack item = this.getMainInventory().getItem(i - AbstractMountInventoryMenu.SLOT_INVENTORY_START);
+        for (int i = SLOT_INVENTORY_START; i < items.length; i++) {
+            net.minecraft.world.item.ItemStack item = this.getMainInventory().getItem(i - SLOT_INVENTORY_START);
             items[i] = item.isEmpty() ? null : CraftItemStack.asBukkitMirror(item);
         }
 
@@ -77,29 +82,29 @@ public class CraftInventorySaddledMount extends CraftInventory implements Saddle
     public void setContents(ItemStack[] items) {
         Preconditions.checkArgument(items.length <= this.getSize(), "Invalid inventory size (%s); expected %s or less", items.length, this.getSize());
 
-        this.setSaddle(ArrayUtils.get(items, AbstractMountInventoryMenu.SLOT_SADDLE));
-        this.setArmor(ArrayUtils.get(items, AbstractMountInventoryMenu.SLOT_BODY_ARMOR));
+        this.setSaddle(ArrayUtils.get(items, SLOT_SADDLE));
+        this.setArmor(ArrayUtils.get(items, SLOT_BODY_ARMOR));
 
-        for (int i = AbstractMountInventoryMenu.SLOT_INVENTORY_START; i < this.getSize(); i++) {
+        for (int i = SLOT_INVENTORY_START; i < this.getSize(); i++) {
             net.minecraft.world.item.ItemStack item = i >= items.length ? net.minecraft.world.item.ItemStack.EMPTY : CraftItemStack.asNMSCopy(items[i]);
-            this.getMainInventory().setItem(i - AbstractMountInventoryMenu.SLOT_INVENTORY_START, item);
+            this.getMainInventory().setItem(i - SLOT_INVENTORY_START, item);
         }
     }
 
     @Override
     public ItemStack getItem(final int index) {
-        if (index == AbstractMountInventoryMenu.SLOT_SADDLE) {
+        if (index == SLOT_SADDLE) {
             final net.minecraft.world.item.ItemStack item = this.getSaddleInventory().getItem(0);
             return item.isEmpty() ? null : CraftItemStack.asBukkitMirror(item);
-        } else if (index == AbstractMountInventoryMenu.SLOT_BODY_ARMOR) {
+        } else if (index == SLOT_BODY_ARMOR) {
             final net.minecraft.world.item.ItemStack item = this.getArmorInventory().getItem(0);
             return item.isEmpty() ? null : CraftItemStack.asBukkitMirror(item);
         } else {
             int shiftedIndex = index;
-            if (index > AbstractMountInventoryMenu.SLOT_SADDLE) {
+            if (index > SLOT_SADDLE) {
                 shiftedIndex--;
             }
-            if (index > AbstractMountInventoryMenu.SLOT_BODY_ARMOR) {
+            if (index > SLOT_BODY_ARMOR) {
                 shiftedIndex--;
             }
 
@@ -110,16 +115,16 @@ public class CraftInventorySaddledMount extends CraftInventory implements Saddle
 
     @Override
     public void setItem(final int index, final ItemStack item) {
-        if (index == AbstractMountInventoryMenu.SLOT_SADDLE) {
+        if (index == SLOT_SADDLE) {
             this.getSaddleInventory().setItem(0, CraftItemStack.asNMSCopy(item));
-        } else if (index == AbstractMountInventoryMenu.SLOT_BODY_ARMOR) {
+        } else if (index == SLOT_BODY_ARMOR) {
             this.getArmorInventory().setItem(0, CraftItemStack.asNMSCopy(item));
         } else {
             int shiftedIndex = index;
-            if (index > AbstractMountInventoryMenu.SLOT_SADDLE) {
+            if (index > SLOT_SADDLE) {
                 shiftedIndex--;
             }
-            if (index > AbstractMountInventoryMenu.SLOT_BODY_ARMOR) {
+            if (index > SLOT_BODY_ARMOR) {
                 shiftedIndex--;
             }
             this.getMainInventory().setItem(shiftedIndex, CraftItemStack.asNMSCopy(item));

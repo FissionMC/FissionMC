@@ -1,0 +1,178 @@
+# Entity subtypes (net.minecraft.world.entity.<subpackage>, except player/ai/item). See loader/.../surface/Surface.kt.
+
+# Paper: sources/net/minecraft/world/entity/projectile/FishingHook.java.patch
+net.minecraft.world.entity.projectile.FishingHook: public int minWaitTime
+net.minecraft.world.entity.projectile.FishingHook: public int maxWaitTime
+net.minecraft.world.entity.projectile.FishingHook: public int minLureTime
+net.minecraft.world.entity.projectile.FishingHook: public int maxLureTime
+net.minecraft.world.entity.projectile.FishingHook: public float minLureAngle
+net.minecraft.world.entity.projectile.FishingHook: public float maxLureAngle
+net.minecraft.world.entity.projectile.FishingHook: public boolean applyLure
+net.minecraft.world.entity.projectile.FishingHook: public boolean rainInfluenced
+net.minecraft.world.entity.projectile.FishingHook: public boolean skyInfluenced
+net.minecraft.world.entity.projectile.FishingHook: public void resetTimeUntilLured()
+net.minecraft.world.entity.projectile.FishingHook: public int retrieve(net.minecraft.world.item.ItemStack rod, net.minecraft.world.InteractionHand hand)
+
+# Paper: sources/net/minecraft/world/entity/projectile/Projectile.java.patch
+net.minecraft.world.entity.projectile.Projectile: protected boolean hitCancelled
+net.minecraft.world.entity.projectile.Projectile: public net.minecraft.world.entity.projectile.ProjectileDeflection preHitTargetOrDeflectSelf(net.minecraft.world.phys.HitResult hitResult)
+net.minecraft.world.entity.projectile.Projectile: public boolean canHitEntityPublic(net.minecraft.world.entity.Entity target)
+
+# Paper: sources/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java.patch
+net.minecraft.world.entity.projectile.arrow.ThrownTrident: public void setFoil(boolean foil)
+net.minecraft.world.entity.projectile.arrow.ThrownTrident: public int getLoyalty()
+net.minecraft.world.entity.projectile.arrow.ThrownTrident: public void setLoyalty(byte loyalty)
+
+# Paper: sources/net/minecraft/world/entity/projectile/hurtingprojectile/AbstractHurtingProjectile.java.patch
+net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile: public float bukkitYield
+net.minecraft.world.entity.projectile.hurtingprojectile.AbstractHurtingProjectile: public boolean isIncendiary
+
+# Paper: sources/net/minecraft/world/entity/projectile/ShulkerBullet.java.patch
+net.minecraft.world.entity.projectile.ShulkerBullet: public net.minecraft.world.entity.Entity getTarget()
+net.minecraft.world.entity.projectile.ShulkerBullet: public void setTarget(net.minecraft.world.entity.Entity finalTarget)
+
+# Paper: sources/net/minecraft/world/entity/projectile/FireworkRocketEntity.java.patch
+net.minecraft.world.entity.projectile.FireworkRocketEntity: public java.util.UUID spawningEntity
+
+# Paper: sources/net/minecraft/world/entity/projectile/throwableitemprojectile/AbstractThrownPotion.java.patch
+net.minecraft.world.entity.projectile.throwableitemprojectile.AbstractThrownPotion: public void splash(net.minecraft.world.phys.HitResult hitResult)
+
+# Paper: sources/net/minecraft/world/entity/projectile/EyeOfEnder.java.patch
+net.minecraft.world.entity.projectile.EyeOfEnder: public void signalTo(net.minecraft.world.phys.Vec3 target, boolean update)
+
+# Paper: sources/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java.patch
+net.minecraft.world.entity.vehicle.boat.AbstractBoat: public double maxSpeed
+net.minecraft.world.entity.vehicle.boat.AbstractBoat: public double occupiedDeceleration
+net.minecraft.world.entity.vehicle.boat.AbstractBoat: public double unoccupiedDeceleration
+net.minecraft.world.entity.vehicle.boat.AbstractBoat: public boolean landBoats
+# paper.at widens VehicleEntity.getDropItem; the AbstractBoat override needs the same
+net.minecraft.world.entity.vehicle.boat.AbstractBoat: public final net.minecraft.world.item.Item getDropItem()
+
+# Paper: sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java.patch
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public boolean slowWhenEmpty
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public java.lang.Double maxSpeed
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public net.kyori.adventure.util.TriState frictionState
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public org.bukkit.util.Vector getFlyingVelocityMod()
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public void setFlyingVelocityMod(org.bukkit.util.Vector flying)
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public org.bukkit.util.Vector getDerailedVelocityMod()
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecart: public void setDerailedVelocityMod(org.bukkit.util.Vector derailed)
+
+# Paper: sources/net/minecraft/world/entity/vehicle/minecart/MinecartTNT.java.patch
+net.minecraft.world.entity.vehicle.minecart.MinecartTNT: public boolean isIncendiary
+
+# Paper: sources/net/minecraft/world/entity/vehicle/ContainerEntity.java.patch
+net.minecraft.world.entity.vehicle.ContainerEntity: default com.destroystokyo.paper.loottable.PaperLootableInventoryData lootableData()
+net.minecraft.world.entity.vehicle.ContainerEntity: default com.destroystokyo.paper.loottable.PaperLootableInventory getLootableInventory()
+# Paper: sources/net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.java.patch, vehicle/minecart/AbstractMinecartContainer.java.patch
+net.minecraft.world.entity.vehicle.boat.AbstractChestBoat: public com.destroystokyo.paper.loottable.PaperLootableInventoryData lootableData()
+net.minecraft.world.entity.vehicle.minecart.AbstractMinecartContainer: public com.destroystokyo.paper.loottable.PaperLootableInventoryData lootableData()
+
+# Paper: sources/net/minecraft/world/entity/monster/piglin/Piglin.java.patch
+net.minecraft.world.entity.monster.piglin.Piglin: public java.util.Set<net.minecraft.world.item.Item> allowedBarterItems
+net.minecraft.world.entity.monster.piglin.Piglin: public java.util.Set<net.minecraft.world.item.Item> interestItems
+
+# Paper: sources/net/minecraft/world/entity/monster/Creeper.java.patch
+net.minecraft.world.entity.monster.Creeper: public net.minecraft.world.entity.Entity entityIgniter
+net.minecraft.world.entity.monster.Creeper: public void setPowered(boolean powered)
+net.minecraft.world.entity.monster.Creeper: public void setIgnited(boolean ignited)
+
+# Paper: sources/net/minecraft/world/entity/decoration/ItemFrame.java.patch
+net.minecraft.world.entity.decoration.ItemFrame: public static net.minecraft.world.phys.AABB createBoundingBoxStatic(net.minecraft.core.BlockPos blockPos, net.minecraft.core.Direction direction, boolean hasFramedMap)
+# paper.at widens HangingEntity.setDirection; the ItemFrame override needs the same
+net.minecraft.world.entity.decoration.ItemFrame: public void setDirection(net.minecraft.core.Direction direction)
+
+# Paper: sources/net/minecraft/world/entity/decoration/painting/Painting.java.patch
+net.minecraft.world.entity.decoration.painting.Painting: public static net.minecraft.world.phys.AABB calculateBoundingBoxStatic(net.minecraft.core.BlockPos pos, net.minecraft.core.Direction direction, int width, int height)
+
+# Paper: sources/net/minecraft/world/entity/decoration/ArmorStand.java.patch
+net.minecraft.world.entity.decoration.ArmorStand: public boolean canMove
+net.minecraft.world.entity.decoration.ArmorStand: public boolean canTick
+net.minecraft.world.entity.decoration.ArmorStand: public boolean canTickSetByAPI
+
+# Paper: sources/net/minecraft/world/entity/npc/wanderingtrader/WanderingTrader.java.patch
+net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader: public boolean canDrinkPotion
+net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader: public boolean canDrinkMilk
+
+# Paper: sources/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java.patch
+net.minecraft.world.entity.boss.enderdragon.EnderDragon: public net.minecraft.core.BlockPos getPodium()
+net.minecraft.world.entity.boss.enderdragon.EnderDragon: public void setPodium(net.minecraft.core.BlockPos blockPos)
+
+# Paper: sources/net/minecraft/world/entity/animal/allay/Allay.java.patch
+net.minecraft.world.entity.animal.allay.Allay: public boolean forceDancing
+net.minecraft.world.entity.animal.allay.Allay: public void setCanDuplicate(boolean canDuplicate)
+# Paper changes duplicateAllay()V to return the Allay; a return-type-only overload is ambiguous for javac,
+# so FissionMC adds it under another name (call site in CraftAllay edited)
+net.minecraft.world.entity.animal.allay.Allay: public net.minecraft.world.entity.animal.allay.Allay duplicateAllayReturning()
+
+# Paper: sources/net/minecraft/world/entity/raid/Raid.java.patch
+net.minecraft.world.entity.raid.Raid: public final org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer persistentDataContainer
+net.minecraft.world.entity.raid.Raid: public int idOrNegativeOne
+net.minecraft.world.entity.raid.Raid: public boolean isInProgress()
+net.minecraft.world.entity.raid.Raid: public java.util.Collection<net.minecraft.world.entity.raid.Raider> getRaiders()
+
+# Paper: sources/net/minecraft/world/entity/npc/villager/Villager.java.patch
+net.minecraft.world.entity.npc.villager.Villager: public void increaseMerchantCareer(net.minecraft.server.level.ServerLevel level)
+net.minecraft.world.entity.npc.villager.Villager: public boolean updateTrades(net.minecraft.server.level.ServerLevel level, int amount)
+
+# Paper: sources/net/minecraft/world/entity/npc/villager/AbstractVillager.java.patch
+net.minecraft.world.entity.npc.villager.AbstractVillager: public void resetOffers()
+net.minecraft.world.entity.npc.villager.AbstractVillager: protected void addOffersFromTradeSet(net.minecraft.server.level.ServerLevel level, net.minecraft.world.item.trading.MerchantOffers offers, net.minecraft.resources.ResourceKey<net.minecraft.world.item.trading.TradeSet> resourceKey, int offerCount)
+
+# Paper: sources/net/minecraft/world/entity/animal/equine/AbstractHorse.java.patch
+net.minecraft.world.entity.animal.equine.AbstractHorse: public int maxDomestication
+net.minecraft.world.entity.animal.equine.AbstractHorse: public void setMouthOpen(boolean open)
+net.minecraft.world.entity.animal.equine.AbstractHorse: public boolean isMouthOpen()
+
+# Paper: sources/net/minecraft/world/entity/animal/equine/Llama.java.patch
+net.minecraft.world.entity.animal.equine.Llama: public net.minecraft.world.entity.animal.equine.Llama caravanTail
+net.minecraft.world.entity.animal.equine.Llama: public void setStrength(int strength)
+
+# Paper: sources/net/minecraft/world/entity/monster/Phantom.java.patch
+net.minecraft.world.entity.monster.Phantom: public java.util.UUID spawningEntity
+net.minecraft.world.entity.monster.Phantom: public boolean shouldBurnInDay
+net.minecraft.world.entity.monster.Phantom: public boolean isSunBurnTick()
+
+# Paper: sources/net/minecraft/world/entity/monster/Witch.java.patch
+net.minecraft.world.entity.monster.Witch: public void setDrinkingPotion(net.minecraft.world.item.ItemStack potion)
+
+# Paper: sources/net/minecraft/world/entity/monster/skeleton/AbstractSkeleton.java.patch
+net.minecraft.world.entity.monster.skeleton.AbstractSkeleton: public boolean shouldBurnInDay()
+net.minecraft.world.entity.monster.skeleton.AbstractSkeleton: public void setShouldBurnInDay(boolean shouldBurnInDay)
+net.minecraft.world.entity.monster.skeleton.AbstractSkeleton: public boolean isSunBurnTick()
+
+# Paper: sources/net/minecraft/world/entity/monster/cubemob/AbstractCubeMob.java.patch
+net.minecraft.world.entity.monster.cubemob.AbstractCubeMob: public boolean canWander()
+net.minecraft.world.entity.monster.cubemob.AbstractCubeMob: public void setWander(boolean canWander)
+
+# Paper: sources/net/minecraft/world/entity/monster/Guardian.java.patch
+net.minecraft.world.entity.monster.Guardian: public net.minecraft.world.entity.monster.Guardian$GuardianAttackGoal guardianAttackGoal
+
+# Paper: sources/net/minecraft/world/entity/monster/Enderman.java.patch
+net.minecraft.world.entity.monster.Enderman: public void setCreepy(boolean creepy)
+net.minecraft.world.entity.monster.Enderman: public void setHasBeenStaredAt(boolean hasBeenStaredAt)
+
+# Paper: sources/net/minecraft/world/entity/animal/bee/Bee.java.patch
+net.minecraft.world.entity.animal.bee.Bee: public net.kyori.adventure.util.TriState rollingOverride
+
+# Paper: sources/net/minecraft/world/entity/monster/Ghast.java.patch
+net.minecraft.world.entity.monster.Ghast: public void setExplosionPower(int explosionPower)
+
+# Paper: sources/net/minecraft/world/entity/animal/goat/Goat.java.patch
+net.minecraft.world.entity.animal.goat.Goat: public void ram(net.minecraft.world.entity.LivingEntity entity)
+
+# Paper: sources/net/minecraft/world/entity/monster/zombie/ZombieVillager.java.patch
+net.minecraft.world.entity.monster.zombie.ZombieVillager: public void startConverting(java.util.UUID player, int time, boolean broadcastEntityEvent)
+
+# Paper: sources/net/minecraft/world/entity/monster/zombie/Zombie.java.patch
+net.minecraft.world.entity.monster.zombie.Zombie: public void setShouldBurnInDay(boolean shouldBurnInDay)
+
+# Paper: sources/net/minecraft/world/entity/boss/wither/WitherBoss.java.patch
+net.minecraft.world.entity.boss.wither.WitherBoss: public void setCanTravelThroughPortals(boolean canPortal)
+
+# Paper: sources/net/minecraft/world/entity/animal/golem/CopperGolem.java.patch (Paper - public)
+net.minecraft.world.entity.animal.golem.CopperGolem: public static final long IGNORE_WEATHERING_TICK
+net.minecraft.world.entity.animal.golem.CopperGolem: public static final long UNSET_WEATHERING_TICK
+net.minecraft.world.entity.animal.golem.CopperGolem: public long nextWeatheringTick
+
+# Paper: sources/net/minecraft/world/entity/animal/frog/Tadpole.java.patch (Paper - public)
+net.minecraft.world.entity.animal.frog.Tadpole: public void setAgeLocked(boolean locked)

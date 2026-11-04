@@ -965,9 +965,9 @@ public class CraftEventFactory {
         return false;
     }
 
-    private static final java.util.function.Function<org.bukkit.inventory.ItemStack, Entity.DefaultDrop> FROM_FUNCTION = stack -> {
+    private static final java.util.function.Function<org.bukkit.inventory.ItemStack, net.fissionmc.craft.compat.DefaultDrop> FROM_FUNCTION = stack -> { // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
         if (stack == null) return null;
-        return new Entity.DefaultDrop(CraftItemType.bukkitToMinecraft(stack.getType()), stack, null);
+        return new net.fissionmc.craft.compat.DefaultDrop(CraftItemType.bukkitToMinecraft(stack.getType()), stack, null); // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
     };
 
     public static boolean callEntityDeathEvent(ServerLevel level, net.minecraft.world.entity.LivingEntity victim, DamageSource damageSource) {
@@ -975,10 +975,10 @@ public class CraftEventFactory {
         return !event.isCancelled();
     }
 
-    public static EntityDeathEvent callEntityDeathEvent(ServerLevel level, net.minecraft.world.entity.LivingEntity victim, DamageSource damageSource, List<Entity.DefaultDrop> drops, boolean delayedDrops) { // Paper - Restore vanilla drops behavior
+    public static EntityDeathEvent callEntityDeathEvent(ServerLevel level, net.minecraft.world.entity.LivingEntity victim, DamageSource damageSource, List<net.fissionmc.craft.compat.DefaultDrop> drops, boolean delayedDrops) { // Paper - Restore vanilla drops behavior // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
         CraftLivingEntity entity = (CraftLivingEntity) victim.getBukkitEntity();
         CraftDamageSource bukkitDamageSource = new CraftDamageSource(damageSource);
-        EntityDeathEvent event = new EntityDeathEvent(entity, bukkitDamageSource, new io.papermc.paper.util.TransformingRandomAccessList<>(drops, Entity.DefaultDrop::stack, FROM_FUNCTION), victim.getExpReward(level, damageSource.getEntity())); // Paper - Restore vanilla drops behavior
+        EntityDeathEvent event = new EntityDeathEvent(entity, bukkitDamageSource, new io.papermc.paper.util.TransformingRandomAccessList<>(drops, net.fissionmc.craft.compat.DefaultDrop::stack, FROM_FUNCTION), victim.getExpReward(level, damageSource.getEntity())); // Paper - Restore vanilla drops behavior // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
         populateFields(victim, event); // Paper - make cancellable
         event.callEvent();
 
@@ -1002,8 +1002,8 @@ public class CraftEventFactory {
         return event;
     }
 
-    private static void dropAllItems(List<Entity.DefaultDrop> drops, Consumer<ItemStack> fallback) {
-        for (Entity.DefaultDrop drop : drops) {
+    private static void dropAllItems(List<net.fissionmc.craft.compat.DefaultDrop> drops, Consumer<ItemStack> fallback) { // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
+        for (net.fissionmc.craft.compat.DefaultDrop drop : drops) { // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
             if (drop == null) continue;
             final org.bukkit.inventory.ItemStack stack = drop.stack();
             if (stack.isEmpty()) continue;
@@ -1012,10 +1012,10 @@ public class CraftEventFactory {
         }
     }
 
-    public static PlayerDeathEvent callPlayerDeathEvent(ServerPlayer victim, DamageSource damageSource, List<Entity.DefaultDrop> drops, net.kyori.adventure.text.Component deathMessage, boolean showDeathMessages, boolean keepInventory) {
+    public static PlayerDeathEvent callPlayerDeathEvent(ServerPlayer victim, DamageSource damageSource, List<net.fissionmc.craft.compat.DefaultDrop> drops, net.kyori.adventure.text.Component deathMessage, boolean showDeathMessages, boolean keepInventory) { // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
         CraftPlayer entity = victim.getBukkitEntity();
         CraftDamageSource bukkitDamageSource = new CraftDamageSource(damageSource);
-        PlayerDeathEvent event = new PlayerDeathEvent(entity, bukkitDamageSource, new io.papermc.paper.util.TransformingRandomAccessList<>(drops, Entity.DefaultDrop::stack, FROM_FUNCTION), victim.getExpReward(victim.level(), damageSource.getEntity()), 0, deathMessage, showDeathMessages);
+        PlayerDeathEvent event = new PlayerDeathEvent(entity, bukkitDamageSource, new io.papermc.paper.util.TransformingRandomAccessList<>(drops, net.fissionmc.craft.compat.DefaultDrop::stack, FROM_FUNCTION), victim.getExpReward(victim.level(), damageSource.getEntity()), 0, deathMessage, showDeathMessages); // FissionMC: Entity.DefaultDrop moved to compat (Mixin cannot add nested classes)
         event.setKeepInventory(keepInventory);
         event.setKeepLevel(victim.keepLevel); // SPIGOT-2222: pre-set keepLevel
         populateFields(victim, event); // Paper - make cancellable
@@ -2358,7 +2358,7 @@ public class CraftEventFactory {
     }
 
     @SuppressWarnings("OptionalAssignedToNull")
-    public static Component handleLoginResult(PlayerList.LoginResult result, PlayerConnection paperConnection, Connection connection, GameProfile profile, MinecraftServer server, boolean loginPhase) {
+    public static Component handleLoginResult(net.fissionmc.craft.compat.LoginResult result, PlayerConnection paperConnection, Connection connection, GameProfile profile, MinecraftServer server, boolean loginPhase) { // FissionMC: LoginResult moved to compat (nested class Paper added to PlayerList)
         PlayerConnectionValidateLoginEvent event = new PlayerConnectionValidateLoginEvent(
             paperConnection, result.isAllowed() ? null : PaperAdventure.asAdventure(result.message())
         );
@@ -2370,7 +2370,7 @@ public class CraftEventFactory {
         // breaky we will cache result and use it next time.
         if (loginPhase) {
             disconnectReason = HorriblePlayerLoginEventHack.execute(connection, server, profile,
-                disconnectReason == null ? PlayerList.LoginResult.ALLOW : new PlayerList.LoginResult(disconnectReason, disconnectReason == null ? PlayerLoginEvent.Result.KICK_OTHER : result.result())
+                disconnectReason == null ? net.fissionmc.craft.compat.LoginResult.ALLOW : new net.fissionmc.craft.compat.LoginResult(disconnectReason, disconnectReason == null ? PlayerLoginEvent.Result.KICK_OTHER : result.result()) // FissionMC: LoginResult moved to compat
             );
         } else if (connection.legacySavedLoginEventResultOverride != null) {
             // If the override is set, use it.

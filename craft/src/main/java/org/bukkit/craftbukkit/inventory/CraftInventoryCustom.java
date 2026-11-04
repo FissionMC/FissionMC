@@ -66,7 +66,7 @@ public class CraftInventoryCustom extends CraftInventory {
 
     static class MinecraftInventory implements Container {
         private final NonNullList<ItemStack> items;
-        private int maxStack = MAX_STACK;
+        private int maxStack = net.minecraft.world.item.Item.ABSOLUTE_MAX_STACK_SIZE; // FissionMC: Container.MAX_STACK cannot be added to the interface
         private final List<HumanEntity> viewers;
         private final String title;
         private final net.kyori.adventure.text.Component adventure$title; // Paper

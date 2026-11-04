@@ -1497,7 +1497,7 @@ public class CraftWorld extends CraftRegionAccessor implements World {
 
     @Override
     public void setHardcore(boolean hardcore) {
-        this.world.serverLevelData.setHardcore(hardcore);
+        ((io.papermc.paper.world.saveddata.PaperLevelOverrides) this.world.serverLevelData).setHardcore(hardcore); // FissionMC: Paper retypes ServerLevel.serverLevelData to PaperLevelOverrides (field types cannot be changed)
     }
 
     @Override

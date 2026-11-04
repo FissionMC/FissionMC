@@ -1,0 +1,349 @@
+# owner: declaration — see loader/.../surface/Surface.kt. Fully qualified types, `$` for nested classes.
+# Area: SERVER + WORLD (wave 1, members).
+
+# Paper: sources/net/minecraft/server/MinecraftServer.java.patch
+net.minecraft.server.MinecraftServer: public static final net.kyori.adventure.text.logger.slf4j.ComponentLogger COMPONENT_LOGGER
+net.minecraft.server.MinecraftServer: public volatile boolean hasStarted
+net.minecraft.server.MinecraftServer: public net.minecraft.server.WorldLoader$DataLoadContext worldLoaderContext
+net.minecraft.server.MinecraftServer: public org.bukkit.craftbukkit.CraftServer server
+net.minecraft.server.MinecraftServer: public joptsimple.OptionSet options
+net.minecraft.server.MinecraftServer: public org.bukkit.command.ConsoleCommandSender console
+net.minecraft.server.MinecraftServer: public static int currentTick
+net.minecraft.server.MinecraftServer: public java.util.Queue<java.lang.Runnable> processQueue
+net.minecraft.server.MinecraftServer: public int autosavePeriod
+net.minecraft.server.MinecraftServer: public boolean forceTicks
+net.minecraft.server.MinecraftServer: public static final int TPS
+net.minecraft.server.MinecraftServer: public static final int TICK_TIME
+net.minecraft.server.MinecraftServer: public volatile boolean hasFullyShutdown
+net.minecraft.server.MinecraftServer: public volatile boolean abnormalExit
+net.minecraft.server.MinecraftServer: public volatile java.lang.Thread shutdownThread
+net.minecraft.server.MinecraftServer: public io.papermc.paper.configuration.PaperConfigurations paperConfigurations
+net.minecraft.server.MinecraftServer: public boolean isIteratingOverLevels
+net.minecraft.server.MinecraftServer: public static final long SERVER_INIT
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes1s
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes5s
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes10s
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes15s
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes1m
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes5m
+net.minecraft.server.MinecraftServer: public final ca.spottedleaf.common.time.TickData tickTimes15m
+net.minecraft.server.MinecraftServer: public final java.util.concurrent.ExecutorService chatExecutor
+net.minecraft.server.MinecraftServer: public double[] getTPS()
+net.minecraft.server.MinecraftServer: public ca.spottedleaf.common.time.TickData$MSPTData getMSPTData5s()
+net.minecraft.server.MinecraftServer: public double[] computeTPS()
+net.minecraft.server.MinecraftServer: public void createLevel(net.minecraft.world.level.dimension.LevelStem levelStem, io.papermc.paper.world.PaperWorldLoader$WorldLoadingInfoAndData loading, net.minecraft.world.level.storage.LevelDataAndDimensions$WorldDataAndGenSettings worldDataAndGenSettings)
+net.minecraft.server.MinecraftServer: public void initWorld(net.minecraft.server.level.ServerLevel overworld, org.bukkit.WorldCreator worldCreator)
+net.minecraft.server.MinecraftServer: public void prepareLevel(net.minecraft.server.level.ServerLevel level)
+net.minecraft.server.MinecraftServer: public final boolean hasStopped()
+net.minecraft.server.MinecraftServer: public void halt(boolean wait, boolean isRestarting)
+net.minecraft.server.MinecraftServer: public void updateEffectiveRespawnData()
+net.minecraft.server.MinecraftServer: public void addLevel(net.minecraft.server.level.ServerLevel level)
+net.minecraft.server.MinecraftServer: public void removeLevel(net.minecraft.server.level.ServerLevel level)
+net.minecraft.server.MinecraftServer: public void setDifficulty(net.minecraft.server.level.ServerLevel level, net.minecraft.world.Difficulty difficulty, net.minecraft.commands.CommandSourceStack source, boolean ignoreLock)
+net.minecraft.server.MinecraftServer: public net.kyori.adventure.text.Component motd()
+net.minecraft.server.MinecraftServer: public void motd(net.kyori.adventure.text.Component motd)
+net.minecraft.server.MinecraftServer: public java.util.concurrent.CompletableFuture<java.lang.Void> reloadResources(java.util.Collection<java.lang.String> packsToEnable, io.papermc.paper.event.server.ServerResourcesReloadedEvent$Cause cause)
+net.minecraft.server.MinecraftServer: public boolean isDebugging()
+net.minecraft.server.MinecraftServer: public static net.minecraft.server.MinecraftServer getServer()
+net.minecraft.server.MinecraftServer: public boolean isTickPaused()
+net.minecraft.server.MinecraftServer: public void addPluginAllowingSleep(java.lang.String pluginName, boolean value)
+
+# Paper: sources/net/minecraft/util/thread/BlockableEventLoop.java.patch
+net.minecraft.util.thread.BlockableEventLoop: public void scheduleOnMain(java.lang.Runnable runnable)
+
+# Paper: sources/net/minecraft/server/dedicated/DedicatedServer.java.patch
+net.minecraft.server.dedicated.DedicatedServer: public java.io.File getPluginsFolder()
+net.minecraft.server.dedicated.DedicatedServer: public boolean isDebugging()
+net.minecraft.server.dedicated.DedicatedServer: public org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
+
+# Paper: sources/net/minecraft/server/dedicated/DedicatedServerProperties.java.patch
+net.minecraft.server.dedicated.DedicatedServerProperties: public final boolean debug
+net.minecraft.server.dedicated.DedicatedServerProperties: public net.minecraft.server.dedicated.DedicatedServerProperties reload(net.minecraft.core.RegistryAccess registryAccess, java.util.Properties properties, joptsimple.OptionSet options)
+
+# Paper: sources/net/minecraft/server/Main.java.patch
+net.minecraft.server.Main: public static void main(joptsimple.OptionSet options)
+
+# Paper: sources/net/minecraft/server/Services.java.patch (PaperServices record moved to craft compat)
+net.minecraft.server.Services: public net.fissionmc.craft.compat.PaperServices paper()
+
+# Paper: sources/net/minecraft/server/ServerScoreboard.java.patch
+net.minecraft.server.ServerScoreboard: public boolean addPlayersToTeam(java.util.Collection<java.lang.String> players, net.minecraft.world.scores.PlayerTeam team)
+net.minecraft.server.ServerScoreboard: public void removePlayersFromTeam(java.util.Collection<java.lang.String> players, net.minecraft.world.scores.PlayerTeam team)
+
+# Paper: sources/net/minecraft/server/ServerTickRateManager.java.patch
+net.minecraft.server.ServerTickRateManager: public boolean requestGameToSprint(int time, boolean silent)
+
+# Paper: sources/net/minecraft/server/commands/ReloadCommand.java.patch
+net.minecraft.server.commands.ReloadCommand: public static void reload(net.minecraft.server.MinecraftServer server)
+
+# Paper: sources/net/minecraft/server/rcon/RconConsoleSource.java.patch
+net.minecraft.server.rcon.RconConsoleSource: public final java.net.SocketAddress socketAddress
+
+# Paper: sources/net/minecraft/server/bossevents/CustomBossEvent.java.patch
+net.minecraft.server.bossevents.CustomBossEvent: public org.bukkit.boss.KeyedBossBar getBukkitEntity()
+
+# Paper: sources/net/minecraft/world/BossEvent.java.patch
+net.minecraft.world.BossEvent: public net.kyori.adventure.bossbar.BossBar adventure
+
+# Paper: sources/net/minecraft/world/level/Level.java.patch
+net.minecraft.world.level.Level: public org.bukkit.generator.ChunkGenerator generator
+net.minecraft.world.level.Level: public boolean captureBlockStates
+net.minecraft.world.level.Level: public boolean captureTreeGeneration
+net.minecraft.world.level.Level: public java.util.Map<net.minecraft.core.BlockPos, org.bukkit.craftbukkit.block.CraftBlockState> capturedBlockStates
+net.minecraft.world.level.Level: public java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.entity.BlockEntity> capturedBlockEntities
+net.minecraft.world.level.Level: public java.util.List<net.minecraft.world.entity.item.ItemEntity> captureDrops
+net.minecraft.world.level.Level: public final it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap<org.bukkit.entity.SpawnCategory> ticksPerSpawnCategory
+net.minecraft.world.level.Level: public boolean populating
+net.minecraft.world.level.Level: public final org.spigotmc.SpigotWorldConfig spigotConfig
+net.minecraft.world.level.Level: public io.papermc.paper.configuration.WorldConfiguration paperConfig()
+net.minecraft.world.level.Level: public static net.minecraft.core.BlockPos lastPhysicsProblem
+net.minecraft.world.level.Level: public org.bukkit.craftbukkit.CraftWorld getWorld()
+net.minecraft.world.level.Level: public org.bukkit.craftbukkit.CraftServer getCraftServer()
+net.minecraft.world.level.Level: public abstract net.minecraft.resources.ResourceKey<net.minecraft.world.level.dimension.LevelStem> getTypeKey()
+net.minecraft.world.level.Level: public final boolean checkEntityCollision(net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.entity.Entity source, net.minecraft.world.phys.shapes.CollisionContext context, net.minecraft.core.BlockPos pos, boolean checkCanSee)
+net.minecraft.world.level.Level: public net.minecraft.world.phys.HitResult$Type clipDirect(net.minecraft.world.phys.Vec3 start, net.minecraft.world.phys.Vec3 end, net.minecraft.world.phys.shapes.CollisionContext context)
+net.minecraft.world.level.Level: public final net.minecraft.world.level.chunk.ChunkAccess getChunkIfLoadedImmediately(int x, int z)
+net.minecraft.world.level.Level: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.Level: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.Level: public final boolean isLoadedAndInBounds(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.Level: public net.minecraft.world.level.chunk.LevelChunk getChunkIfLoaded(int x, int z)
+net.minecraft.world.level.Level: public final net.minecraft.world.level.chunk.LevelChunk getChunkIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.Level: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoadedAndInBounds(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.Level: public void notifyAndUpdatePhysics(net.minecraft.core.BlockPos pos, net.minecraft.world.level.chunk.LevelChunk chunk, net.minecraft.world.level.block.state.BlockState oldState, net.minecraft.world.level.block.state.BlockState blockState, net.minecraft.world.level.block.state.BlockState newState, int updateFlags, int updateLimit)
+net.minecraft.world.level.Level: public final int getEntityCount()
+net.minecraft.world.level.Level: public abstract net.minecraft.world.level.entity.LevelEntityGetter<net.minecraft.world.entity.Entity> getEntities()
+net.minecraft.world.level.Level$ExplosionInteraction: public static final net.minecraft.world.level.Level$ExplosionInteraction STANDARD
+
+# Paper: sources/net/minecraft/world/level/BlockGetter.java.patch
+net.minecraft.world.level.BlockGetter: public abstract net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.BlockGetter: public net.minecraft.world.level.block.Block getBlockIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.BlockGetter: public abstract net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.BlockGetter: public net.minecraft.world.phys.BlockHitResult clip(net.minecraft.world.level.ClipContext c, net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.BlockGetter: public net.minecraft.world.phys.BlockHitResult clip(net.minecraft.world.level.ClipContext c, net.minecraft.core.BlockPos pos, java.util.function.Predicate<? super org.bukkit.block.Block> canCollide)
+net.minecraft.world.level.BlockGetter: public net.minecraft.world.phys.BlockHitResult clip(net.minecraft.world.level.ClipContext c, java.util.function.Predicate<? super org.bukkit.block.Block> canCollide)
+
+# Paper: sources/net/minecraft/world/level/LevelReader.java.patch
+net.minecraft.world.level.LevelReader: public abstract net.minecraft.world.level.chunk.ChunkAccess getChunkIfLoadedImmediately(int x, int z)
+net.minecraft.world.level.LevelReader: public net.minecraft.world.level.chunk.ChunkAccess getChunkIfLoadedImmediately(net.minecraft.core.BlockPos pos)
+
+# Paper: sources/net/minecraft/world/level/LevelAccessor.java.patch
+net.minecraft.world.level.LevelAccessor: public abstract net.minecraft.server.level.ServerLevel getMinecraftWorld()
+
+# Paper: sources/net/minecraft/world/level/LevelWriter.java.patch
+net.minecraft.world.level.LevelWriter: public boolean addFreshEntity(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+
+# Paper: sources/net/minecraft/world/level/ServerLevelAccessor.java.patch
+net.minecraft.world.level.ServerLevelAccessor: public void addFreshEntityWithPassengers(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+net.minecraft.world.level.ServerLevelAccessor: public net.minecraft.server.level.ServerLevel getMinecraftWorld()
+
+# Paper: sources/net/minecraft/server/level/WorldGenRegion.java.patch, EmptyBlockGetter, PathNavigationRegion (if-loaded util)
+net.minecraft.server.level.WorldGenRegion: public net.minecraft.world.level.chunk.ChunkAccess getChunkIfLoadedImmediately(int x, int z)
+net.minecraft.server.level.WorldGenRegion: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.server.level.WorldGenRegion: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.EmptyBlockGetter: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.EmptyBlockGetter: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.PathNavigationRegion: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.PathNavigationRegion: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+
+# Paper: sources/net/minecraft/server/level/ServerLevel.java.patch
+net.minecraft.server.level.ServerLevel: public final java.lang.String bukkitName
+net.minecraft.server.level.ServerLevel: public final java.util.UUID uuid
+net.minecraft.server.level.ServerLevel: public final net.minecraft.server.level.progress.LevelLoadListener levelLoadListener
+net.minecraft.server.level.ServerLevel: public final net.minecraft.world.level.timers.TimerQueue<net.minecraft.server.MinecraftServer> scheduledEvents
+net.minecraft.server.level.ServerLevel: public final net.minecraft.world.level.levelgen.WorldGenSettings worldGenSettings
+net.minecraft.server.level.ServerLevel: public boolean hasPhysicsEvent
+net.minecraft.server.level.ServerLevel: public boolean hasEntityMoveEvent
+net.minecraft.server.level.ServerLevel: public final org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer persistentDataContainer
+net.minecraft.server.level.ServerLevel: public net.minecraft.world.level.chunk.LevelChunk getChunkIfLoaded(int x, int z)
+net.minecraft.server.level.ServerLevel: public net.minecraft.resources.ResourceKey<net.minecraft.world.level.dimension.LevelStem> getTypeKey()
+net.minecraft.server.level.ServerLevel: public final boolean areChunksLoadedForMove(net.minecraft.world.phys.AABB box)
+net.minecraft.server.level.ServerLevel: public final void loadChunksForMoveAsync(net.minecraft.world.phys.AABB box, ca.spottedleaf.concurrentutil.util.Priority priority, java.util.function.Consumer<java.util.List<net.minecraft.world.level.chunk.ChunkAccess>> onLoad)
+net.minecraft.server.level.ServerLevel: public final void loadChunks(int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ, ca.spottedleaf.concurrentutil.util.Priority priority, java.util.function.Consumer<java.util.List<net.minecraft.world.level.chunk.ChunkAccess>> onLoad)
+net.minecraft.server.level.ServerLevel: public net.minecraft.core.BlockPos findLightningTargetAround(net.minecraft.core.BlockPos pos, boolean returnNullWhenNoTarget)
+net.minecraft.server.level.ServerLevel: public boolean addFreshEntity(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+net.minecraft.server.level.ServerLevel: public boolean addWithUUID(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+net.minecraft.server.level.ServerLevel: public void addDuringTeleport(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+net.minecraft.server.level.ServerLevel: public boolean tryAddFreshEntityWithPassengers(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+net.minecraft.server.level.ServerLevel: public boolean strikeLightning(net.minecraft.world.entity.Entity entitylightning)
+net.minecraft.server.level.ServerLevel: public boolean strikeLightning(net.minecraft.world.entity.Entity entitylightning, org.bukkit.event.weather.LightningStrikeEvent$Cause cause)
+net.minecraft.server.level.ServerLevel: public net.minecraft.world.level.ServerExplosion explode0(net.minecraft.world.entity.Entity source, net.minecraft.world.damagesource.DamageSource damageSource, net.minecraft.world.level.ExplosionDamageCalculator damageCalculator, double x, double y, double z, float r, boolean fire, net.minecraft.world.level.Level$ExplosionInteraction interactionType, net.minecraft.core.particles.ParticleOptions smallExplosionParticles, net.minecraft.core.particles.ParticleOptions largeExplosionParticles, net.minecraft.util.random.WeightedList<net.minecraft.core.particles.ExplosionParticleInfo> blockParticles, net.minecraft.core.Holder<net.minecraft.sounds.SoundEvent> explosionSound)
+net.minecraft.server.level.ServerLevel: public net.minecraft.world.level.ServerExplosion explode0(net.minecraft.world.entity.Entity source, net.minecraft.world.damagesource.DamageSource damageSource, net.minecraft.world.level.ExplosionDamageCalculator damageCalculator, double x, double y, double z, float r, boolean fire, net.minecraft.world.level.Level$ExplosionInteraction interactionType, net.minecraft.core.particles.ParticleOptions smallExplosionParticles, net.minecraft.core.particles.ParticleOptions largeExplosionParticles, net.minecraft.util.random.WeightedList<net.minecraft.core.particles.ExplosionParticleInfo> blockParticles, net.minecraft.core.Holder<net.minecraft.sounds.SoundEvent> explosionSound, java.util.function.Consumer<net.minecraft.world.level.ServerExplosion> configurator)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(net.minecraft.world.entity.Entity sender, T particle, double x, double y, double z, int count, double xDist, double yDist, double zDist, double speed)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(net.minecraft.world.entity.Entity sender, T particle, double x, double y, double z, int count, double xDist, double yDist, double zDist, double xSpeed, double ySpeed, double zSpeed)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(net.minecraft.world.entity.Entity sender, T particle, double x, double y, double z, int count, double xDist, double yDist, double zDist, double xSpeed, double ySpeed, double zSpeed, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket$RandomizationType randomizationType)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(net.minecraft.world.entity.Entity sender, T particle, boolean overrideLimiter, boolean alwaysShow, double x, double y, double z, int count, double xDist, double yDist, double zDist, double speed)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(net.minecraft.world.entity.Entity sender, T particle, boolean overrideLimiter, boolean alwaysShow, double x, double y, double z, int count, double xDist, double yDist, double zDist, double speed, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket$RandomizationType randomizationType)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(net.minecraft.world.entity.Entity sender, T particle, boolean overrideLimiter, boolean alwaysShow, double x, double y, double z, int count, double xDist, double yDist, double zDist, double xSpeed, double ySpeed, double zSpeed, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket$RandomizationType randomizationType)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(java.util.List<net.minecraft.server.level.ServerPlayer> receivers, net.minecraft.world.entity.Entity sender, T particle, boolean overrideLimiter, boolean alwaysShow, double x, double y, double z, int count, double xDist, double yDist, double zDist, double speed, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket$RandomizationType randomizationType)
+net.minecraft.server.level.ServerLevel: public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticlesSource(java.util.List<net.minecraft.server.level.ServerPlayer> receivers, net.minecraft.world.entity.Entity sender, T particle, boolean overrideLimiter, boolean alwaysShow, double x, double y, double z, int count, double xDist, double yDist, double zDist, double xSpeed, double ySpeed, double zSpeed, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket$RandomizationType randomizationType)
+net.minecraft.server.level.ServerLevel: public java.util.List<net.minecraft.server.level.ServerPlayer> getPlayersForGlobalSoundGamerule()
+net.minecraft.server.level.ServerLevel: public double getGlobalSoundRangeSquared(java.util.function.Function<org.spigotmc.SpigotWorldConfig, java.lang.Integer> rangeFunction)
+net.minecraft.server.level.ServerLevel: public void checkCapturedTreeStateForObserverNotify(net.minecraft.core.BlockPos pos, org.bukkit.craftbukkit.block.CraftBlockState craftBlockState)
+net.minecraft.server.level.ServerLevel: public net.minecraft.world.level.entity.LevelEntityGetter<net.minecraft.world.entity.Entity> getEntities()
+# FissionMC: replaces Paper's added ServerLevel constructor (Mixin cannot add constructors)
+net.minecraft.server.level.ServerLevel: public static net.minecraft.server.level.ServerLevel create(net.minecraft.server.MinecraftServer server, java.util.concurrent.Executor executor, net.minecraft.world.level.storage.LevelStorageSource$LevelStorageAccess levelStorage, net.minecraft.world.level.levelgen.WorldGenSettings worldGenSettings, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension, net.minecraft.world.level.dimension.LevelStem levelStem, boolean isDebug, long biomeZoomSeed, java.util.List<net.minecraft.world.level.CustomSpawner> customSpawners, boolean tickTime, net.minecraft.resources.ResourceKey<net.minecraft.world.level.dimension.LevelStem> typeKey, org.bukkit.World$Environment env, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, net.minecraft.world.level.storage.SavedDataStorage savedDataStorage, io.papermc.paper.world.PaperWorldLoader$LoadedWorldData loadedWorldData)
+
+# Paper: sources/net/minecraft/server/level/ServerChunkCache.java.patch
+net.minecraft.server.level.ServerChunkCache: public boolean spawnFriendlies
+net.minecraft.server.level.ServerChunkCache: public final ca.spottedleaf.concurrentutil.map.concurrent.longs.ConcurrentChainedLong2ReferenceHashTable<net.minecraft.world.level.chunk.LevelChunk> fullChunks
+net.minecraft.server.level.ServerChunkCache: public int getFullChunksCount()
+net.minecraft.server.level.ServerChunkCache: public boolean isChunkLoaded(int chunkX, int chunkZ)
+net.minecraft.server.level.ServerChunkCache: public void addLoadedChunk(net.minecraft.world.level.chunk.LevelChunk chunk)
+net.minecraft.server.level.ServerChunkCache: public void removeLoadedChunk(net.minecraft.world.level.chunk.LevelChunk chunk)
+net.minecraft.server.level.ServerChunkCache: public net.minecraft.world.level.chunk.ChunkAccess getChunkAtImmediately(int x, int z)
+net.minecraft.server.level.ServerChunkCache: public void addTicketAtLevel(net.minecraft.server.level.TicketType ticketType, net.minecraft.world.level.ChunkPos chunkPos, int ticketLevel)
+net.minecraft.server.level.ServerChunkCache: public void removeTicketAtLevel(net.minecraft.server.level.TicketType ticketType, net.minecraft.world.level.ChunkPos chunkPos, int ticketLevel)
+net.minecraft.server.level.ServerChunkCache: public net.minecraft.world.level.chunk.LevelChunk getChunkAtIfCachedImmediately(int x, int z)
+net.minecraft.server.level.ServerChunkCache: public net.minecraft.world.level.chunk.LevelChunk getChunkAtIfLoadedImmediately(int x, int z)
+net.minecraft.server.level.ServerChunkCache: public void close(boolean save) throws java.io.IOException
+net.minecraft.server.level.ServerChunkCache: public void purgeUnload()
+net.minecraft.server.level.ServerChunkCache: public void setSpawnSettings(boolean spawnEnemies, boolean spawnFriendlies)
+
+# Paper: sources/net/minecraft/server/level/ChunkMap.java.patch
+net.minecraft.server.level.ChunkMap: public final net.minecraft.server.level.ChunkHolder getUnloadingChunkHolder(int chunkX, int chunkZ)
+net.minecraft.server.level.ChunkMap: public int getMobCountNear(net.minecraft.server.level.ServerPlayer player, net.minecraft.world.entity.MobCategory mobCategory)
+
+# Paper: sources/net/minecraft/server/level/TicketType.java.patch
+net.minecraft.server.level.TicketType: public static final net.minecraft.server.level.TicketType PLUGIN
+net.minecraft.server.level.TicketType: public static final net.minecraft.server.level.TicketType POST_TELEPORT
+net.minecraft.server.level.TicketType: public static final net.minecraft.server.level.TicketType PLUGIN_TICKET
+net.minecraft.server.level.TicketType: public static final net.minecraft.server.level.TicketType FUTURE_AWAIT
+net.minecraft.server.level.TicketType: public static final net.minecraft.server.level.TicketType CHUNK_LOAD
+net.minecraft.server.level.TicketType: public static int PLUGIN_TYPE_TIMEOUT
+
+# Paper: sources/net/minecraft/server/level/Ticket.java.patch
+net.minecraft.server.level.Ticket: public java.lang.Object getIdentifier()
+# FissionMC: replaces Paper's added Ticket(TicketType, int, Object) constructor
+net.minecraft.server.level.Ticket: public static net.minecraft.server.level.Ticket create(net.minecraft.server.level.TicketType type, int ticketLevel, java.lang.Object identifier)
+
+# Paper: sources/net/minecraft/world/level/TicketStorage.java.patch
+net.minecraft.world.level.TicketStorage: public boolean addPluginRegionTicket(net.minecraft.world.level.ChunkPos pos, org.bukkit.plugin.Plugin value)
+net.minecraft.world.level.TicketStorage: public boolean removePluginRegionTicket(net.minecraft.world.level.ChunkPos pos, org.bukkit.plugin.Plugin value)
+net.minecraft.world.level.TicketStorage: public void removeAllPluginRegionTickets(net.minecraft.server.level.TicketType ticketType, int ticketLevel, org.bukkit.plugin.Plugin ticketIdentifier)
+
+# Paper: sources/net/minecraft/world/level/ServerExplosion.java.patch
+net.minecraft.world.level.ServerExplosion: public boolean wasCanceled
+net.minecraft.world.level.ServerExplosion: public float yield
+net.minecraft.world.level.ServerExplosion: public boolean excludeSourceFromDamage
+
+# Paper: sources/net/minecraft/world/level/NaturalSpawner.java.patch
+net.minecraft.world.level.NaturalSpawner: public static int globalLimitForCategory(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.MobCategory category, int spawnableChunkCount)
+
+# Paper: sources/net/minecraft/world/level/LevelSettings.java.patch
+net.minecraft.world.level.LevelSettings: public net.minecraft.world.level.LevelSettings withLevelName(java.lang.String name)
+net.minecraft.world.level.LevelSettings: public net.minecraft.world.level.LevelSettings withHardcore(boolean hardcore)
+
+# Paper: sources/net/minecraft/world/level/BaseCommandBlock.java.patch
+net.minecraft.world.level.BaseCommandBlock: public net.minecraft.world.level.BaseCommandBlock$CloseableCommandBlockSource createSource(net.minecraft.server.level.ServerLevel level)
+net.minecraft.world.level.BaseCommandBlock$CloseableCommandBlockSource: public org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
+
+# Paper: sources/net/minecraft/world/level/border/WorldBorder.java.patch
+net.minecraft.world.level.border.WorldBorder: public net.minecraft.server.level.ServerLevel world
+net.minecraft.world.level.border.WorldBorder: public void applySettings(net.minecraft.world.level.border.WorldBorder$Settings settings)
+
+# Paper: sources/net/minecraft/world/level/chunk/ChunkAccess.java.patch
+net.minecraft.world.level.chunk.ChunkAccess: public org.bukkit.craftbukkit.persistence.DirtyCraftPersistentDataContainer persistentDataContainer
+net.minecraft.world.level.chunk.ChunkAccess: public void setNoiseBiome(int quartX, int quartY, int quartZ, net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome)
+
+# Paper: sources/net/minecraft/world/level/chunk/LevelChunk.java.patch
+net.minecraft.world.level.chunk.LevelChunk: public boolean mustNotSave
+net.minecraft.world.level.chunk.LevelChunk: public boolean needsDecoration
+net.minecraft.world.level.chunk.LevelChunk: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.chunk.LevelChunk: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+
+# Paper: sources/net/minecraft/world/level/chunk/ProtoChunk.java.patch
+net.minecraft.world.level.chunk.ProtoChunk: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
+net.minecraft.world.level.chunk.ProtoChunk: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
+
+# Paper: sources/net/minecraft/world/level/chunk/LevelChunkSection.java.patch
+net.minecraft.world.level.chunk.LevelChunkSection: public void setNoiseBiome(int quartX, int quartY, int quartZ, net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome)
+
+# Paper: sources/net/minecraft/world/level/entity/*.java.patch
+net.minecraft.world.level.entity.PersistentEntitySectionManager: public java.util.List<net.minecraft.world.entity.Entity> getEntities(net.minecraft.world.level.ChunkPos chunkPos)
+net.minecraft.world.level.entity.PersistentEntitySectionManager: public boolean isPending(long pair)
+net.minecraft.world.level.entity.PersistentEntitySectionManager: public void close(boolean save) throws java.io.IOException
+net.minecraft.world.level.entity.EntitySectionStorage: public java.lang.Iterable<T> getAllEntities()
+net.minecraft.world.level.entity.LevelEntityGetterAdapter: public final net.minecraft.world.level.entity.EntitySectionStorage<T> sectionStorage
+
+# Paper: sources/net/minecraft/world/level/levelgen/*.java.patch
+net.minecraft.world.level.levelgen.WorldGenerationContext: public net.minecraft.world.level.Level level()
+net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator: public java.util.concurrent.CompletableFuture<net.minecraft.world.level.chunk.ChunkAccess> buildTerrain(net.minecraft.world.level.chunk.ChunkAccess chunk, net.minecraft.world.level.levelgen.blending.Blender blender, net.minecraft.world.level.levelgen.RandomState randomState, net.minecraft.world.level.StructureManager structureManager, net.minecraft.world.level.biome.BiomeManager biomeManager, net.minecraft.server.level.WorldGenRegion carverBiomeRegion, java.util.Set<net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome>> possibleBiomes, org.bukkit.craftbukkit.generator.CustomChunkGenerator customGenerator)
+net.minecraft.world.level.levelgen.structure.StructureStart: public org.bukkit.craftbukkit.persistence.DirtyCraftPersistentDataContainer persistentDataContainer
+net.minecraft.world.level.levelgen.structure.StructureStart: public org.bukkit.event.world.AsyncStructureGenerateEvent$Cause generationEventCause
+net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate: public org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer persistentDataContainer
+net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings: public int palette
+
+# Paper: sources/net/minecraft/world/level/storage/*.java.patch
+net.minecraft.world.level.storage.PrimaryLevelData: public static final java.lang.String PAPER_RESPAWN_DIMENSION
+net.minecraft.world.level.storage.PrimaryLevelData: public net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> respawnDimension
+net.minecraft.world.level.storage.PrimaryLevelData: public void checkName(java.lang.String name)
+net.minecraft.world.level.storage.PlayerDataStorage: public java.io.File getPlayerDir()
+net.minecraft.world.level.storage.LevelStorageSource: public static <T extends net.minecraft.world.level.saveddata.SavedData> com.mojang.serialization.DataResult<T> readExistingSavedData(net.minecraft.world.level.storage.LevelStorageSource$LevelStorageAccess access, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension, net.minecraft.core.HolderLookup$Provider registryAccess, net.minecraft.world.level.saveddata.SavedDataType<T> savedDataType)
+net.minecraft.world.level.storage.TagValueInput: public static net.minecraft.world.level.storage.ValueInput createGlobal(net.minecraft.util.ProblemReporter problemReporter, net.minecraft.nbt.CompoundTag compoundTag)
+net.minecraft.world.level.storage.TagValueOutput: public static net.minecraft.world.level.storage.TagValueOutput createWrappingGlobal(net.minecraft.util.ProblemReporter problemReporter, net.minecraft.nbt.CompoundTag output)
+net.minecraft.world.level.storage.TagValueOutput: public static net.minecraft.world.level.storage.TagValueOutput createWrappingWithContext(net.minecraft.util.ProblemReporter problemReporter, net.minecraft.core.HolderLookup$Provider lookup, net.minecraft.nbt.CompoundTag output)
+net.minecraft.world.level.storage.loot.LootTable: public org.bukkit.craftbukkit.CraftLootTable craftLootTable
+net.minecraft.world.level.storage.loot.LootTable: public void fill(net.minecraft.world.Container container, net.minecraft.world.level.storage.loot.LootParams params, net.minecraft.util.RandomSource randomSource, boolean plugin)
+
+# Paper: sources/net/minecraft/world/level/saveddata/*.java.patch
+net.minecraft.world.level.saveddata.WeatherData: public void setThundering(boolean thundering, org.bukkit.event.weather.ThunderChangeEvent$Cause cause)
+net.minecraft.world.level.saveddata.WeatherData: public void setRaining(boolean raining, org.bukkit.event.weather.WeatherChangeEvent$Cause cause)
+net.minecraft.world.level.saveddata.WeatherData: public void setLevel(net.minecraft.server.level.ServerLevel level)
+net.minecraft.world.level.saveddata.maps.MapItemSavedData: public final org.bukkit.craftbukkit.map.CraftMapView mapView
+net.minecraft.world.level.saveddata.maps.MapItemSavedData: public java.util.UUID uniqueId
+net.minecraft.world.level.saveddata.maps.MapItemSavedData: public net.minecraft.world.level.saveddata.maps.MapId id
+net.minecraft.world.level.saveddata.maps.MapItemSavedData: public void setColorsDirty(int x, int y, boolean markFileDirty)
+
+# Paper: sources/net/minecraft/world/level/gamerules/GameRules.java.patch
+net.minecraft.world.level.gamerules.GameRules: public <T> void set(net.minecraft.world.level.gamerules.GameRule<T> gameRule, T value, net.minecraft.server.level.ServerLevel level)
+
+# Paper: sources/net/minecraft/commands/CommandSourceStack.java.patch
+net.minecraft.commands.CommandSourceStack: implements io.papermc.paper.command.brigadier.PaperCommandSourceStack
+net.minecraft.commands.CommandSourceStack: public boolean bypassSelectorPermissions
+net.minecraft.commands.CommandSourceStack: public net.minecraft.commands.CommandSourceStack withLocation(org.bukkit.Location location)
+net.minecraft.commands.CommandSourceStack: public boolean hasPermission(net.minecraft.server.permissions.Permission permission, java.lang.String bukkitPermission)
+net.minecraft.commands.CommandSourceStack: public void sendFailure(net.minecraft.network.chat.Component message, boolean withStyle)
+net.minecraft.commands.CommandSourceStack: public net.minecraft.commands.CommandSourceStack getHandle()
+net.minecraft.commands.CommandSourceStack: public org.bukkit.command.CommandSender getBukkitSender()
+
+# Paper: sources/net/minecraft/commands/CommandSource.java.patch
+net.minecraft.commands.CommandSource: public abstract org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
+
+# Paper: sources/net/minecraft/commands/Commands.java.patch (RestrictedMarker moved to craft compat)
+net.minecraft.commands.Commands: public static final java.util.concurrent.ExecutorService COMMAND_SENDING_POOL
+net.minecraft.commands.Commands: public void performCommand(com.mojang.brigadier.ParseResults<net.minecraft.commands.CommandSourceStack> command, java.lang.String commandString, boolean throwCommandError)
+
+# Paper: sources/net/minecraft/commands/arguments/*.java.patch
+net.minecraft.commands.arguments.EntityArgument: public net.minecraft.commands.arguments.selector.EntitySelector parse(com.mojang.brigadier.StringReader reader, boolean allowSelectors, boolean overridePermissions) throws com.mojang.brigadier.exceptions.CommandSyntaxException
+net.minecraft.commands.arguments.MessageArgument: public static void resolveChatMessage(net.minecraft.commands.arguments.MessageArgument$Message message, com.mojang.brigadier.context.CommandContext<net.minecraft.commands.CommandSourceStack> context, java.lang.String name, java.util.function.Consumer<net.minecraft.network.chat.PlayerChatMessage> task) throws com.mojang.brigadier.exceptions.CommandSyntaxException
+
+# Paper: sources/net/minecraft/world/level/chunk/ChunkGenerator.java.patch
+net.minecraft.world.level.chunk.ChunkGenerator: public void applyBiomeDecoration(net.minecraft.world.level.WorldGenLevel level, net.minecraft.world.level.chunk.ChunkAccess chunk, net.minecraft.world.level.StructureManager structureManager, boolean addVanillaDecorations)
+
+# Paper: sources/net/minecraft/world/level/portal/TeleportTransition.java.patch (PassengerTeleportationMode moved to craft compat)
+net.minecraft.world.level.portal.TeleportTransition: public org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause()
+net.minecraft.world.level.portal.TeleportTransition: public net.fissionmc.craft.compat.PassengerTeleportationMode passengerTeleportationMode()
+net.minecraft.world.level.portal.TeleportTransition: public net.minecraft.world.level.portal.TeleportTransition withChangedLocation(org.bukkit.Location location)
+net.minecraft.world.level.portal.TeleportTransition: public net.minecraft.world.level.portal.TeleportTransition withVelocity(net.minecraft.world.phys.Vec3 velocity)
+net.minecraft.world.level.portal.TeleportTransition: public net.minecraft.world.level.portal.TeleportTransition withRelatives(java.util.Set<net.minecraft.world.entity.Relative> relatives)
+net.minecraft.world.level.portal.TeleportTransition: public net.minecraft.world.level.portal.TeleportTransition withCause(org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause)
+# FissionMC: replaces Paper's 11-argument canonical constructor
+net.minecraft.world.level.portal.TeleportTransition: public static net.minecraft.world.level.portal.TeleportTransition create(net.minecraft.server.level.ServerLevel newLevel, net.minecraft.world.phys.Vec3 position, net.minecraft.world.phys.Vec3 deltaMovement, float yRot, float xRot, boolean missingRespawnBlock, boolean asPassenger, java.util.Set<net.minecraft.world.entity.Relative> relatives, net.minecraft.world.level.portal.TeleportTransition$PostTeleportTransition postTeleportTransition, org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause, net.fissionmc.craft.compat.PassengerTeleportationMode passengerTeleportationMode)
+
+# Paper: sources/net/minecraft/world/level/storage/loot/LootContext.java.patch
+net.minecraft.world.level.storage.loot.LootContext$Builder: public net.minecraft.world.level.storage.loot.LootContext createWithoutLevel()
+
+# Paper: sources/net/minecraft/server/rcon/RconConsoleSource.java.patch
+net.minecraft.server.rcon.RconConsoleSource: public void sendMessage(java.lang.String message)
+net.minecraft.server.rcon.RconConsoleSource: public org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
+net.minecraft.server.level.WorldGenRegion: public boolean addFreshEntity(net.minecraft.world.entity.Entity entity, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason)
+net.minecraft.world.level.BaseCommandBlock: protected abstract org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
+
+# Paper: sources/net/minecraft/server/level/ChunkHolder.java.patch
+net.minecraft.server.level.ChunkHolder: public net.minecraft.world.level.chunk.LevelChunk getFullChunkNow()
+net.minecraft.server.level.ChunkHolder: public net.minecraft.world.level.chunk.LevelChunk getFullChunkNowUnchecked()
+net.minecraft.commands.arguments.selector.EntitySelectorParser: public net.minecraft.commands.arguments.selector.EntitySelector parse(boolean overridePermissions) throws com.mojang.brigadier.exceptions.CommandSyntaxException
+net.minecraft.world.level.BaseCommandBlock: public abstract net.minecraft.server.level.ServerLevel getLevel()
+
+# Paper: sources/net/minecraft/util/Util.java.patch (needed by io/papermc/paper/FeatureHooks.java)
+net.minecraft.util.Util: public static final double COLLISION_EPSILON

@@ -162,7 +162,7 @@ public class PaperPlayerConfigurationConnection extends PaperCommonConnection<Se
         if (this.channels().contains(channel)) {
             @SuppressWarnings("deprecation") // "not an API method" does not apply to us
             Identifier id = Identifier.parse(StandardMessenger.validateAndCorrectChannel(channel));
-            ClientboundCustomPayloadPacket packet = new ClientboundCustomPayloadPacket(new DiscardedPayload(id, message));
+            ClientboundCustomPayloadPacket packet = new ClientboundCustomPayloadPacket(DiscardedPayload.create(id, message)); // FissionMC: static factory (Paper added a record component)
             this.packetListener.send(packet);
         }
     }

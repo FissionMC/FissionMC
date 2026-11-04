@@ -220,12 +220,13 @@ public class MobGoalHelper {
     }
 
     public static GoalType vanillaToPaper(Goal.Flag type) {
+        if (type == Goal.Flag.UNKNOWN_BEHAVIOR) return GoalType.UNKNOWN_BEHAVIOR; // FissionMC: UNKNOWN_BEHAVIOR is added at runtime by a mixin, not a compile-time enum constant, so it cannot be a case label
         return switch (type) {
             case MOVE -> GoalType.MOVE;
             case LOOK -> GoalType.LOOK;
             case JUMP -> GoalType.JUMP;
-            case UNKNOWN_BEHAVIOR -> GoalType.UNKNOWN_BEHAVIOR;
             case TARGET -> GoalType.TARGET;
+            default -> throw new IllegalArgumentException("Unknown goal flag " + type); // FissionMC: see above
         };
     }
 

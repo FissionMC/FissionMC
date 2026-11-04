@@ -1,0 +1,211 @@
+# Blocks, block entities, inventory, items (see loader/.../surface/Surface.kt for the format).
+
+# Paper: sources/net/minecraft/world/Container.java.patch
+net.minecraft.world.Container: public java.util.List<net.minecraft.world.item.ItemStack> getContents()
+net.minecraft.world.Container: public void onOpen(org.bukkit.craftbukkit.entity.CraftHumanEntity player)
+net.minecraft.world.Container: public void onClose(org.bukkit.craftbukkit.entity.CraftHumanEntity player)
+net.minecraft.world.Container: public java.util.List<org.bukkit.entity.HumanEntity> getViewers()
+net.minecraft.world.Container: public org.bukkit.inventory.InventoryHolder getOwner()
+net.minecraft.world.Container: public void setMaxStackSize(int size)
+net.minecraft.world.Container: public org.bukkit.Location getLocation()
+
+# Paper: sources/net/minecraft/world/RandomizableContainer.java.patch
+net.minecraft.world.RandomizableContainer: public void unpackLootTable(net.minecraft.world.entity.player.Player player, boolean forceClearLootTable)
+net.minecraft.world.RandomizableContainer: public com.destroystokyo.paper.loottable.PaperLootableInventoryData lootableData()
+net.minecraft.world.RandomizableContainer: public com.destroystokyo.paper.loottable.PaperLootableInventory getLootableInventory()
+
+# Paper: sources/net/minecraft/world/LockCode.java.patch
+net.minecraft.world.LockCode: public boolean canUnlock(net.minecraft.world.entity.player.Player player, net.minecraft.world.item.ItemStack item)
+
+# Paper: sources/net/minecraft/world/inventory/AbstractContainerMenu.java.patch
+net.minecraft.world.inventory.AbstractContainerMenu: public boolean checkReachable
+net.minecraft.world.inventory.AbstractContainerMenu: public org.bukkit.inventory.InventoryView getBukkitView()
+net.minecraft.world.inventory.AbstractContainerMenu: public void transferTo(net.minecraft.world.inventory.AbstractContainerMenu other, org.bukkit.craftbukkit.entity.CraftHumanEntity player)
+net.minecraft.world.inventory.AbstractContainerMenu: public final net.minecraft.network.chat.Component getTitle()
+net.minecraft.world.inventory.AbstractContainerMenu: public final void setTitle(net.minecraft.network.chat.Component title)
+net.minecraft.world.inventory.AbstractContainerMenu: public void startOpen()
+net.minecraft.world.inventory.AbstractContainerMenu: public void forceHeldSlot(net.minecraft.world.InteractionHand hand)
+net.minecraft.world.inventory.AbstractContainerMenu: public void forceHeldSlotAndArmor(net.minecraft.world.InteractionHand hand)
+net.minecraft.world.inventory.AbstractContainerMenu: public void forceSlot(net.minecraft.world.Container container, int slot)
+net.minecraft.world.inventory.AbstractContainerMenu: public void broadcastCarriedItem()
+
+# Paper: sources/net/minecraft/world/inventory/CraftingMenu.java.patch
+net.minecraft.world.inventory.CraftingMenu: public org.bukkit.craftbukkit.inventory.CraftInventoryView getBukkitView()
+
+# Paper: sources/net/minecraft/world/inventory/InventoryMenu.java.patch
+net.minecraft.world.inventory.InventoryMenu: public org.bukkit.craftbukkit.inventory.CraftInventoryView getBukkitView()
+
+# Paper: sources/net/minecraft/world/inventory/MerchantMenu.java.patch
+net.minecraft.world.inventory.MerchantMenu: public org.bukkit.craftbukkit.inventory.view.CraftMerchantView getBukkitView()
+
+# Paper: sources/net/minecraft/world/inventory/LecternMenu.java.patch (constructor routed through a factory)
+net.minecraft.world.inventory.LecternMenu: public org.bukkit.craftbukkit.inventory.view.CraftLecternView getBukkitView()
+net.minecraft.world.inventory.LecternMenu: public static net.minecraft.world.inventory.LecternMenu create(int containerId, net.minecraft.world.Container lectern, net.minecraft.world.inventory.ContainerData lecternData, net.minecraft.world.entity.player.Inventory inventory)
+
+# Paper: sources/net/minecraft/world/inventory/EnchantmentMenu.java.patch
+net.minecraft.world.inventory.EnchantmentMenu: public static void fillEnchantmentOffers(net.minecraft.util.RandomSource random, int seed, int bookcases, net.minecraft.world.item.ItemStack itemStack, net.minecraft.core.RegistryAccess registryAccess, int[] costs, int[] enchantClue, int[] levelClue)
+net.minecraft.world.inventory.EnchantmentMenu: public static java.util.List<net.minecraft.world.item.enchantment.EnchantmentInstance> getEnchantmentList(net.minecraft.core.RegistryAccess access, net.minecraft.world.item.ItemStack itemStack, int slot, int enchantmentCost, net.minecraft.util.RandomSource random, int seed)
+
+# Paper: sources/net/minecraft/world/inventory/CraftingContainer.java.patch
+net.minecraft.world.inventory.CraftingContainer: public net.minecraft.world.item.crafting.RecipeHolder<net.minecraft.world.item.crafting.CraftingRecipe> getCurrentRecipe()
+net.minecraft.world.inventory.CraftingContainer: public void setCurrentRecipe(net.minecraft.world.item.crafting.RecipeHolder<net.minecraft.world.item.crafting.CraftingRecipe> recipe)
+
+# Paper: sources/net/minecraft/world/inventory/ContainerLevelAccess.java.patch
+net.minecraft.world.inventory.ContainerLevelAccess: public net.minecraft.world.level.Level getWorld()
+net.minecraft.world.inventory.ContainerLevelAccess: public net.minecraft.core.BlockPos getPosition()
+net.minecraft.world.inventory.ContainerLevelAccess: public org.bukkit.Location getLocation()
+net.minecraft.world.inventory.ContainerLevelAccess: public boolean isBlock()
+net.minecraft.world.inventory.ContainerLevelAccess: public org.bukkit.inventory.BlockInventoryHolder createBlockHolder(net.minecraft.world.inventory.AbstractContainerMenu menu)
+
+# Paper: sources/net/minecraft/world/item/trading/Merchant.java.patch
+net.minecraft.world.item.trading.Merchant: public void processTrade(net.minecraft.world.item.trading.MerchantOffer offer, io.papermc.paper.event.player.PlayerPurchaseEvent event)
+net.minecraft.world.item.trading.Merchant: public org.bukkit.craftbukkit.inventory.CraftMerchant getCraftMerchant()
+
+# Paper: sources/net/minecraft/world/item/trading/MerchantOffer.java.patch (constructor routed through a factory)
+net.minecraft.world.item.trading.MerchantOffer: public boolean ignoreDiscounts
+net.minecraft.world.item.trading.MerchantOffer: public org.bukkit.craftbukkit.inventory.CraftMerchantRecipe asBukkit()
+net.minecraft.world.item.trading.MerchantOffer: public static net.minecraft.world.item.trading.MerchantOffer create(net.minecraft.world.item.trading.ItemCost baseCostA, java.util.Optional<net.minecraft.world.item.trading.ItemCost> costB, net.minecraft.world.item.ItemStack result, int uses, int maxUses, int experience, float priceMultiplier, int demand, boolean ignoreDiscounts, org.bukkit.craftbukkit.inventory.CraftMerchantRecipe bukkit)
+
+# Paper: sources/net/minecraft/world/item/ItemStack.java.patch
+net.minecraft.world.item.ItemStack: public void restorePatch(net.minecraft.core.component.DataComponentPatch datacomponentpatch)
+net.minecraft.world.item.ItemStack: public void setItem(net.minecraft.world.item.Item item)
+
+# Paper: sources/net/minecraft/world/item/ItemCooldowns.java.patch
+net.minecraft.world.item.ItemCooldowns: public int getRemainingCooldown(net.minecraft.resources.Identifier cooldownGroup)
+
+# Paper: sources/net/minecraft/world/item/BoneMealItem.java.patch
+net.minecraft.world.item.BoneMealItem: public static net.minecraft.world.InteractionResult applyBonemeal(net.minecraft.world.item.context.UseOnContext context)
+
+# Paper: sources/net/minecraft/world/item/enchantment/EnchantmentHelper.java.patch
+net.minecraft.world.item.enchantment.EnchantmentHelper: public static net.minecraft.world.item.enchantment.ItemEnchantments updateEnchantments(net.minecraft.world.item.ItemStack itemStack, java.util.function.Consumer<net.minecraft.world.item.enchantment.ItemEnchantments$Mutable> consumer, boolean createComponentIfMissing)
+
+# Paper: sources/net/minecraft/world/item/component/CustomData.java.patch
+net.minecraft.world.item.component.CustomData: public static java.lang.ThreadLocal<java.lang.Boolean> SERIALIZE_CUSTOM_AS_SNBT
+net.minecraft.world.item.component.CustomData: public net.minecraft.nbt.CompoundTag getUnsafe()
+net.minecraft.world.item.component.CustomData: public boolean contains(java.lang.String key)
+
+# Paper: sources/net/minecraft/world/item/component/AttackRange.java.patch
+net.minecraft.world.item.component.AttackRange: public static final net.minecraft.world.item.component.AttackRange CODEC_DEFAULT
+
+# Paper: sources/net/minecraft/world/item/component/TypedEntityData.java.patch
+net.minecraft.world.item.component.TypedEntityData: public static <IdType> net.minecraft.world.item.component.TypedEntityData<IdType> decode(com.mojang.serialization.Codec<IdType> idTypeCodec, net.minecraft.nbt.CompoundTag tag)
+net.minecraft.world.item.component.TypedEntityData: public static net.minecraft.world.item.component.TypedEntityData<net.minecraft.world.entity.EntityType<?>> decodeEntity(net.minecraft.nbt.CompoundTag tag)
+net.minecraft.world.item.component.TypedEntityData: public static net.minecraft.world.item.component.TypedEntityData<net.minecraft.world.level.block.entity.BlockEntityType<?>> decodeBlockEntity(net.minecraft.nbt.CompoundTag tag)
+net.minecraft.world.item.component.TypedEntityData: public net.minecraft.nbt.CompoundTag copyTagWithEntityId()
+net.minecraft.world.item.component.TypedEntityData: public net.minecraft.nbt.CompoundTag copyTagWithBlockEntityId()
+
+# Paper: sources/net/minecraft/core/component/DataComponentPatch.java.patch
+net.minecraft.core.component.DataComponentPatch$Builder: public void copy(net.minecraft.core.component.DataComponentPatch orig)
+net.minecraft.core.component.DataComponentPatch$Builder: public void clear(net.minecraft.core.component.DataComponentType<?> type)
+net.minecraft.core.component.DataComponentPatch$Builder: public boolean isSet(net.minecraft.core.component.DataComponentType<?> type)
+net.minecraft.core.component.DataComponentPatch$Builder: public boolean isEmpty()
+
+# Paper: sources/net/minecraft/world/item/crafting/Recipe.java.patch
+net.minecraft.world.item.crafting.Recipe: public org.bukkit.inventory.Recipe toBukkitRecipe(org.bukkit.NamespacedKey id)
+
+# Paper: sources/net/minecraft/world/item/crafting/RecipeHolder.java.patch
+net.minecraft.world.item.crafting.RecipeHolder: public org.bukkit.inventory.Recipe toBukkitRecipe()
+
+# Paper: sources/net/minecraft/world/item/crafting/RecipeMap.java.patch
+net.minecraft.world.item.crafting.RecipeMap: public static net.minecraft.world.item.crafting.RecipeMap createEmpty()
+net.minecraft.world.item.crafting.RecipeMap: public void addRecipe(net.minecraft.world.item.crafting.RecipeHolder<?> holder)
+net.minecraft.world.item.crafting.RecipeMap: public boolean removeRecipe(net.minecraft.resources.ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> id)
+
+# Paper: sources/net/minecraft/world/item/crafting/RecipeManager.java.patch
+net.minecraft.world.item.crafting.RecipeManager: public void addRecipe(net.minecraft.world.item.crafting.RecipeHolder<?> holder)
+net.minecraft.world.item.crafting.RecipeManager: public void finalizeRecipeLoading()
+net.minecraft.world.item.crafting.RecipeManager: public boolean removeRecipe(net.minecraft.resources.ResourceKey<net.minecraft.world.item.crafting.Recipe<?>> id)
+net.minecraft.world.item.crafting.RecipeManager: public void clearRecipes()
+
+# Paper: sources/net/minecraft/world/item/crafting/Ingredient.java.patch
+net.minecraft.world.item.crafting.Ingredient: public java.util.function.Predicate<net.minecraft.world.item.ItemStack> stackPredicate
+net.minecraft.world.item.crafting.Ingredient: public boolean isExact()
+net.minecraft.world.item.crafting.Ingredient: public java.util.List<net.minecraft.world.item.ItemStack> itemStacks()
+net.minecraft.world.item.crafting.Ingredient: public static net.minecraft.world.item.crafting.Ingredient ofStacks(java.util.List<net.minecraft.world.item.ItemStack> stacks)
+
+# Paper: sources/net/minecraft/world/item/crafting/SmithingTrimRecipe.java.patch (constructor routed through a factory)
+net.minecraft.world.item.crafting.SmithingTrimRecipe: public static net.minecraft.world.item.crafting.SmithingTrimRecipe create(net.minecraft.world.item.crafting.Recipe$CommonInfo commonInfo, net.minecraft.world.item.crafting.Ingredient template, net.minecraft.world.item.crafting.Ingredient base, net.minecraft.world.item.crafting.Ingredient addition, net.minecraft.core.Holder<net.minecraft.world.item.equipment.trim.TrimPattern> pattern, boolean copyDataComponents)
+net.minecraft.world.item.crafting.SmithingTrimRecipe: public static net.minecraft.world.item.ItemStack applyTrim(net.minecraft.world.item.ItemStack baseItem, net.minecraft.world.item.ItemStack materialItem, net.minecraft.core.Holder<net.minecraft.world.item.equipment.trim.TrimPattern> pattern, boolean copyDataComponents)
+
+# Paper: sources/net/minecraft/world/item/crafting/SmithingTransformRecipe.java.patch (constructor routed through a factory)
+net.minecraft.world.item.crafting.SmithingTransformRecipe: public static net.minecraft.world.item.crafting.SmithingTransformRecipe create(net.minecraft.world.item.crafting.Recipe$CommonInfo commonInfo, java.util.Optional<net.minecraft.world.item.crafting.Ingredient> template, net.minecraft.world.item.crafting.Ingredient base, java.util.Optional<net.minecraft.world.item.crafting.Ingredient> addition, net.minecraft.world.item.ItemStackTemplate result, boolean copyDataComponents)
+
+# Paper: sources/net/minecraft/world/level/block/state/BlockBehaviour.java.patch
+net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase: public org.bukkit.craftbukkit.block.data.CraftBlockData asBlockData()
+
+# Paper: sources/net/minecraft/world/level/block/state/BlockState.java.patch
+net.minecraft.world.level.block.state.BlockState: public final org.bukkit.Material getBukkitMaterial()
+
+# Paper: sources/net/minecraft/world/level/block/state/StateHolder.java.patch (private -> public)
+# widens the existing method (only the descriptor matters; the real generic signature stays)
+net.minecraft.world.level.block.state.StateHolder: public static net.minecraft.world.level.block.state.properties.Property$Value createValue(net.minecraft.world.level.block.state.properties.Property propertyKey, java.lang.Comparable propertyValue)
+
+# Paper: sources/net/minecraft/world/level/block/Block.java.patch
+net.minecraft.world.level.block.Block: public static final int UPDATE_SKIP_POI
+
+# Paper: sources/net/minecraft/world/level/block/SaplingBlock.java.patch
+net.minecraft.world.level.block.SaplingBlock: public static org.bukkit.TreeType treeType
+
+# Paper: sources/net/minecraft/world/level/block/DispenserBlock.java.patch
+net.minecraft.world.level.block.DispenserBlock: public static net.minecraft.core.dispenser.DispenseItemBehavior getDispenseBehavior(net.minecraft.core.dispenser.BlockSource pointer, net.minecraft.world.item.ItemStack stack)
+
+# Paper: paper.at widens DispenserBlock#dispenseFrom; the DropperBlock override must follow
+net.minecraft.world.level.block.DropperBlock: public void dispenseFrom(net.minecraft.server.level.ServerLevel level, net.minecraft.world.level.block.state.BlockState state, net.minecraft.core.BlockPos pos)
+
+# Paper: sources/net/minecraft/world/level/block/ChestBlock.java.patch
+net.minecraft.world.level.block.ChestBlock: public net.minecraft.world.MenuProvider getMenuProvider(net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, boolean ignoreObstructions)
+
+# Paper: sources/net/minecraft/world/level/block/entity/BlockEntity.java.patch
+net.minecraft.world.level.block.entity.BlockEntity: public final org.bukkit.craftbukkit.persistence.CraftPersistentDataContainer persistentDataContainer
+net.minecraft.world.level.block.entity.BlockEntity: public final java.util.Set<net.minecraft.core.component.DataComponentType<?>> applyComponentsSet(net.minecraft.core.component.DataComponentMap prototype, net.minecraft.core.component.DataComponentPatch patch)
+net.minecraft.world.level.block.entity.BlockEntity: public org.bukkit.inventory.InventoryHolder getOwner()
+net.minecraft.world.level.block.entity.BlockEntity: public org.bukkit.inventory.InventoryHolder getOwner(boolean useSnapshot)
+net.minecraft.world.level.block.entity.BlockEntity: public net.minecraft.nbt.CompoundTag sanitizeSentNbt(net.minecraft.nbt.CompoundTag tag)
+
+# Paper: sources/net/minecraft/world/level/block/entity/ContainerOpenersCounter.java.patch
+net.minecraft.world.level.block.entity.ContainerOpenersCounter: public boolean opened
+net.minecraft.world.level.block.entity.ContainerOpenersCounter: public void onOpenAPI(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState blockState)
+net.minecraft.world.level.block.entity.ContainerOpenersCounter: public void onCloseAPI(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState blockState)
+net.minecraft.world.level.block.entity.ContainerOpenersCounter: public void openerCountChangedAPI(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState blockState, int previous, int current)
+
+# Paper: sources/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java.patch
+net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity: public double cookSpeedMultiplier
+
+# Paper: sources/net/minecraft/world/level/block/entity/BannerBlockEntity.java.patch
+net.minecraft.world.level.block.entity.BannerBlockEntity: public void setPatterns(net.minecraft.world.level.block.entity.BannerPatternLayers bannerPatternLayers)
+
+# Paper: sources/net/minecraft/world/level/block/entity/BeaconBlockEntity.java.patch
+net.minecraft.world.level.block.entity.BeaconBlockEntity: public org.bukkit.potion.PotionEffect getPrimaryEffect()
+net.minecraft.world.level.block.entity.BeaconBlockEntity: public org.bukkit.potion.PotionEffect getSecondaryEffect()
+net.minecraft.world.level.block.entity.BeaconBlockEntity: public double getEffectRange()
+net.minecraft.world.level.block.entity.BeaconBlockEntity: public void setEffectRange(double range)
+net.minecraft.world.level.block.entity.BeaconBlockEntity: public void resetEffectRange()
+net.minecraft.world.level.block.entity.BeaconBlockEntity: public static java.util.List<net.minecraft.world.entity.player.Player> getHumansInRange(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, int beaconLevel, net.minecraft.world.level.block.entity.BeaconBlockEntity blockEntity)
+
+# Paper: sources/net/minecraft/world/level/block/entity/BeehiveBlockEntity.java.patch
+net.minecraft.world.level.block.entity.BeehiveBlockEntity: public int maxBees
+net.minecraft.world.level.block.entity.BeehiveBlockEntity: public java.util.List<net.minecraft.world.entity.Entity> releaseBees(net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.block.entity.BeehiveBlockEntity$BeeReleaseStatus releaseStatus, boolean force)
+net.minecraft.world.level.block.entity.BeehiveBlockEntity: public void clearBees()
+
+# Paper: sources/net/minecraft/world/level/block/entity/CampfireBlockEntity.java.patch
+net.minecraft.world.level.block.entity.CampfireBlockEntity: public final boolean[] stopCooking
+
+# Paper: sources/net/minecraft/world/level/block/entity/ConduitBlockEntity.java.patch
+net.minecraft.world.level.block.entity.ConduitBlockEntity: public static int getRange(java.util.List<net.minecraft.core.BlockPos> effectBlocks)
+
+# Paper: sources/net/minecraft/world/level/block/entity/SculkSensorBlockEntity.java.patch
+net.minecraft.world.level.block.entity.SculkSensorBlockEntity: public java.lang.Integer rangeOverride
+
+# Paper: sources/net/minecraft/world/level/block/entity/ShulkerBoxBlockEntity.java.patch
+net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity: public boolean opened
+
+# Paper: sources/net/minecraft/world/level/block/entity/JukeboxBlockEntity.java.patch
+net.minecraft.world.level.block.entity.JukeboxBlockEntity: public boolean opened
+net.minecraft.world.level.block.entity.JukeboxBlockEntity: public void setSongItemWithoutPlaying(net.minecraft.world.item.ItemStack itemStack, long ticksSinceSongStarted)
+
+# Paper: sources/net/minecraft/world/level/block/entity/SignBlockEntity.java.patch
+net.minecraft.world.level.block.entity.SignBlockEntity: public net.minecraft.world.level.block.entity.SignTextSlot getSlotPlayerIsFacing(double x, double z)
+
+# Paper: sources/net/minecraft/world/level/block/entity/vault/VaultServerData.java.patch
+net.minecraft.world.level.block.entity.vault.VaultServerData: public boolean addToRewardedPlayers(java.util.UUID player)
+net.minecraft.world.level.block.entity.vault.VaultServerData: public boolean removeFromRewardedPlayers(java.util.UUID uuid)

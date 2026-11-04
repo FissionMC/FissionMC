@@ -22,8 +22,8 @@ public final class ImprovedChatDecorator implements ChatDecorator {
     }
 
     @Override
-    public CompletableFuture<Component> decorate(final @Nullable ServerPlayer sender, final Component message) {
-        return decorate(this.server, sender, null, message);
+    public Component decorate(final @Nullable ServerPlayer sender, final Component message) { // FissionMC: vanilla ChatDecorator#decorate returns Component (Paper changed it to CompletableFuture); TODO(behaviour): async decoration
+        return decorate(this.server, sender, null, message).join(); // FissionMC
     }
 
     @Override
