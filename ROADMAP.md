@@ -17,6 +17,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Test plugin enables, registers command + listener
 
 ## M2 Packet pipeline
+- [ ] Decide license (blocks embedding any GPL code, incl. PacketEvents)
 - [ ] Mixin into connection pipeline setup (master terminates the client connection)
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
