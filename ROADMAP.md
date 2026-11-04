@@ -18,7 +18,8 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 
 ## M2 Packet pipeline
 - [x] License: GPL-3.0
-- [ ] Vendor PacketEvents api + netty-common (pin upstream commit), own platform module replaces its spigot one
+- [x] Vendor PacketEvents api + netty-common (pinned), upstream tracker script + daily workflow
+- [ ] Gradle integration of vendored PacketEvents; own platform module replaces its spigot one
 - [ ] Built-in virtual plugin "packetevents" so depend: [packetevents] resolves
 - [ ] Strip PacketEvents injector; feed it from core pipeline
 - [ ] Mixin into connection pipeline setup (master terminates the client connection)
@@ -83,4 +84,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] First tagged release
 
 ## M11 Updates
+- [~] Upstream tracking: upstream/upstreams.toml + scripts/upstream.py (PacketEvents vendored; Paper, Folia, Purpur, Leaf, Spigot repos as references)
+- [ ] API-diff tool: new abstract methods in paper-api -> throwing stubs in Craft layer
+- [ ] Per-file ported-from markers for code ported from Paper
 - [ ] MC 26.4 port process (re-check every Mixin target)
