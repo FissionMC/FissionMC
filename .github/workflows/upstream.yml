@@ -1,0 +1,32 @@
+name: upstream
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Status
+        run: python3 scripts/upstream.py status | tee status.txt
+      - name: Re-vendor PacketEvents
+        run: python3 scripts/upstream.py update packetevents
+      - name: Open or update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then echo "up to date"; exit 0; fi
+          git config user.name "fission-bot"
+          git config user.email "fission-bot@users.noreply.github.com"
+          git checkout -B upstream-sync
+          git add -A
+          git commit -qm "sync packetevents"
+          git push -f origin upstream-sync
+          gh pr create --base main --head upstream-sync --title "Upstream sync" \
+            --body "$(cat status.txt)" || gh pr edit upstream-sync --body "$(cat status.txt)"
