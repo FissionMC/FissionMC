@@ -1,0 +1,8 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "net.fissionmc.server.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "injectors": { "defaultRequire": 1 },
+  "mixins": ["MainMixin"]
+}
