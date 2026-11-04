@@ -14,4 +14,11 @@ public abstract class MainMixin {
     private static void fission$main(String[] args, CallbackInfo ci) {
         Hooks.onMain();
     }
+
+    // Paper: sources/net/minecraft/server/Main.java.patch - main(OptionSet) replaces main(String[]) (CraftBukkit)
+    // TODO(behaviour): FissionMC boots through vanilla main(String[]); Paper's OptionSet entry point (EULA/universe/
+    //  bukkit-settings handling, Services.create(..., options), DedicatedServer construction) is not ported yet.
+    private static void main(final joptsimple.OptionSet options) {
+        throw new UnsupportedOperationException("FissionMC starts the server through net.minecraft.server.Main#main(String[])");
+    }
 }
