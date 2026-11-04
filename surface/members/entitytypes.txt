@@ -169,9 +169,6 @@ net.minecraft.world.entity.monster.zombie.Zombie: public void setShouldBurnInDay
 # Paper: sources/net/minecraft/world/entity/boss/wither/WitherBoss.java.patch
 net.minecraft.world.entity.boss.wither.WitherBoss: public void setCanTravelThroughPortals(boolean canPortal)
 
-# Paper: sources/net/minecraft/world/entity/animal/Animal.java.patch
-net.minecraft.world.entity.animal.Animal: public net.minecraft.world.item.ItemStack breedItem
-
 # Paper: sources/net/minecraft/world/entity/animal/golem/CopperGolem.java.patch (Paper - public)
 net.minecraft.world.entity.animal.golem.CopperGolem: public static final long IGNORE_WEATHERING_TICK
 net.minecraft.world.entity.animal.golem.CopperGolem: public static final long UNSET_WEATHERING_TICK

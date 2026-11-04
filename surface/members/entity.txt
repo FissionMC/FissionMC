@@ -1,0 +1,191 @@
+# owner: declaration — see loader/.../surface/Surface.kt. Fully qualified types, `$` for nested classes.
+# Area: entity core (net.minecraft.world.entity top-level, ai.*, item, effect, damagesource; plus Animal, TypedEntityData, AttackRange).
+
+# Paper: sources/net/minecraft/world/entity/Entity.java.patch
+net.minecraft.world.entity.Entity: static boolean isLevelAtLeast(net.minecraft.world.level.storage.ValueInput input, int level)
+net.minecraft.world.entity.Entity: public org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason spawnReason
+net.minecraft.world.entity.Entity: public org.bukkit.craftbukkit.entity.CraftEntity getBukkitEntity()
+net.minecraft.world.entity.Entity: public org.bukkit.craftbukkit.entity.CraftEntity getBukkitEntityRaw()
+net.minecraft.world.entity.Entity: public net.kyori.adventure.util.TriState visualFire
+net.minecraft.world.entity.Entity: public boolean persist
+net.minecraft.world.entity.Entity: public boolean visibleByDefault
+net.minecraft.world.entity.Entity: public boolean valid
+net.minecraft.world.entity.Entity: public boolean inWorld
+net.minecraft.world.entity.Entity: public boolean generation
+net.minecraft.world.entity.Entity: public int maxAirTicks
+net.minecraft.world.entity.Entity: public org.bukkit.projectiles.ProjectileSource projectileSource
+net.minecraft.world.entity.Entity: public boolean lastDamageCancelled
+net.minecraft.world.entity.Entity: public boolean persistentInvisibility
+net.minecraft.world.entity.Entity: public net.minecraft.core.BlockPos lastLavaContact
+net.minecraft.world.entity.Entity: public boolean pluginRemoved
+net.minecraft.world.entity.Entity: public org.bukkit.event.entity.EntityRemoveEvent$Cause removeEventCause
+net.minecraft.world.entity.Entity: protected int numCollisions
+net.minecraft.world.entity.Entity: public boolean fromNetherPortal
+net.minecraft.world.entity.Entity: public boolean spawnedViaMobSpawner
+net.minecraft.world.entity.Entity: public net.minecraft.world.phys.Vec3 origin
+net.minecraft.world.entity.Entity: public java.util.UUID originWorld
+net.minecraft.world.entity.Entity: public boolean freezeLocked
+net.minecraft.world.entity.Entity: public boolean fixedPose
+net.minecraft.world.entity.Entity: public int totalEntityAge
+net.minecraft.world.entity.Entity: public final io.papermc.paper.entity.activation.ActivationType activationType
+net.minecraft.world.entity.Entity: public final java.lang.Object posLock
+net.minecraft.world.entity.Entity: public final net.minecraft.world.phys.AABB getBoundingBoxAt(double x, double y, double z)
+net.minecraft.world.entity.Entity: public int getDefaultMaxAirSupply()
+net.minecraft.world.entity.Entity: public final void discard(org.bukkit.event.entity.EntityRemoveEvent$Cause cause)
+net.minecraft.world.entity.Entity: public void refreshEntityData(net.minecraft.server.level.ServerPlayer to)
+net.minecraft.world.entity.Entity: public void resendPossiblyDesyncedEntityData(net.minecraft.server.level.ServerPlayer player)
+net.minecraft.world.entity.Entity: public void resendPossiblyDesyncedDataValues(java.util.List<net.minecraft.network.syncher.EntityDataAccessor<?>> accessors, net.minecraft.server.level.ServerPlayer to)
+net.minecraft.world.entity.Entity: public void remove(net.minecraft.world.entity.Entity$RemovalReason reason, org.bukkit.event.entity.EntityRemoveEvent$Cause eventCause)
+net.minecraft.world.entity.Entity: public void postTick()
+net.minecraft.world.entity.Entity: public void lavaIgnite(net.minecraft.core.BlockPos pos)
+net.minecraft.world.entity.Entity: public void lavaHurt(net.minecraft.core.BlockPos pos)
+net.minecraft.world.entity.Entity: public final void igniteForSeconds(float numberOfSeconds, boolean callEvent)
+net.minecraft.world.entity.Entity: public void push(double xa, double ya, double za, net.minecraft.world.entity.Entity pushingEntity)
+net.minecraft.world.entity.Entity: public boolean isCollidable(boolean ignoreClimbing)
+net.minecraft.world.entity.Entity: public boolean canCollideWithBukkit(net.minecraft.world.entity.Entity entity)
+net.minecraft.world.entity.Entity: public boolean saveAsPassenger(net.minecraft.world.level.storage.ValueOutput output, boolean includeAll, boolean includeNonSaveable, boolean forceSerialization)
+net.minecraft.world.entity.Entity: public void saveWithoutId(net.minecraft.world.level.storage.ValueOutput output, boolean includeAll, boolean includeNonSaveable, boolean forceSerialization)
+net.minecraft.world.entity.Entity: public final java.lang.String getEncodeId(boolean includeNonSaveable)
+net.minecraft.world.entity.Entity: protected void addAdditionalSaveData(net.minecraft.world.level.storage.ValueOutput output, boolean includeAll)
+net.minecraft.world.entity.Entity: public net.minecraft.world.entity.item.ItemEntity spawnAtLocation(net.minecraft.server.level.ServerLevel level, net.minecraft.world.item.ItemStack itemStack, net.minecraft.world.phys.Vec3 offset, java.util.function.Consumer<? super net.minecraft.world.entity.item.ItemEntity> delayedAddConsumer)
+net.minecraft.world.entity.Entity: public net.minecraft.world.entity.item.ItemEntity spawnAtLocation(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.item.ItemEntity entity)
+net.minecraft.world.entity.Entity: public boolean shearOffAllLeashConnections(net.minecraft.world.entity.player.Player player, net.minecraft.world.InteractionHand hand)
+net.minecraft.world.entity.Entity: public boolean dropAllLeashConnections(net.minecraft.world.entity.player.Player player, net.minecraft.world.InteractionHand hand)
+net.minecraft.world.entity.Entity: public void removeVehicle(boolean suppressCancellation)
+net.minecraft.world.entity.Entity: public void stopRiding(boolean suppressCancellation)
+net.minecraft.world.entity.Entity: protected boolean removePassenger(net.minecraft.world.entity.Entity passenger, boolean suppressCancellation)
+net.minecraft.world.entity.Entity: public boolean killedEntityPreEvent(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.LivingEntity entity, net.minecraft.world.damagesource.DamageSource source)
+net.minecraft.world.entity.Entity: public boolean teleportTo(net.minecraft.server.level.ServerLevel level, double x, double y, double z, java.util.Set<net.minecraft.world.entity.Relative> relatives, float newYRot, float newXRot, boolean resetCamera, org.bukkit.event.player.PlayerTeleportEvent$TeleportCause cause)
+net.minecraft.world.entity.Entity: public static boolean checkPosition(net.minecraft.world.entity.Entity entity, double newX, double newY, double newZ)
+net.minecraft.world.entity.Entity: public final void setPosRaw(double x, double y, double z, boolean forceBoundingBoxUpdate)
+net.minecraft.world.entity.Entity: public float getBukkitYaw()
+net.minecraft.world.entity.Entity: public final void setRemoved(net.minecraft.world.entity.Entity$RemovalReason reason, org.bukkit.event.entity.EntityRemoveEvent$Cause cause)
+net.minecraft.world.entity.Entity: public final void retireScheduler()
+net.minecraft.world.entity.Entity: public boolean isTicking()
+
+# Paper: sources/net/minecraft/world/entity/LivingEntity.java.patch
+net.minecraft.world.entity.LivingEntity: public int expToDrop
+net.minecraft.world.entity.LivingEntity: public java.util.List<net.fissionmc.craft.compat.DefaultDrop> deathDropItems
+net.minecraft.world.entity.LivingEntity: public final org.bukkit.craftbukkit.attribute.CraftAttributeMap craftAttributes
+net.minecraft.world.entity.LivingEntity: public boolean collides
+net.minecraft.world.entity.LivingEntity: public java.util.Set<java.util.UUID> collidableExemptions
+net.minecraft.world.entity.LivingEntity: public boolean bukkitPickUpLoot
+net.minecraft.world.entity.LivingEntity: public boolean silentDeath
+net.minecraft.world.entity.LivingEntity: public net.kyori.adventure.util.TriState frictionState
+net.minecraft.world.entity.LivingEntity: public int invulnerableDuration
+net.minecraft.world.entity.LivingEntity: public java.util.List<java.lang.Runnable> postDeathEventTasks
+net.minecraft.world.entity.LivingEntity: protected long lastJumpTime
+net.minecraft.world.entity.LivingEntity: protected long eatStartTime
+net.minecraft.world.entity.LivingEntity: protected int totalEatTimeTicks
+net.minecraft.world.entity.LivingEntity: public void onEquipItem(net.minecraft.world.entity.EquipmentSlot slot, net.minecraft.world.item.ItemStack oldStack, net.minecraft.world.item.ItemStack stack, boolean silent)
+net.minecraft.world.entity.LivingEntity: public net.minecraft.world.entity.item.ItemEntity drop(net.minecraft.world.item.ItemStack itemStack, boolean thrownFromHand, net.minecraft.util.Prediction prediction, boolean callEvent, java.util.function.Consumer<org.bukkit.entity.Item> entityOperation)
+net.minecraft.world.entity.LivingEntity: public net.minecraft.world.entity.item.ItemEntity drop(net.minecraft.world.item.ItemStack itemStack, boolean thrownFromHand, net.minecraft.util.Prediction prediction, boolean randomly, boolean callEvent, java.util.function.Consumer<org.bukkit.entity.Item> entityOperation)
+net.minecraft.world.entity.LivingEntity: public boolean removeAllEffects(org.bukkit.event.entity.EntityPotionEffectEvent$Cause cause)
+net.minecraft.world.entity.LivingEntity: public boolean addEffect(net.minecraft.world.effect.MobEffectInstance newEffect, org.bukkit.event.entity.EntityPotionEffectEvent$Cause cause)
+net.minecraft.world.entity.LivingEntity: public boolean addEffect(net.minecraft.world.effect.MobEffectInstance newEffect, net.minecraft.world.entity.Entity source, org.bukkit.event.entity.EntityPotionEffectEvent$Cause cause)
+net.minecraft.world.entity.LivingEntity: public boolean addEffect(net.minecraft.world.effect.MobEffectInstance newEffect, net.minecraft.world.entity.Entity source, org.bukkit.event.entity.EntityPotionEffectEvent$Cause cause, boolean fireEvent)
+net.minecraft.world.entity.LivingEntity: public final net.minecraft.world.effect.MobEffectInstance removeEffectNoUpdate(net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effect, org.bukkit.event.entity.EntityPotionEffectEvent$Cause cause)
+net.minecraft.world.entity.LivingEntity: public boolean removeEffect(net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effect, org.bukkit.event.entity.EntityPotionEffectEvent$Cause cause)
+net.minecraft.world.entity.LivingEntity: public void heal(float heal, org.bukkit.event.entity.EntityRegainHealthEvent$RegainReason regainReason)
+net.minecraft.world.entity.LivingEntity: public void heal(float heal, org.bukkit.event.entity.EntityRegainHealthEvent$RegainReason regainReason, boolean isFastRegen)
+net.minecraft.world.entity.LivingEntity: public float applyItemBlocking(net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource source, float damage, boolean dryRun)
+net.minecraft.world.entity.LivingEntity: public boolean canBlockAttack(net.minecraft.world.damagesource.DamageSource source, float damage)
+net.minecraft.world.entity.LivingEntity: public float resolveBlockedDamage(net.minecraft.world.damagesource.DamageSource source, float damage)
+net.minecraft.world.entity.LivingEntity: public void blockingItemEffects(net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource source, float damage, float damageBlocked)
+net.minecraft.world.entity.LivingEntity: public int getExpReward(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.Entity killer)
+net.minecraft.world.entity.LivingEntity: public void knockback(double power, double xd, double zd, net.minecraft.world.damagesource.DamageSource source, float damage, boolean comesFromEffect, net.minecraft.world.entity.Entity attacker, io.papermc.paper.event.entity.EntityKnockbackEvent$Cause eventCause)
+net.minecraft.world.entity.LivingEntity: public void knockback(double power, double xd, double zd, net.minecraft.world.damagesource.DamageSource source, float damage, net.minecraft.world.entity.Entity attacker, io.papermc.paper.event.entity.EntityKnockbackEvent$Cause eventCause)
+net.minecraft.world.entity.LivingEntity: public final void setArrowCount(int count, boolean reset)
+net.minecraft.world.entity.LivingEntity: public void setItemSlot(net.minecraft.world.entity.EquipmentSlot slot, net.minecraft.world.item.ItemStack itemStack, boolean silent)
+net.minecraft.world.entity.LivingEntity: public void onAttack(net.minecraft.world.entity.Entity entity)
+net.minecraft.world.entity.LivingEntity: public void resyncUsingItem(net.minecraft.server.level.ServerPlayer serverPlayer)
+net.minecraft.world.entity.LivingEntity: public void startUsingItem(net.minecraft.world.InteractionHand hand, boolean forceUpdate)
+net.minecraft.world.entity.LivingEntity: public net.minecraft.world.phys.HitResult getRayTrace(int maxDistance, net.minecraft.world.level.ClipContext$Fluid fluidCollisionOption)
+net.minecraft.world.entity.LivingEntity: public net.minecraft.world.phys.EntityHitResult getTargetEntity(int maxDistance)
+net.minecraft.world.entity.LivingEntity: public org.bukkit.craftbukkit.entity.CraftLivingEntity getBukkitEntity()
+
+# Paper: sources/net/minecraft/world/entity/Mob.java.patch
+net.minecraft.world.entity.Mob: public net.minecraft.world.entity.ai.goal.FloatGoal goalFloat
+net.minecraft.world.entity.Mob: public boolean aware
+net.minecraft.world.entity.Mob: public net.kyori.adventure.util.TriState despawnInPeacefulOverride
+net.minecraft.world.entity.Mob: public boolean setTarget(net.minecraft.world.entity.LivingEntity target, org.bukkit.event.entity.EntityTargetEvent$TargetReason reason)
+net.minecraft.world.entity.Mob: public net.minecraft.world.item.ItemStack equipItemIfPossible(net.minecraft.server.level.ServerLevel level, net.minecraft.world.item.ItemStack itemStack, net.minecraft.world.entity.item.ItemEntity entity)
+net.minecraft.world.entity.Mob: protected java.util.Set<net.minecraft.world.entity.EquipmentSlot> droppedEquipmentSlots
+net.minecraft.world.entity.Mob: protected boolean guaranteedToDropUndamaged(net.minecraft.world.entity.EquipmentSlot slot)
+net.minecraft.world.entity.Mob: public <T extends net.minecraft.world.entity.Mob> T convertTo(net.minecraft.world.entity.EntityType<T> entityType, net.minecraft.world.entity.ConversionParams params, net.minecraft.world.entity.EntitySpawnReason spawnReason, net.minecraft.world.entity.ConversionParams$AfterConversion<T> afterConversion, org.bukkit.event.entity.EntityTransformEvent$TransformReason transformReason, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)
+net.minecraft.world.entity.Mob: public <T extends net.minecraft.world.entity.Mob> T convertTo(net.minecraft.world.entity.EntityType<T> entityType, net.minecraft.world.entity.ConversionParams params, net.minecraft.world.entity.ConversionParams$AfterConversion<T> afterConversion, org.bukkit.event.entity.EntityTransformEvent$TransformReason transformReason, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)
+
+# Paper: sources/net/minecraft/world/entity/ai/goal/Goal.java.patch
+net.minecraft.world.entity.ai.goal.Goal: public boolean hasFlag(net.minecraft.world.entity.ai.goal.Goal$Flag flag)
+net.minecraft.world.entity.ai.goal.Goal: public void addFlag(net.minecraft.world.entity.ai.goal.Goal$Flag flag)
+net.minecraft.world.entity.ai.goal.Goal: public <T extends org.bukkit.entity.Mob> com.destroystokyo.paper.entity.ai.Goal<T> asPaperGoal()
+net.minecraft.world.entity.ai.goal.Goal$Flag: public static final net.minecraft.world.entity.ai.goal.Goal$Flag UNKNOWN_BEHAVIOR
+
+# Paper: sources/net/minecraft/world/entity/ai/attributes/AttributeMap.java.patch
+net.minecraft.world.entity.ai.attributes.AttributeMap: public void registerAttribute(net.minecraft.core.Holder<net.minecraft.world.entity.ai.attributes.Attribute> attributeBase)
+
+# Paper: sources/net/minecraft/world/entity/ai/gossip/GossipContainer.java.patch
+net.minecraft.world.entity.ai.gossip.GossipContainer$EntityGossips: public com.destroystokyo.paper.entity.villager.Reputation asReputation()
+net.minecraft.world.entity.ai.gossip.GossipContainer$EntityGossips: public void assignFromReputation(com.destroystokyo.paper.entity.villager.Reputation rep)
+
+# Paper: sources/net/minecraft/world/entity/Shearable.java.patch
+net.minecraft.world.entity.Shearable: public void shear(net.minecraft.server.level.ServerLevel level, net.minecraft.sounds.SoundSource soundSource, net.minecraft.world.item.ItemStack tool, java.util.List<net.minecraft.world.item.ItemStack> drops)
+net.minecraft.world.entity.Shearable: public net.minecraft.world.level.Level level()
+net.minecraft.world.entity.Shearable: public java.util.List<net.minecraft.world.item.ItemStack> generateDefaultDrops(net.minecraft.server.level.ServerLevel level, net.minecraft.world.item.ItemStack tool)
+
+# Paper: sources/net/minecraft/world/damagesource/DamageSource.java.patch
+net.minecraft.world.damagesource.DamageSource: public net.minecraft.world.damagesource.DamageSource knownCause(org.bukkit.event.entity.EntityDamageEvent$DamageCause cause)
+net.minecraft.world.damagesource.DamageSource: public org.bukkit.event.entity.EntityDamageEvent$DamageCause knownCause()
+net.minecraft.world.damagesource.DamageSource: public net.minecraft.world.entity.Entity eventEntityDamager()
+net.minecraft.world.damagesource.DamageSource: public net.minecraft.world.damagesource.DamageSource eventEntityDamager(net.minecraft.world.entity.Entity entity)
+net.minecraft.world.damagesource.DamageSource: public org.bukkit.block.Block eventBlockDamager()
+net.minecraft.world.damagesource.DamageSource: public net.minecraft.world.damagesource.DamageSource eventBlockDamager(net.minecraft.world.level.LevelAccessor level, net.minecraft.core.BlockPos pos)
+net.minecraft.world.damagesource.DamageSource: public org.bukkit.block.BlockState causingBlockSnapshot()
+net.minecraft.world.damagesource.DamageSource: public net.minecraft.world.damagesource.DamageSource causingBlockSnapshot(org.bukkit.block.BlockState blockState)
+net.minecraft.world.damagesource.DamageSource: public boolean isCritical()
+net.minecraft.world.damagesource.DamageSource: public net.minecraft.world.damagesource.DamageSource critical()
+net.minecraft.world.damagesource.DamageSource: public net.kyori.adventure.pointer.Pointers getDamageContext()
+# FissionMC: static factory for Paper's added constructor DamageSource(Holder, Entity, Entity, Vec3, Pointers)
+net.minecraft.world.damagesource.DamageSource: public static net.minecraft.world.damagesource.DamageSource create(net.minecraft.core.Holder<net.minecraft.world.damagesource.DamageType> type, net.minecraft.world.entity.Entity directEntity, net.minecraft.world.entity.Entity causingEntity, net.minecraft.world.phys.Vec3 damageSourcePosition, net.kyori.adventure.pointer.Pointers damageContext)
+
+# Paper: sources/net/minecraft/world/damagesource/CombatTracker.java.patch
+net.minecraft.world.damagesource.CombatTracker: public final io.papermc.paper.world.damagesource.PaperCombatTrackerWrapper paperCombatTracker
+net.minecraft.world.damagesource.CombatTracker: public void recordDamageAndCheckCombatState(net.minecraft.world.damagesource.CombatEntry entry)
+net.minecraft.world.damagesource.CombatTracker: public void resetCombatState()
+
+# Paper: sources/net/minecraft/world/entity/item/ItemEntity.java.patch
+net.minecraft.world.entity.item.ItemEntity: public boolean canMobPickup
+net.minecraft.world.entity.item.ItemEntity: public net.kyori.adventure.util.TriState frictionState
+
+# Paper: sources/net/minecraft/world/entity/item/FallingBlockEntity.java.patch
+net.minecraft.world.entity.item.FallingBlockEntity: public boolean autoExpire
+
+# Paper: sources/net/minecraft/world/entity/item/PrimedTnt.java.patch
+net.minecraft.world.entity.item.PrimedTnt: public boolean isIncendiary
+
+# Paper: sources/net/minecraft/world/entity/LightningBolt.java.patch
+net.minecraft.world.entity.LightningBolt: public boolean isEffect
+
+# Paper: sources/net/minecraft/world/entity/ExperienceOrb.java.patch
+net.minecraft.world.entity.ExperienceOrb: public java.util.UUID sourceEntityId
+net.minecraft.world.entity.ExperienceOrb: public java.util.UUID triggerEntityId
+net.minecraft.world.entity.ExperienceOrb: public org.bukkit.entity.ExperienceOrb$SpawnReason spawnReason
+net.minecraft.world.entity.ExperienceOrb: public static void awardWithDirection(net.minecraft.server.level.ServerLevel level, net.minecraft.world.phys.Vec3 pos, net.minecraft.world.phys.Vec3 roughDirection, int amount, org.bukkit.entity.ExperienceOrb$SpawnReason reason, net.minecraft.world.entity.Entity triggerId, net.minecraft.world.entity.Entity sourceId)
+# FissionMC: static factories for Paper's added constructors ExperienceOrb(Level, double, double, double, int, SpawnReason, Entity, Entity) and ExperienceOrb(Level, Vec3, Vec3, int, SpawnReason, Entity, Entity)
+net.minecraft.world.entity.ExperienceOrb: public static net.minecraft.world.entity.ExperienceOrb create(net.minecraft.world.level.Level level, double x, double y, double z, int value, org.bukkit.entity.ExperienceOrb$SpawnReason reason, net.minecraft.world.entity.Entity triggerId, net.minecraft.world.entity.Entity sourceId)
+net.minecraft.world.entity.ExperienceOrb: public static net.minecraft.world.entity.ExperienceOrb create(net.minecraft.world.level.Level level, net.minecraft.world.phys.Vec3 pos, net.minecraft.world.phys.Vec3 roughly, int value, org.bukkit.entity.ExperienceOrb$SpawnReason reason, net.minecraft.world.entity.Entity triggerId, net.minecraft.world.entity.Entity sourceId)
+
+# Paper: sources/net/minecraft/world/entity/animal/Animal.java.patch
+net.minecraft.world.entity.animal.Animal: public net.minecraft.world.item.ItemStack breedItem
+net.minecraft.world.entity.animal.Animal: public void setInLove(net.minecraft.world.entity.player.Player player, net.minecraft.world.item.ItemStack breedItemCopy)
+net.minecraft.world.entity.animal.Animal: public void finalizeSpawnChildFromBreeding(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.animal.Animal partner, net.minecraft.world.entity.AgeableMob offspring, int experience)
+
+# Paper: sources/net/minecraft/world/item/component/TypedEntityData.java.patch
+net.minecraft.world.item.component.TypedEntityData: public static <IdType> net.minecraft.world.item.component.TypedEntityData<IdType> decode(com.mojang.serialization.Codec<IdType> idTypeCodec, net.minecraft.nbt.CompoundTag tag)
+net.minecraft.world.item.component.TypedEntityData: public static net.minecraft.world.item.component.TypedEntityData<net.minecraft.world.entity.EntityType<?>> decodeEntity(net.minecraft.nbt.CompoundTag tag)
+net.minecraft.world.item.component.TypedEntityData: public static net.minecraft.world.item.component.TypedEntityData<net.minecraft.world.level.block.entity.BlockEntityType<?>> decodeBlockEntity(net.minecraft.nbt.CompoundTag tag)
+net.minecraft.world.item.component.TypedEntityData: public net.minecraft.nbt.CompoundTag copyTagWithEntityId()
+net.minecraft.world.item.component.TypedEntityData: public net.minecraft.nbt.CompoundTag copyTagWithBlockEntityId()
+
+# Paper: sources/net/minecraft/world/item/component/AttackRange.java.patch
+net.minecraft.world.item.component.AttackRange: public static final net.minecraft.world.item.component.AttackRange CODEC_DEFAULT

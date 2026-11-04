@@ -119,6 +119,6 @@ public class CraftDamageSource implements DamageSource {
 
         Vec3 sourcePos = (damageLocation == null) ? null : CraftLocation.toVec3(damageLocation);
 
-        return new CraftDamageSource(new net.minecraft.world.damagesource.DamageSource(holderDamageType, nmsDirectEntity, nmsCausingEntity, sourcePos, damageContext));
+        return new CraftDamageSource(net.minecraft.world.damagesource.DamageSource.create(holderDamageType, nmsDirectEntity, nmsCausingEntity, sourcePos, damageContext)); // FissionMC: static factory for Paper-added constructor
     }
 }

@@ -91,7 +91,7 @@ public class CraftMerchantCustom implements CraftMerchant {
                     offer.increaseUses();
                 }
                 if (event == null || event.isRewardingExp()) {
-                    this.tradingPlayer.level().addFreshEntity(new net.minecraft.world.entity.ExperienceOrb(this.tradingPlayer.level(), this.tradingPlayer.getX(), this.tradingPlayer.getY(), this.tradingPlayer.getZ(), offer.getXp(), org.bukkit.entity.ExperienceOrb.SpawnReason.VILLAGER_TRADE, this.tradingPlayer, null));
+                    this.tradingPlayer.level().addFreshEntity(net.minecraft.world.entity.ExperienceOrb.create(this.tradingPlayer.level(), this.tradingPlayer.getX(), this.tradingPlayer.getY(), this.tradingPlayer.getZ(), offer.getXp(), org.bukkit.entity.ExperienceOrb.SpawnReason.VILLAGER_TRADE, this.tradingPlayer, null)); // FissionMC: static factory for Paper-added constructor
                 }
             }
             this.notifyTrade(offer);
