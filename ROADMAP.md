@@ -9,9 +9,14 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [x] CraftServer skeleton (throwing stubs)
 
 ## M1 Plugin bring-up
-- [ ] Mixin on server init creates CraftServer, Bukkit.setServer
-- [ ] Name/version/logger/plugin folder
-- [ ] PluginManager + plugin loading from plugins/
+- [x] Split: master / backend products, shared protocol+net+packets, loader, craft
+- [x] Mixin on MinecraftServer.loadLevel creates CraftServer, Bukkit.setServer
+- [x] Name/version/logger/plugin folder, ServerBuildInfo provider
+- [x] Paper's plugin system ported (scripts/port.py, provenance in upstream/ported/paper.tsv): test plugin loads, enables, disables
+- [x] Parallel jar probe + stable load order
+- [ ] Persistent descriptor cache (path+size+mtime), lazy class loading
+- [ ] BOOTSTRAP entrypoint at the right time (before registries), bootstrap plugins
+- [ ] Legacy plugin bytecode conversion (Paper commodore); LifecycleEvents.TAGS; permissions.yml; reload
 - [ ] UnsafeValues, scheduler, services manager
 - [ ] Commands (Bukkit + Brigadier)
 - [ ] Test plugin enables, registers command + listener
@@ -85,6 +90,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 
 ## M11 Updates
 - [~] Upstream tracking: upstream/upstreams.toml + scripts/upstream.py (PacketEvents vendored; Paper, Folia, Purpur, Leaf, Spigot repos as references)
-- [ ] API-diff tool: new abstract methods in paper-api -> throwing stubs in Craft layer
-- [ ] Per-file ported-from markers for code ported from Paper
+- [x] Ported-from tracking: scripts/port.py + upstream/ported/{paper.tsv,skipped.txt}
+- [x] Stub generator: scripts/gen_stubs.py
+- [ ] API-diff tool: new abstract methods in paper-api -> stubs
 - [ ] MC 26.4 port process (re-check every Mixin target)
