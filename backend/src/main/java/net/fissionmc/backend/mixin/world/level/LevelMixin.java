@@ -36,6 +36,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /** Paper: sources/net/minecraft/world/level/Level.java.patch */
 @Mixin(Level.class)
 public abstract class LevelMixin {
+    // FissionMC: abstract in Paper (ServerLevelMixin implements it); a concrete declaration in Level is needed so
+    // invokevirtual Level.getTypeKey resolves at runtime.
+    public ResourceKey<net.minecraft.world.level.dimension.LevelStem> getTypeKey() {
+        throw new AbstractMethodError("FissionMC: " + this.getClass().getName() + " does not implement getTypeKey");
+    }
+
     @Shadow @Final private ResourceKey<Level> dimension;
     @Shadow protected abstract LevelEntityGetter<Entity> getEntities();
 

@@ -20,6 +20,16 @@ import org.spongepowered.asm.mixin.Mixin;
  */
 @Mixin(BlockGetter.class)
 public interface BlockGetterMixin {
+    // FissionMC: Paper declares these abstract. They need a declaration in BlockGetter itself or invokeinterface
+    // BlockGetter.getBlockStateIfLoaded fails to resolve at runtime; implementors override these (see class comment).
+    default @Nullable BlockState getBlockStateIfLoaded(BlockPos pos) {
+        throw new AbstractMethodError("FissionMC: " + this.getClass().getName() + " does not implement getBlockStateIfLoaded");
+    }
+
+    default @Nullable FluidState getFluidIfLoaded(BlockPos pos) {
+        throw new AbstractMethodError("FissionMC: " + this.getClass().getName() + " does not implement getFluidIfLoaded");
+    }
+
     // Paper start - if loaded util
     default net.minecraft.world.level.block.@Nullable Block getBlockIfLoaded(BlockPos pos) {
         BlockState type = ((BlockGetter) this).getBlockStateIfLoaded(pos);

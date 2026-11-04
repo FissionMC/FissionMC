@@ -941,7 +941,7 @@ public final class CraftServer implements Server {
         this.configuration = YamlConfiguration.loadConfiguration(this.getConfigFile());
         this.commandsConfiguration = YamlConfiguration.loadConfiguration(this.getCommandsConfigFile());
 
-        this.console.settings = new DedicatedServerSettings(this.console.options);
+        this.console.settings = DedicatedServerSettings.fromOptions(this.console.options); // FissionMC: Paper adds a constructor; static factory
         DedicatedServerProperties config = this.console.settings.getProperties();
 
         this.console.setMotd(config.motd.get());

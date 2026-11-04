@@ -94,9 +94,11 @@ public class CraftDragonBattle implements DragonBattle {
                 return !((CraftWorld) crystal.getWorld()).getHandle().equals(this.handle.level);
             });
 
-            boolean started = this.handle.respawnDragon(
+            // FissionMC: vanilla respawnDragon returns void; Paper's returns whether it started (respawnStage was null on entry)
+            this.handle.respawnDragon(
                 Lists.transform(filteredCrystals, crystal -> ((CraftEnderCrystal) crystal).getHandle())
             );
+            boolean started = this.handle.respawnStage != null;
 
             if (started) {
                 this.handle.emptyCrystalRespawnAllowed = filteredCrystals.isEmpty();
@@ -154,7 +156,10 @@ public class CraftDragonBattle implements DragonBattle {
 
     @Override
     public boolean spawnNewGateway() {
-        return this.handle.spawnNewGateway();
+        // FissionMC: vanilla spawnNewGateway returns void; Paper's returns whether a gateway was left to spawn
+        final boolean spawned = !this.handle.gateways.isEmpty();
+        this.handle.spawnNewGateway();
+        return spawned;
     }
 
     @Override

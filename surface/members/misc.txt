@@ -55,3 +55,7 @@ net.minecraft.commands.CommandSourceStack: public org.bukkit.command.CommandSend
 # Paper: sources/net/minecraft/commands/Commands.java.patch (RestrictedMarker moved to net.fissionmc.craft.compat.RestrictedMarker)
 net.minecraft.commands.Commands: public void performCommand(com.mojang.brigadier.ParseResults<net.minecraft.commands.CommandSourceStack> command, java.lang.String commandString, boolean throwCommandError)
 net.minecraft.commands.Commands: public static final java.util.concurrent.ExecutorService COMMAND_SENDING_POOL
+
+# ---- integration (craft compile) ----
+# Paper: sources/net/minecraft/core/HolderSet.java.patch
+net.minecraft.core.HolderSet$Named: public boolean contains(io.papermc.paper.registry.TypedKey<?> key)

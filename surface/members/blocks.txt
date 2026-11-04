@@ -209,3 +209,37 @@ net.minecraft.world.level.block.entity.SignBlockEntity: public net.minecraft.wor
 # Paper: sources/net/minecraft/world/level/block/entity/vault/VaultServerData.java.patch
 net.minecraft.world.level.block.entity.vault.VaultServerData: public boolean addToRewardedPlayers(java.util.UUID player)
 net.minecraft.world.level.block.entity.vault.VaultServerData: public boolean removeFromRewardedPlayers(java.util.UUID uuid)
+
+# ---- integration (craft compile) ----
+# Paper: sources/net/minecraft/world/item/ItemStack.java.patch
+net.minecraft.world.item.ItemStack: public void hurtAndBreak(int amount, net.minecraft.world.entity.LivingEntity owner, net.minecraft.world.entity.EquipmentSlot slot, boolean force)
+
+# Paper: sources/net/minecraft/world/level/block/Block.java.patch
+net.minecraft.world.level.block.Block: public static void dropResources(net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.entity.BlockEntity blockEntity, net.minecraft.world.entity.Entity breaker, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+net.minecraft.world.level.block.Block: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+# Paper: sources/net/minecraft/world/level/block/{DropExperience,RedStoneOre,Spawner,SculkSensor,SculkCatalyst,SculkShrieker}Block.java.patch
+net.minecraft.world.level.block.DropExperienceBlock: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+net.minecraft.world.level.block.RedStoneOreBlock: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+net.minecraft.world.level.block.SpawnerBlock: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+net.minecraft.world.level.block.SculkSensorBlock: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+net.minecraft.world.level.block.SculkCatalystBlock: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+net.minecraft.world.level.block.SculkShriekerBlock: public int getExpDrop(net.minecraft.world.level.block.state.BlockState state, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack tool, boolean dropExperience)
+
+# Paper: sources/net/minecraft/world/level/block/IceBlock.java.patch
+net.minecraft.world.level.block.IceBlock: public void afterDestroy(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, net.minecraft.world.item.ItemStack destroyedWith)
+
+# Paper: sources/net/minecraft/world/level/block/entity/trialspawner/TrialSpawner.java.patch
+net.minecraft.world.level.block.entity.trialspawner.TrialSpawner$FullConfig: public net.minecraft.world.level.block.entity.trialspawner.TrialSpawner$FullConfig overrideTargetCooldownLength(int targetCooldownLength)
+net.minecraft.world.level.block.entity.trialspawner.TrialSpawner$FullConfig: public net.minecraft.world.level.block.entity.trialspawner.TrialSpawner$FullConfig overrideRequiredPlayerRange(int requiredPlayerRange)
+net.minecraft.world.level.block.entity.trialspawner.TrialSpawner$FullConfig: public net.minecraft.world.level.block.entity.trialspawner.TrialSpawner$FullConfig overrideConfigs(net.minecraft.core.Holder<net.minecraft.world.level.block.entity.trialspawner.TrialSpawnerConfig> normal, net.minecraft.core.Holder<net.minecraft.world.level.block.entity.trialspawner.TrialSpawnerConfig> ominous)
+
+# Paper: sources/net/minecraft/world/level/block/entity/ConduitBlockEntity.java.patch
+net.minecraft.world.level.block.entity.ConduitBlockEntity: public static void updateAndAttackTarget(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos worldPosition, net.minecraft.world.level.block.state.BlockState blockState, net.minecraft.world.level.block.entity.ConduitBlockEntity entity, boolean isActive, boolean damageTarget)
+
+# Paper: sources/net/minecraft/world/inventory/AnvilMenu.java.patch
+net.minecraft.world.inventory.AnvilMenu: public static final int DEFAULT_DENIED_COST
+net.minecraft.world.inventory.AnvilMenu: public int maximumRepairCost
+net.minecraft.world.inventory.AnvilMenu: public boolean bypassEnchantmentLevelRestriction
+
+# Paper: sources/net/minecraft/world/inventory/EnchantmentMenu.java.patch
+net.minecraft.world.inventory.EnchantmentMenu: public void setEnchantmentSeed(int seed)

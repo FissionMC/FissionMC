@@ -231,3 +231,7 @@ net.minecraft.network.chat.MessageSignature: public net.kyori.adventure.chat.Sig
 net.minecraft.network.chat.OutgoingChatMessage: default void sendToPlayer(net.minecraft.server.level.ServerPlayer player, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)
 net.minecraft.network.chat.OutgoingChatMessage$Disguised: public void sendToPlayer(net.minecraft.server.level.ServerPlayer player, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)
 net.minecraft.network.chat.OutgoingChatMessage$Player: public void sendToPlayer(net.minecraft.server.level.ServerPlayer player, boolean filtered, net.minecraft.network.chat.ChatType$Bound chatType, net.minecraft.network.chat.Component unsigned)
+
+# ---- integration (backend compile) ----
+# Paper: sources/net/minecraft/network/protocol/game/ClientboundSetPlayerTeamPacket.java.patch
+net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket: public static net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket createMultiplePlayerPacket(net.minecraft.world.scores.PlayerTeam team, java.util.Collection<java.lang.String> players, net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket$Action action)

@@ -12,7 +12,14 @@ public final class LoggerShutdown {
         LogManager.shutdown(); // Flushes the async appender
 
         // Call JLine's shutdown hooks now that all pending logs have been flushed
-        ShutdownHooks.runTasks();
+        // FissionMC: Paper's jline patch makes runTasks public; jline is a plain library here, call it reflectively
+        try {
+            final java.lang.reflect.Method runTasks = ShutdownHooks.class.getDeclaredMethod("runTasks");
+            runTasks.setAccessible(true);
+            runTasks.invoke(null);
+        } catch (final ReflectiveOperationException e) {
+            throw new RuntimeException(e);
+        }
 
         try {
             // This may end up calling AbstractTerminal#close twice which doesn't have any guards for that, consider patching TCA if it becomes an issue

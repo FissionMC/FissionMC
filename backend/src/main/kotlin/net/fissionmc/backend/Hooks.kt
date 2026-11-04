@@ -17,7 +17,10 @@ object Hooks {
 
     @JvmStatic
     fun beforeLevel(server: DedicatedServer) {
-        val c = CraftServer(server)
+        // Paper constructs CraftServer in PlayerList's constructor (`cserver = server.server = new CraftServer(server, this)`);
+        // vanilla has created the DedicatedPlayerList by the time loadLevel runs. TODO: lifecycle wiring is redone separately.
+        val c = CraftServer(server, server.playerList)
+        server.server = c
         craft = c
         PluginInitializerManager.load(FissionOptions.get())
         c.loadPlugins()

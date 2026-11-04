@@ -20,7 +20,7 @@ public abstract class SimpleContainerMixin {
     // Paper start - add fields and methods
     private List<org.bukkit.entity.HumanEntity> transaction = new java.util.ArrayList<>();
     private int maxStack = net.minecraft.world.item.Item.ABSOLUTE_MAX_STACK_SIZE;
-    protected org.bukkit.inventory.@org.jspecify.annotations.Nullable InventoryHolder bukkitOwner; // Paper - annotation
+    private org.bukkit.inventory.@org.jspecify.annotations.Nullable InventoryHolder bukkitOwner; // Paper - annotation // FissionMC: protected in Paper; Mixin requires private (no subclass uses it yet)
     // Paper start - Add missing InventoryHolders
     private java.util.function.@org.jspecify.annotations.Nullable Supplier<? extends org.bukkit.inventory.InventoryHolder> bukkitOwnerCreator;
     // Paper end - Add missing InventoryHolders

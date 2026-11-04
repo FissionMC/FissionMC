@@ -176,3 +176,13 @@ net.minecraft.world.entity.animal.golem.CopperGolem: public long nextWeatheringT
 
 # Paper: sources/net/minecraft/world/entity/animal/frog/Tadpole.java.patch (Paper - public)
 net.minecraft.world.entity.animal.frog.Tadpole: public void setAgeLocked(boolean locked)
+
+# ---- integration (craft compile) ----
+# Paper: sources/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java.patch
+net.minecraft.world.entity.projectile.arrow.AbstractArrow: public void setOwner(net.minecraft.world.entity.Entity owner, boolean resetPickup)
+
+# Paper: sources/net/minecraft/world/entity/monster/zombie/Zombie.java.patch
+net.minecraft.world.entity.monster.zombie.Zombie: public static net.minecraft.world.entity.monster.zombie.ZombieVillager convertVillagerToZombieVillager(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.npc.villager.Villager villager, net.minecraft.core.BlockPos blockPosition, boolean silent, org.bukkit.event.entity.EntityTransformEvent$TransformReason transformReason, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)
+
+# Paper: sources/net/minecraft/world/entity/decoration/ItemFrame.java.patch
+net.minecraft.world.entity.decoration.ItemFrame: public void setItem(net.minecraft.world.item.ItemStack itemStack, boolean updateNeighbours, boolean playSound)
