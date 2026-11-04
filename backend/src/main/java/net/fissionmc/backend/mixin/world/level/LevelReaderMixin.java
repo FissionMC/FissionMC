@@ -9,5 +9,10 @@ import org.spongepowered.asm.mixin.Mixin;
 /** Paper: sources/net/minecraft/world/level/LevelReader.java.patch (getChunkIfLoadedImmediately(int, int) is abstract, see surface) */
 @Mixin(LevelReader.class)
 public interface LevelReaderMixin {
+    // FissionMC: abstract in Paper; declared here so invokeinterface LevelReader.getChunkIfLoadedImmediately(II) resolves.
+    default @Nullable ChunkAccess getChunkIfLoadedImmediately(int x, int z) {
+        throw new AbstractMethodError("FissionMC: " + this.getClass().getName() + " does not implement getChunkIfLoadedImmediately");
+    }
+
     default @Nullable ChunkAccess getChunkIfLoadedImmediately(BlockPos pos) { return ((LevelReader) this).getChunkIfLoadedImmediately(pos.getX() >> 4, pos.getZ() >> 4); }
 }
