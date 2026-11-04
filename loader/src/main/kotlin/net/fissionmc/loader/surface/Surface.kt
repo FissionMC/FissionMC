@@ -62,6 +62,31 @@ class Surface private constructor(
     }
 
     private fun widen(node: ClassNode): Boolean {
+        val wasPrivate = node.methods.filter { it.access and ACC_PRIVATE != 0 && it.name != "<init>" }.map { it.name + it.desc }.toSet()
+        val changed = widenMembers(node)
+        if (changed && wasPrivate.isNotEmpty()) devirtualize(node, wasPrivate)
+        return changed
+    }
+
+    /**
+     * A private method made non-private must dispatch virtually, as it does in Paper's recompiled
+     * source: rewrite the class's own `invokespecial` calls to it (javac emits those for private calls).
+     */
+    private fun devirtualize(node: ClassNode, wasPrivate: Set<String>) {
+        val widened = node.methods.filter { (it.name + it.desc) in wasPrivate && it.access and ACC_PRIVATE == 0 && it.access and ACC_STATIC == 0 }
+            .map { it.name + it.desc }.toSet()
+        if (widened.isEmpty()) return
+        val itf = node.access and ACC_INTERFACE != 0
+        for (m in node.methods) {
+            for (insn in m.instructions) {
+                if (insn is MethodInsnNode && insn.opcode == INVOKESPECIAL && insn.owner == node.name && (insn.name + insn.desc) in widened) {
+                    insn.opcode = if (itf) INVOKEINTERFACE else INVOKEVIRTUAL
+                }
+            }
+        }
+    }
+
+    private fun widenMembers(node: ClassNode): Boolean {
         var changed = false
         at[node.name]?.forEach { r ->
             when {
