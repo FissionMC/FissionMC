@@ -952,7 +952,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player, PluginMessa
             SectionPos sectionPos = entry.getKey();
             it.unimi.dsi.fastutil.shorts.Short2ObjectMap<net.minecraft.world.level.block.state.BlockState> blockData = entry.getValue();
 
-            net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket packet = new net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket(sectionPos, blockData);
+            net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket packet = net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket.create(sectionPos, blockData); // FissionMC: static factory for Paper-added constructor
             this.getHandle().connection.send(packet);
         }
     }
@@ -983,7 +983,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player, PluginMessa
         // Construct the packets using the data allocated above and send then to the players
         for (Map.Entry<SectionPos, ChunkSectionChanges> entry : changes.entrySet()) {
             ChunkSectionChanges chunkChanges = entry.getValue();
-            ClientboundSectionBlocksUpdatePacket packet = new ClientboundSectionBlocksUpdatePacket(entry.getKey(), chunkChanges.positions(), chunkChanges.blockData().toArray(net.minecraft.world.level.block.state.BlockState[]::new));
+            ClientboundSectionBlocksUpdatePacket packet = ClientboundSectionBlocksUpdatePacket.create(entry.getKey(), chunkChanges.positions(), chunkChanges.blockData().toArray(net.minecraft.world.level.block.state.BlockState[]::new)); // FissionMC: static factory for CraftBukkit-added constructor
             this.getHandle().connection.send(packet);
         }
     }
@@ -2230,7 +2230,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player, PluginMessa
     }
 
     private void sendCustomPayload(Identifier id, byte[] message) {
-        ClientboundCustomPayloadPacket packet = new ClientboundCustomPayloadPacket(new DiscardedPayload(id, message));
+        ClientboundCustomPayloadPacket packet = new ClientboundCustomPayloadPacket(DiscardedPayload.create(id, message)); // FissionMC: static factory (Paper added a record component)
         this.getHandle().connection.send(packet);
     }
 
@@ -2827,7 +2827,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player, PluginMessa
     public void sendMessage(net.kyori.adventure.chat.SignedMessage signedMessage, net.kyori.adventure.chat.ChatType.Bound boundChatType) {
         if (getHandle().connection == null) return;
 
-        if (signedMessage instanceof PlayerChatMessage.AdventureView view) {
+        if (signedMessage instanceof net.fissionmc.craft.compat.AdventureView view) { // FissionMC: AdventureView moved to compat
             this.getHandle().sendChatMessage(net.minecraft.network.chat.OutgoingChatMessage.create(view.playerChatMessage()), this.getHandle().isTextFilteringEnabled(), this.toHandle(boundChatType));
             return;
         }
@@ -2851,7 +2851,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player, PluginMessa
     @Override
     public void sendMessage(final net.kyori.adventure.text.Component message) {
         if (getHandle().connection == null) return;
-        this.getHandle().connection.send(new net.minecraft.network.protocol.game.ClientboundSystemChatPacket(message, false));
+        this.getHandle().connection.send(net.minecraft.network.protocol.game.ClientboundSystemChatPacket.create(message, false)); // FissionMC: static factory for Paper-added constructor
     }
 
     @Override
@@ -3112,7 +3112,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player, PluginMessa
         public void sendMessage(net.md_5.bungee.api.ChatMessageType position, UUID sender, BaseComponent... components) {
             if (CraftPlayer.this.getHandle().connection == null) return;
 
-            CraftPlayer.this.getHandle().connection.send(new net.minecraft.network.protocol.game.ClientboundSystemChatPacket(components, position == net.md_5.bungee.api.ChatMessageType.ACTION_BAR));
+            CraftPlayer.this.getHandle().connection.send(net.minecraft.network.protocol.game.ClientboundSystemChatPacket.create(components, position == net.md_5.bungee.api.ChatMessageType.ACTION_BAR)); // FissionMC: static factory for Spigot-added constructor
         }
 
         // Paper start

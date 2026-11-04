@@ -145,7 +145,7 @@ public final class ChatProcessor {
     }
 
     private void processModern(final ChatRenderer renderer, final Set<Audience> viewers, final Component message, final Player player, final boolean cancelled) {
-        final PlayerChatMessage.AdventureView signedMessage = this.message.adventureView();
+        final net.fissionmc.craft.compat.AdventureView signedMessage = this.message.adventureView(); // FissionMC: AdventureView moved to compat
         final AsyncChatEvent ae = new AsyncChatEvent(this.async, player, viewers, renderer, message, this.paper$originalMessage, signedMessage);
         ae.setCancelled(cancelled); // propagate cancelled state
         this.post(ae);

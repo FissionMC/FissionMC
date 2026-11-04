@@ -37,7 +37,7 @@ public class CraftAccessLocationInventoryViewBuilder<V extends InventoryView> ex
 
         final MenuProvider provider = block.getMenuProvider(effectiveBlockState, effectiveLevel, effectiveBlockPos);
         super.defaultTitle = provider.getDisplayName();
-        return provider.createMenu(player.nextContainerCounter(), player.getInventory(), player);
+        return provider.createMenu(player.fission$nextContainerCounter(), player.getInventory(), player); // FissionMC: Paper made nextContainerCounter() return int
     }
 
     @Override
