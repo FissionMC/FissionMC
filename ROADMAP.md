@@ -17,7 +17,10 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Test plugin enables, registers command + listener
 
 ## M2 Packet pipeline
-- [ ] Decide license (blocks embedding any GPL code, incl. PacketEvents)
+- [x] License: GPL-3.0
+- [ ] Vendor PacketEvents api + netty-common (pin upstream commit), own platform module replaces its spigot one
+- [ ] Built-in virtual plugin "packetevents" so depend: [packetevents] resolves
+- [ ] Strip PacketEvents injector; feed it from core pipeline
 - [ ] Mixin into connection pipeline setup (master terminates the client connection)
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
