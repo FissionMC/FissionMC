@@ -193,3 +193,6 @@ net.minecraft.world.item.component.AttackRange: public static final net.minecraf
 # ---- integration (craft compile) ----
 # Paper: sources/net/minecraft/world/entity/ItemBasedSteering.java.patch
 net.minecraft.world.entity.ItemBasedSteering: public void boost(int boostTime)
+
+# Paper: sources/net/minecraft/network/syncher/SynchedEntityData.java.patch
+net.minecraft.network.syncher.SynchedEntityData: public java.util.List<net.minecraft.network.syncher.SynchedEntityData$DataValue<?>> packAll()
