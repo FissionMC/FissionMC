@@ -1,0 +1,27 @@
+# owner: declaration — see loader/.../surface/Surface.kt. Fully qualified types, `$` for nested classes.
+# Library classes Paper patches (brigadier, authlib, com.mojang.math). Mixins under backend/.../mixin/lib/<package>/.
+
+# Paper: sources/com/mojang/brigadier/tree/CommandNode.java.patch
+com.mojang.brigadier.tree.CommandNode: public java.util.function.Predicate<S> requirement
+com.mojang.brigadier.tree.CommandNode: public com.mojang.brigadier.tree.CommandNode<S> clientNode
+com.mojang.brigadier.tree.CommandNode: public com.mojang.brigadier.tree.CommandNode<io.papermc.paper.command.brigadier.CommandSourceStack> unwrappedCached
+com.mojang.brigadier.tree.CommandNode: public com.mojang.brigadier.tree.CommandNode<io.papermc.paper.command.brigadier.CommandSourceStack> wrappedCached
+com.mojang.brigadier.tree.CommandNode: public io.papermc.paper.command.brigadier.APICommandMeta apiCommandMeta
+com.mojang.brigadier.tree.CommandNode: public void removeCommand(java.lang.String name)
+com.mojang.brigadier.tree.CommandNode: public java.util.Collection<? extends com.mojang.brigadier.tree.CommandNode<S>> getRelevantNodes(com.mojang.brigadier.StringReader input, java.lang.Object source)
+com.mojang.brigadier.tree.CommandNode: public void clearAll()
+
+# Paper: sources/com/mojang/brigadier/builder/ArgumentBuilder.java.patch
+com.mojang.brigadier.builder.ArgumentBuilder: private static final java.util.function.Predicate<java.lang.Object> DEFAULT_REQUIREMENT
+com.mojang.brigadier.builder.ArgumentBuilder: public static <S> java.util.function.Predicate<S> defaultRequirement()
+
+# Paper: sources/com/mojang/brigadier/exceptions/CommandSyntaxException.java.patch
+com.mojang.brigadier.exceptions.CommandSyntaxException: implements net.kyori.adventure.util.ComponentMessageThrowable
+com.mojang.brigadier.exceptions.CommandSyntaxException: public net.kyori.adventure.text.Component componentMessage()
+
+# Paper: sources/com/mojang/authlib/services/MinecraftServicesDiscoveryService.java.patch (private -> protected; constructor in surface/misc.at)
+com.mojang.authlib.services.MinecraftServicesDiscoveryService: protected static java.util.function.Supplier<com.mojang.authlib.services.response.discovery.DiscoveryResponse> createDiscoverySupplier(java.net.Proxy proxy, com.mojang.authlib.Environment environment)
+com.mojang.authlib.services.MinecraftServicesDiscoveryService: protected static com.mojang.authlib.Environment determineEnvironment()
+
+# Paper: sources/com/mojang/math/OctahedralGroup.java.patch
+com.mojang.math.OctahedralGroup: public void initializeRotationDirections()

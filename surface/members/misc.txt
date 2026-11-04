@@ -1,0 +1,57 @@
+# owner: declaration — see loader/.../surface/Surface.kt. Fully qualified types, `$` for nested classes.
+# Area: core/resources/tags/util/advancements/commands ("misc"). Library classes are in libs2.txt.
+
+# Paper: sources/net/minecraft/resources/Identifier.java.patch
+net.minecraft.resources.Identifier: public static final java.lang.String PAPER_NAMESPACE
+
+# Paper: sources/net/minecraft/advancements/AdvancementHolder.java.patch
+net.minecraft.advancements.AdvancementHolder: public final org.bukkit.advancement.Advancement toBukkit()
+
+# Paper: sources/net/minecraft/util/datafix/DataFixTypes.java.patch (enum constant; created via DataFixTypesInvokerMixin)
+net.minecraft.util.datafix.DataFixTypes: public static final net.minecraft.util.datafix.DataFixTypes NONE
+
+# Paper: sources/net/minecraft/util/Util.java.patch
+net.minecraft.util.Util: public static final double COLLISION_EPSILON
+net.minecraft.util.Util: public static final net.minecraft.TracingExecutor DIMENSION_DATA_IO_POOL
+
+# Paper: sources/net/minecraft/core/component/DataComponentPatch.java.patch
+net.minecraft.core.component.DataComponentPatch$Builder: public void copy(net.minecraft.core.component.DataComponentPatch orig)
+net.minecraft.core.component.DataComponentPatch$Builder: public void clear(net.minecraft.core.component.DataComponentType<?> type)
+net.minecraft.core.component.DataComponentPatch$Builder: public boolean isSet(net.minecraft.core.component.DataComponentType<?> type)
+net.minecraft.core.component.DataComponentPatch$Builder: public boolean isEmpty()
+
+# Paper: sources/net/minecraft/core/HolderLookup.java.patch
+net.minecraft.core.HolderLookup$RegistryLookup: public abstract java.util.Optional<T> getValueForCopying(net.minecraft.resources.ResourceKey<T> resourceKey)
+net.minecraft.core.HolderLookup$RegistryLookup$Delegate: public java.util.Optional<T> getValueForCopying(net.minecraft.resources.ResourceKey<T> resourceKey)
+
+# Paper: sources/net/minecraft/core/MappedRegistry.java.patch
+net.minecraft.core.MappedRegistry: public java.util.Optional<T> getValueForCopying(net.minecraft.resources.ResourceKey<T> resourceKey)
+net.minecraft.core.MappedRegistry: public void clearIntrusiveHolder(T instance)
+
+# Paper: sources/net/minecraft/core/registries/BootstrapRegistry.java.patch, PatchedRegistry.java.patch
+net.minecraft.core.registries.BootstrapRegistry: public java.util.Optional<T> getValueForCopying(net.minecraft.resources.ResourceKey<T> resourceKey)
+net.minecraft.core.registries.PatchedRegistry: public java.util.Optional<T> getValueForCopying(net.minecraft.resources.ResourceKey<T> resourceKey)
+
+# Paper: sources/net/minecraft/core/registries/BuiltInRegistries.java.patch
+net.minecraft.core.registries.BuiltInRegistries: public static final io.papermc.paper.registry.data.util.Conversions STATIC_ACCESS_CONVERSIONS
+net.minecraft.core.registries.BuiltInRegistries: public static void bootStrap(java.lang.Runnable runnable)
+
+# Paper: sources/net/minecraft/resources/RegistryOps.java.patch (+ implementers: RegistryDataLoader, PlaceholderLookupProvider patches)
+net.minecraft.resources.RegistryOps$RegistryInfoLookup: public abstract net.minecraft.core.HolderLookup$Provider lookupForValueCopyViaBuilders()
+net.minecraft.resources.RegistryOps$HolderLookupAdapter: public net.minecraft.core.HolderLookup$Provider lookupForValueCopyViaBuilders()
+
+# Paper: sources/net/minecraft/commands/CommandSource.java.patch
+net.minecraft.commands.CommandSource: public abstract org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
+
+# Paper: sources/net/minecraft/commands/CommandSourceStack.java.patch
+net.minecraft.commands.CommandSourceStack: implements io.papermc.paper.command.brigadier.PaperCommandSourceStack
+net.minecraft.commands.CommandSourceStack: public boolean bypassSelectorPermissions
+net.minecraft.commands.CommandSourceStack: public net.minecraft.commands.CommandSourceStack withLocation(org.bukkit.Location location)
+net.minecraft.commands.CommandSourceStack: public boolean hasPermission(net.minecraft.server.permissions.Permission permission, java.lang.String bukkitPermission)
+net.minecraft.commands.CommandSourceStack: public void sendFailure(net.minecraft.network.chat.Component message, boolean withStyle)
+net.minecraft.commands.CommandSourceStack: public net.minecraft.commands.CommandSourceStack getHandle()
+net.minecraft.commands.CommandSourceStack: public org.bukkit.command.CommandSender getBukkitSender()
+
+# Paper: sources/net/minecraft/commands/Commands.java.patch (RestrictedMarker moved to net.fissionmc.craft.compat.RestrictedMarker)
+net.minecraft.commands.Commands: public void performCommand(com.mojang.brigadier.ParseResults<net.minecraft.commands.CommandSourceStack> command, java.lang.String commandString, boolean throwCommandError)
+net.minecraft.commands.Commands: public static final java.util.concurrent.ExecutorService COMMAND_SENDING_POOL

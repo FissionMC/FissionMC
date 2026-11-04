@@ -141,7 +141,7 @@ public class PaperServerInternalAPIBridge implements InternalAPIBridge {
 
     @Override
     public Predicate<CommandSourceStack> restricted(final Predicate<CommandSourceStack> predicate, final boolean restricted) {
-        record RestrictedPredicate(Predicate<CommandSourceStack> predicate, @Override boolean restricted) implements Predicate<CommandSourceStack>, Commands.RestrictedMarker {
+        record RestrictedPredicate(Predicate<CommandSourceStack> predicate, @Override boolean restricted) implements Predicate<CommandSourceStack>, net.fissionmc.craft.compat.RestrictedMarker { // FissionMC: Commands.RestrictedMarker moved to compat (Mixin cannot add nested classes)
             @Override
             public boolean test(final CommandSourceStack commandSourceStack) {
                 return this.predicate.test(commandSourceStack);
