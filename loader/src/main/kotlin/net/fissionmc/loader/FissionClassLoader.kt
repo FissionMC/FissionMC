@@ -57,7 +57,7 @@ class FissionClassLoader(urls: Array<URL>, parent: ClassLoader) : URLClassLoader
     companion object {
         private val PARENT_FIRST = listOf(
             "java.", "javax.", "jdk.", "sun.", "com.sun.",
-            "org.spongepowered.", "org.objectweb.asm.", "net.fissionmc.loader.",
+            "org.spongepowered.", "org.objectweb.asm.", "net.fissionmc.loader.", "com.llamalad7.mixinextras.",
         )
     }
 }
