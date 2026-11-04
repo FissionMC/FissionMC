@@ -10,6 +10,7 @@ subprojects {
     repositories {
         mavenCentral()
         maven("https://maven.fabricmc.net/")
+        maven("https://repo.papermc.io/repository/maven-public/")
     }
 
     extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {

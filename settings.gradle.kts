@@ -1,2 +1,2 @@
 rootProject.name = "fissionmc"
-include("loader", "protocol", "net", "packets", "master", "server")
+include("loader", "protocol", "net", "packets", "master", "server", "craft")
