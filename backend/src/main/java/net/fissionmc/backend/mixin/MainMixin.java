@@ -1,6 +1,6 @@
-package net.fissionmc.server.mixin;
+package net.fissionmc.backend.mixin;
 
-import net.fissionmc.server.Hooks;
+import net.fissionmc.backend.Hooks;
 import net.minecraft.server.Main;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

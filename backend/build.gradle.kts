@@ -8,6 +8,7 @@ dependencies {
     api(project(":net"))
     api(project(":packets"))
     implementation(project(":loader"))
+    implementation(project(":craft"))
     compileOnly("net.fabricmc:sponge-mixin:0.17.5+mixin.0.8.7")
     compileOnly(files(mcJar))
     compileOnly(mcLibs)
@@ -19,7 +20,7 @@ tasks.register<JavaExec>("run") {
     description = "Boots vanilla $mcVersion through the FissionMC loader"
     val loaderCp = project(":loader").extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
     val gameCp = files(mcJar, mcLibs, sourceSets["main"].runtimeClasspath)
-    dependsOn(":loader:classes", "classes")
+    dependsOn(":loader:classes", "classes", ":testplugin:installTestPlugin")
     classpath = loaderCp
     mainClass = "net.fissionmc.loader.Bootstrap"
     workingDir = rootProject.file("run").also { it.mkdirs() }

@@ -5,12 +5,54 @@ package net.fissionmc.craft;
  * Hand-edited from here on; do not regenerate.
  */
 public class CraftServer implements org.bukkit.Server {
-    @Override public java.io.File getPluginsFolder() { throw new UnsupportedOperationException("Server#getPluginsFolder"); }
-    @Override public java.lang.String getName() { throw new UnsupportedOperationException("Server#getName"); }
-    @Override public java.lang.String getVersion() { throw new UnsupportedOperationException("Server#getVersion"); }
-    @Override public java.lang.String getBukkitVersion() { throw new UnsupportedOperationException("Server#getBukkitVersion"); }
-    @Override public java.lang.String getMinecraftVersion() { throw new UnsupportedOperationException("Server#getMinecraftVersion"); }
-    @Override public java.util.Collection<? extends org.bukkit.entity.Player> getOnlinePlayers() { throw new UnsupportedOperationException("Server#getOnlinePlayers"); }
+    private final net.minecraft.server.dedicated.DedicatedServer console;
+    private final java.util.logging.Logger logger = java.util.logging.Logger.getLogger("Minecraft");
+    private final org.bukkit.plugin.SimpleServicesManager servicesManager = new org.bukkit.plugin.SimpleServicesManager();
+    private final org.bukkit.command.SimpleCommandMap commandMap;
+    private final org.bukkit.plugin.SimplePluginManager pluginManager;
+    private final net.fissionmc.craft.scheduler.FissionScheduler scheduler = new net.fissionmc.craft.scheduler.FissionScheduler();
+    private final FissionUnsafeValues unsafe = new FissionUnsafeValues();
+    private final net.fissionmc.craft.command.FissionConsoleSender consoleSender = new net.fissionmc.craft.command.FissionConsoleSender();
+
+    public CraftServer(net.minecraft.server.dedicated.DedicatedServer console) {
+        this.console = console;
+        this.commandMap = new org.bukkit.command.SimpleCommandMap(this, new java.util.HashMap<>());
+        this.pluginManager = new org.bukkit.plugin.SimplePluginManager(this, commandMap);
+    }
+
+    /** Registers this as the Bukkit server and loads every plugin (onLoad only). */
+    public void loadPlugins() {
+        org.bukkit.Bukkit.setServer(this);
+        pluginManager.registerInterface(org.bukkit.plugin.java.JavaPluginLoader.class);
+        java.io.File dir = getPluginsFolder();
+        dir.mkdirs();
+        for (org.bukkit.plugin.Plugin plugin : pluginManager.loadPlugins(dir)) {
+            try {
+                plugin.getLogger().info("Loading " + plugin.getPluginMeta().getDisplayName());
+                plugin.onLoad();
+            } catch (Throwable t) {
+                logger.log(java.util.logging.Level.SEVERE, "Error loading " + plugin.getName(), t);
+            }
+        }
+    }
+
+    public void enablePlugins(org.bukkit.plugin.PluginLoadOrder type) {
+        for (org.bukkit.plugin.Plugin plugin : pluginManager.getPlugins()) {
+            if (!plugin.isEnabled() && plugin.getPluginMeta().getLoadOrder() == type) {
+                pluginManager.enablePlugin(plugin);
+            }
+        }
+        if (type == org.bukkit.plugin.PluginLoadOrder.POSTWORLD) {
+            org.bukkit.Bukkit.getPluginManager().callEvent(new org.bukkit.event.server.ServerLoadEvent(org.bukkit.event.server.ServerLoadEvent.LoadType.STARTUP));
+        }
+    }
+
+    @Override public java.io.File getPluginsFolder() { return new java.io.File("plugins"); }
+    @Override public java.lang.String getName() { return "FissionMC"; }
+    @Override public java.lang.String getVersion() { return "git-FissionMC-0.1.0 (MC: " + console.getServerVersion() + ")"; }
+    @Override public java.lang.String getBukkitVersion() { return "26.3-R0.1-SNAPSHOT"; }
+    @Override public java.lang.String getMinecraftVersion() { return console.getServerVersion(); }
+    @Override public java.util.Collection<? extends org.bukkit.entity.Player> getOnlinePlayers() { return java.util.Collections.emptyList(); }
     @Override public int getMaxPlayers() { throw new UnsupportedOperationException("Server#getMaxPlayers"); }
     @Override public void setMaxPlayers(int a0) { throw new UnsupportedOperationException("Server#setMaxPlayers"); }
     @Override public int getPort() { throw new UnsupportedOperationException("Server#getPort"); }
@@ -38,7 +80,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public java.util.Set<org.bukkit.OfflinePlayer> getWhitelistedPlayers() { throw new UnsupportedOperationException("Server#getWhitelistedPlayers"); }
     @Override public void reloadWhitelist() { throw new UnsupportedOperationException("Server#reloadWhitelist"); }
     @Override public java.lang.String getUpdateFolder() { throw new UnsupportedOperationException("Server#getUpdateFolder"); }
-    @Override public java.io.File getUpdateFolderFile() { throw new UnsupportedOperationException("Server#getUpdateFolderFile"); }
+    @Override public java.io.File getUpdateFolderFile() { return new java.io.File(getPluginsFolder(), "update"); }
     @Override public long getConnectionThrottle() { throw new UnsupportedOperationException("Server#getConnectionThrottle"); }
     @Override public int getTicksPerSpawns(org.bukkit.entity.SpawnCategory a0) { throw new UnsupportedOperationException("Server#getTicksPerSpawns"); }
     @Override public org.bukkit.entity.Player getPlayer(java.lang.String a0) { throw new UnsupportedOperationException("Server#getPlayer"); }
@@ -46,10 +88,10 @@ public class CraftServer implements org.bukkit.Server {
     @Override public java.util.List<org.bukkit.entity.Player> matchPlayer(java.lang.String a0) { throw new UnsupportedOperationException("Server#matchPlayer"); }
     @Override public org.bukkit.entity.Player getPlayer(java.util.UUID a0) { throw new UnsupportedOperationException("Server#getPlayer"); }
     @Override public java.util.UUID getPlayerUniqueId(java.lang.String a0) { throw new UnsupportedOperationException("Server#getPlayerUniqueId"); }
-    @Override public org.bukkit.plugin.PluginManager getPluginManager() { throw new UnsupportedOperationException("Server#getPluginManager"); }
-    @Override public org.bukkit.scheduler.BukkitScheduler getScheduler() { throw new UnsupportedOperationException("Server#getScheduler"); }
-    @Override public org.bukkit.plugin.ServicesManager getServicesManager() { throw new UnsupportedOperationException("Server#getServicesManager"); }
-    @Override public java.util.List<org.bukkit.World> getWorlds() { throw new UnsupportedOperationException("Server#getWorlds"); }
+    @Override public org.bukkit.plugin.PluginManager getPluginManager() { return pluginManager; }
+    @Override public org.bukkit.scheduler.BukkitScheduler getScheduler() { return scheduler; }
+    @Override public org.bukkit.plugin.ServicesManager getServicesManager() { return servicesManager; }
+    @Override public java.util.List<org.bukkit.World> getWorlds() { return java.util.Collections.emptyList(); }
     @Override public boolean isTickingWorlds() { throw new UnsupportedOperationException("Server#isTickingWorlds"); }
     @Override public org.bukkit.World createWorld(org.bukkit.WorldCreator a0) { throw new UnsupportedOperationException("Server#createWorld"); }
     @Override public boolean unloadWorld(java.lang.String a0, boolean a1) { throw new UnsupportedOperationException("Server#unloadWorld"); }
@@ -69,7 +111,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public void reloadData() { throw new UnsupportedOperationException("Server#reloadData"); }
     @Override public void updateResources() { throw new UnsupportedOperationException("Server#updateResources"); }
     @Override public void updateRecipes() { throw new UnsupportedOperationException("Server#updateRecipes"); }
-    @Override public java.util.logging.Logger getLogger() { throw new UnsupportedOperationException("Server#getLogger"); }
+    @Override public java.util.logging.Logger getLogger() { return logger; }
     @Override public org.bukkit.command.PluginCommand getPluginCommand(java.lang.String a0) { throw new UnsupportedOperationException("Server#getPluginCommand"); }
     @Override public void savePlayers() { throw new UnsupportedOperationException("Server#savePlayers"); }
     @Override public boolean dispatchCommand(org.bukkit.command.CommandSender a0, java.lang.String a1) { throw new UnsupportedOperationException("Server#dispatchCommand"); }
@@ -116,9 +158,9 @@ public class CraftServer implements org.bukkit.Server {
     @Override public org.bukkit.GameMode getDefaultGameMode() { throw new UnsupportedOperationException("Server#getDefaultGameMode"); }
     @Override public void setDefaultGameMode(org.bukkit.GameMode a0) { throw new UnsupportedOperationException("Server#setDefaultGameMode"); }
     @Override public boolean forcesDefaultGameMode() { throw new UnsupportedOperationException("Server#forcesDefaultGameMode"); }
-    @Override public org.bukkit.command.ConsoleCommandSender getConsoleSender() { throw new UnsupportedOperationException("Server#getConsoleSender"); }
+    @Override public org.bukkit.command.ConsoleCommandSender getConsoleSender() { return consoleSender; }
     @Override public org.bukkit.command.CommandSender createCommandSender(java.util.function.Consumer<? super net.kyori.adventure.text.Component> a0) { throw new UnsupportedOperationException("Server#createCommandSender"); }
-    @Override public java.io.File getWorldContainer() { throw new UnsupportedOperationException("Server#getWorldContainer"); }
+    @Override public java.io.File getWorldContainer() { return new java.io.File("."); }
     @Override public java.nio.file.Path getLevelDirectory() { throw new UnsupportedOperationException("Server#getLevelDirectory"); }
     @Override public org.bukkit.OfflinePlayer[] getOfflinePlayers() { throw new UnsupportedOperationException("Server#getOfflinePlayers"); }
     @Override public org.bukkit.plugin.messaging.Messenger getMessenger() { throw new UnsupportedOperationException("Server#getMessenger"); }
@@ -134,7 +176,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public int getMaxChainedNeighborUpdates() { throw new UnsupportedOperationException("Server#getMaxChainedNeighborUpdates"); }
     @Override public org.bukkit.inventory.Merchant createMerchant() { throw new UnsupportedOperationException("Server#createMerchant"); }
     @Override public int getSpawnLimit(org.bukkit.entity.SpawnCategory a0) { throw new UnsupportedOperationException("Server#getSpawnLimit"); }
-    @Override public boolean isPrimaryThread() { throw new UnsupportedOperationException("Server#isPrimaryThread"); }
+    @Override public boolean isPrimaryThread() { return console.isSameThread(); }
     @Override public net.kyori.adventure.text.Component motd() { throw new UnsupportedOperationException("Server#motd"); }
     @Override public void motd(net.kyori.adventure.text.Component a0) { throw new UnsupportedOperationException("Server#motd"); }
     @Override public net.kyori.adventure.text.Component shutdownMessage() { throw new UnsupportedOperationException("Server#shutdownMessage"); }
@@ -142,7 +184,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public void setMotd(java.lang.String a0) { throw new UnsupportedOperationException("Server#setMotd"); }
     @Override public org.bukkit.ServerLinks getServerLinks() { throw new UnsupportedOperationException("Server#getServerLinks"); }
     @Override public java.lang.String getShutdownMessage() { throw new UnsupportedOperationException("Server#getShutdownMessage"); }
-    @Override public org.bukkit.Warning.WarningState getWarningState() { throw new UnsupportedOperationException("Server#getWarningState"); }
+    @Override public org.bukkit.Warning.WarningState getWarningState() { return org.bukkit.Warning.WarningState.DEFAULT; }
     @Override public org.bukkit.inventory.ItemFactory getItemFactory() { throw new UnsupportedOperationException("Server#getItemFactory"); }
     @Override public org.bukkit.entity.EntityFactory getEntityFactory() { throw new UnsupportedOperationException("Server#getEntityFactory"); }
     @Override public org.bukkit.scoreboard.ScoreboardManager getScoreboardManager() { throw new UnsupportedOperationException("Server#getScoreboardManager"); }
@@ -164,7 +206,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public double[] getTPS() { throw new UnsupportedOperationException("Server#getTPS"); }
     @Override public long[] getTickTimes() { throw new UnsupportedOperationException("Server#getTickTimes"); }
     @Override public double getAverageTickTime() { throw new UnsupportedOperationException("Server#getAverageTickTime"); }
-    @Override public org.bukkit.command.CommandMap getCommandMap() { throw new UnsupportedOperationException("Server#getCommandMap"); }
+    @Override public org.bukkit.command.CommandMap getCommandMap() { return commandMap; }
     @Override public org.bukkit.advancement.Advancement getAdvancement(org.bukkit.NamespacedKey a0) { throw new UnsupportedOperationException("Server#getAdvancement"); }
     @Override public java.util.Iterator<org.bukkit.advancement.Advancement> advancementIterator() { throw new UnsupportedOperationException("Server#advancementIterator"); }
     @Override public org.bukkit.block.data.BlockData createBlockData(org.bukkit.Material a0) { throw new UnsupportedOperationException("Server#createBlockData"); }
@@ -177,7 +219,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public java.util.List<org.bukkit.entity.Entity> selectEntities(org.bukkit.command.CommandSender a0, java.lang.String a1) { throw new UnsupportedOperationException("Server#selectEntities"); }
     @Override public org.bukkit.structure.StructureManager getStructureManager() { throw new UnsupportedOperationException("Server#getStructureManager"); }
     @Override public <T extends org.bukkit.Keyed> org.bukkit.Registry<T> getRegistry(java.lang.Class<T> a0) { throw new UnsupportedOperationException("Server#getRegistry"); }
-    @Override public org.bukkit.UnsafeValues getUnsafe() { throw new UnsupportedOperationException("Server#getUnsafe"); }
+    @Override public org.bukkit.UnsafeValues getUnsafe() { return unsafe; }
     @Override public org.bukkit.Server.Spigot spigot() { throw new UnsupportedOperationException("Server#spigot"); }
     @Override public void restart() { throw new UnsupportedOperationException("Server#restart"); }
     @Override public void reloadPermissions() { throw new UnsupportedOperationException("Server#reloadPermissions"); }
@@ -190,7 +232,7 @@ public class CraftServer implements org.bukkit.Server {
     @Override public com.destroystokyo.paper.profile.PlayerProfile createProfile(java.util.UUID a0, java.lang.String a1) { throw new UnsupportedOperationException("Server#createProfile"); }
     @Override public com.destroystokyo.paper.profile.PlayerProfile createProfileExact(java.util.UUID a0, java.lang.String a1) { throw new UnsupportedOperationException("Server#createProfileExact"); }
     @Override public int getCurrentTick() { throw new UnsupportedOperationException("Server#getCurrentTick"); }
-    @Override public boolean isStopping() { throw new UnsupportedOperationException("Server#isStopping"); }
+    @Override public boolean isStopping() { return console.isStopped(); }
     @Override public com.destroystokyo.paper.entity.ai.MobGoals getMobGoals() { throw new UnsupportedOperationException("Server#getMobGoals"); }
     @Override public io.papermc.paper.datapack.DatapackManager getDatapackManager() { throw new UnsupportedOperationException("Server#getDatapackManager"); }
     @Override public org.bukkit.potion.PotionBrewer getPotionBrewer() { throw new UnsupportedOperationException("Server#getPotionBrewer"); }

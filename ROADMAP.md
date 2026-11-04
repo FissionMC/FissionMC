@@ -9,9 +9,11 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [x] CraftServer skeleton (throwing stubs)
 
 ## M1 Plugin bring-up
-- [ ] Mixin on server init creates CraftServer, Bukkit.setServer
-- [ ] Name/version/logger/plugin folder
-- [ ] PluginManager + plugin loading from plugins/
+- [x] Split: master / backend products, shared protocol+net+packets, loader, craft
+- [x] Mixin on MinecraftServer.loadLevel creates CraftServer, Bukkit.setServer
+- [x] Name/version/logger/plugin folder, ServerBuildInfo provider
+- [ ] Port Paper's plugin system (paper-server io.papermc.paper.plugin.*, ~120 files) as our PluginManager; assign to SimplePluginManager.paperPluginManager
+- [ ] Faster loading: parallel scan/parse, cached descriptor index
 - [ ] UnsafeValues, scheduler, services manager
 - [ ] Commands (Bukkit + Brigadier)
 - [ ] Test plugin enables, registers command + listener
