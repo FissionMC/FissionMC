@@ -90,7 +90,7 @@ class Surface private constructor(
                     val n = widenFlags(m.access, p.access and VIS_MASK, 0)
                     if (n != m.access) { m.access = n; changed = true }
                 }
-                is Parsed.Implements -> if (p.iface !in node.interfaces) { node.interfaces.add(p.iface); changed = true }
+                is Parsed.Implements -> if (p.iface !in node.interfaces) { addInterface(node, p.iface); changed = true }
             }
         }
         return changed
@@ -116,9 +116,15 @@ class Surface private constructor(
                     }
                     node.methods.add(m)
                 }
-                is Parsed.Implements -> if (p.iface !in node.interfaces) node.interfaces.add(p.iface)
+                is Parsed.Implements -> if (p.iface !in node.interfaces) addInterface(node, p.iface)
             }
         }
+    }
+
+    /** Adds an interface; javac reads supertypes from the generic Signature when present, so extend it too. */
+    private fun addInterface(node: ClassNode, iface: String) {
+        node.interfaces.add(iface)
+        node.signature?.let { node.signature = it + "L$iface;" }
     }
 
     sealed interface Parsed {
