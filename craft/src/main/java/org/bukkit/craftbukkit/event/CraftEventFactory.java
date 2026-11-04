@@ -2358,7 +2358,7 @@ public class CraftEventFactory {
     }
 
     @SuppressWarnings("OptionalAssignedToNull")
-    public static Component handleLoginResult(PlayerList.LoginResult result, PlayerConnection paperConnection, Connection connection, GameProfile profile, MinecraftServer server, boolean loginPhase) {
+    public static Component handleLoginResult(net.fissionmc.craft.compat.LoginResult result, PlayerConnection paperConnection, Connection connection, GameProfile profile, MinecraftServer server, boolean loginPhase) { // FissionMC: LoginResult moved to compat (nested class Paper added to PlayerList)
         PlayerConnectionValidateLoginEvent event = new PlayerConnectionValidateLoginEvent(
             paperConnection, result.isAllowed() ? null : PaperAdventure.asAdventure(result.message())
         );
@@ -2370,7 +2370,7 @@ public class CraftEventFactory {
         // breaky we will cache result and use it next time.
         if (loginPhase) {
             disconnectReason = HorriblePlayerLoginEventHack.execute(connection, server, profile,
-                disconnectReason == null ? PlayerList.LoginResult.ALLOW : new PlayerList.LoginResult(disconnectReason, disconnectReason == null ? PlayerLoginEvent.Result.KICK_OTHER : result.result())
+                disconnectReason == null ? net.fissionmc.craft.compat.LoginResult.ALLOW : new net.fissionmc.craft.compat.LoginResult(disconnectReason, disconnectReason == null ? PlayerLoginEvent.Result.KICK_OTHER : result.result()) // FissionMC: LoginResult moved to compat
             );
         } else if (connection.legacySavedLoginEventResultOverride != null) {
             // If the override is set, use it.

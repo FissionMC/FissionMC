@@ -306,7 +306,7 @@ public final class CraftChatMessage {
         StringBuilder out = new StringBuilder();
 
         boolean hadFormat = false;
-        for (Component c : component) {
+        for (Component c : (Iterable<Component>) component) { // FissionMC: surface cannot express the generic superinterface Iterable<Component>
             Style modi = c.getStyle();
             TextColor color = modi.getColor();
             if (c.getContents() != PlainTextContents.EMPTY || color != null) {

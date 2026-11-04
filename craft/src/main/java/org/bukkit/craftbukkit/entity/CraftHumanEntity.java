@@ -380,7 +380,7 @@ public class CraftHumanEntity extends CraftLivingEntity implements HumanEntity {
     private static void openCustomInventory(Inventory inventory, ServerPlayer player, MenuType<?> windowType) {
         if (player.connection == null) return;
         Preconditions.checkArgument(windowType != null, "Unknown windowType");
-        AbstractContainerMenu container = new CraftContainer(inventory, player, player.nextContainerCounter());
+        AbstractContainerMenu container = new CraftContainer(inventory, player, player.fission$nextContainerCounter()); // FissionMC: Paper made nextContainerCounter() return int
 
         // Paper start - Add titleOverride to InventoryOpenEvent
         final com.mojang.datafixers.util.Pair<net.kyori.adventure.text.Component, AbstractContainerMenu> result = CraftEventFactory.callInventoryOpenEventWithTitle(player, container);
@@ -465,7 +465,7 @@ public class CraftHumanEntity extends CraftLivingEntity implements HumanEntity {
             container = ((CraftInventoryView) inventory).getHandle();
             Preconditions.checkArgument(!(container instanceof InventoryMenu), "Can not open player's InventoryView");
         } else {
-            container = new CraftContainer(inventory, this.getHandle(), player.nextContainerCounter());
+            container = new CraftContainer(inventory, this.getHandle(), player.fission$nextContainerCounter()); // FissionMC: Paper made nextContainerCounter() return int
         }
 
         // Trigger an INVENTORY_OPEN event
@@ -778,7 +778,7 @@ public class CraftHumanEntity extends CraftLivingEntity implements HumanEntity {
     @Override
     public boolean dropItem(boolean dropAll) {
         if (!(this.getHandle() instanceof ServerPlayer player)) return false;
-        boolean success = player.drop(dropAll);
+        boolean success = player.fission$drop(dropAll); // FissionMC: Paper made drop(boolean) return boolean
         if (!success) {
             return false;
         }
