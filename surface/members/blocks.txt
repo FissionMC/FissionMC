@@ -243,3 +243,16 @@ net.minecraft.world.inventory.AnvilMenu: public boolean bypassEnchantmentLevelRe
 
 # Paper: sources/net/minecraft/world/inventory/EnchantmentMenu.java.patch
 net.minecraft.world.inventory.EnchantmentMenu: public void setEnchantmentSeed(int seed)
+
+# Wave 2 (blocks area): members other code paths need
+# Paper: sources/net/minecraft/world/level/block/Block.java.patch
+net.minecraft.world.level.block.Block: public final boolean isDestroyable()
+net.minecraft.world.level.block.Block: public static boolean dropResources(net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.entity.BlockEntity blockEntity, net.minecraft.core.BlockPos source)
+net.minecraft.world.level.block.Block: public void popExperience(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos pos, int amount, net.minecraft.world.entity.Entity entity)
+net.minecraft.world.level.block.Block: public void playerDestroy(net.minecraft.server.level.ServerLevel level, net.minecraft.server.level.ServerPlayer player, net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.block.entity.BlockEntity blockEntity, net.minecraft.world.item.ItemStack destroyedWith, boolean includeDrops, boolean dropExp)
+# Paper: sources/net/minecraft/world/level/block/state/BlockBehaviour.java.patch
+net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase: public final boolean isDestroyable()
+# Paper: sources/net/minecraft/world/item/ItemStack.java.patch
+net.minecraft.world.item.ItemStack: public void hurtAndBreak(int amount, net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.LivingEntity player, java.util.function.Consumer<net.minecraft.world.item.ItemStack> onBreak, boolean force)
+# Paper: sources/net/minecraft/world/level/block/SignBlock.java.patch
+net.minecraft.world.level.block.SignBlock: public void openTextEdit(net.minecraft.world.entity.player.Player player, net.minecraft.world.level.block.entity.SignBlockEntity sign, net.minecraft.world.level.block.entity.SignTextSlot slot, io.papermc.paper.event.player.PlayerOpenSignEvent$Cause cause)
