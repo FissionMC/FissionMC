@@ -1,7 +1,7 @@
 package io.papermc.paper.plugin.storage;
 
 import com.google.common.graph.GraphBuilder;
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.entrypoint.dependency.MetaDependencyTree;
 import io.papermc.paper.plugin.entrypoint.dependency.SimpleMetaDependencyTree;
 import io.papermc.paper.plugin.entrypoint.strategy.PluginGraphCycleException;
@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 
 public abstract class SimpleProviderStorage<T> implements ProviderStorage<T> {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     protected final List<PluginProvider<T>> providers = new ArrayList<>();
     protected ProviderLoadingStrategy<T> strategy;

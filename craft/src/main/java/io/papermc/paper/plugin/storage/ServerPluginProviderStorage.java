@@ -1,6 +1,6 @@
 package io.papermc.paper.plugin.storage;
 
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.provider.entrypoint.DependencyContext;
 import io.papermc.paper.plugin.entrypoint.dependency.DependencyContextHolder;
 import io.papermc.paper.plugin.entrypoint.strategy.ProviderConfiguration;
@@ -17,7 +17,7 @@ import java.util.List;
 
 public class ServerPluginProviderStorage extends ConfiguredProviderStorage<JavaPlugin> {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     public ServerPluginProviderStorage() {
         super(new ProviderConfiguration<>() {

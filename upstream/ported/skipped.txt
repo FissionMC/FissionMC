@@ -1,2 +1,1 @@
 # dest path <TAB> reason. port.py will not (re)create these.
-craft/src/main/java/io/papermc/paper/plugin/lifecycle/event/types/PaperTagEventTypeProvider.java	needs PaperTagListenerManager (NMS tag registries); LifecycleEvents.TAGS deferred

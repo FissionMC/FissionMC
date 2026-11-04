@@ -1,6 +1,6 @@
 package io.papermc.paper.plugin.manager;
 
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.entrypoint.Entrypoint;
 import io.papermc.paper.plugin.entrypoint.LaunchEntryPointHandler;
 import io.papermc.paper.plugin.entrypoint.dependency.GraphDependencyContext;
@@ -16,7 +16,7 @@ import java.util.List;
 
 public class MultiRuntimePluginProviderStorage extends ServerPluginProviderStorage {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
     private final List<JavaPlugin> provided = new ArrayList<>();
 
     private final MetaDependencyTree dependencyTree;

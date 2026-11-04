@@ -15,6 +15,10 @@ class FissionClassLoader(urls: Array<URL>, parent: ClassLoader) : URLClassLoader
     @Volatile
     var transformer: IMixinTransformer? = null
 
+    /** Access widening for Paper's AT and mixin-added members; runs after Mixin. */
+    @Volatile
+    var surface: net.fissionmc.loader.surface.Surface? = null
+
     init {
         registerAsParallelCapable()
     }
@@ -37,6 +41,7 @@ class FissionClassLoader(urls: Array<URL>, parent: ClassLoader) : URLClassLoader
         val url = findResource(path) ?: throw ClassNotFoundException(name)
         var bytes = url.openStream().use { it.readBytes() }
         transformer?.let { bytes = it.transformClassBytes(name, name, bytes) }
+        surface?.let { s -> if (s.touches(name.replace('.', '/'))) s.applyAccess(bytes)?.let { bytes = it } }
         return defineClass(name, bytes, 0, bytes.size, CodeSource(url, null as Array<java.security.cert.Certificate>?))
     }
 

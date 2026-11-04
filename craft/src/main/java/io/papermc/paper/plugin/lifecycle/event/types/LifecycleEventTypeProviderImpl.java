@@ -13,6 +13,8 @@ public final class LifecycleEventTypeProviderImpl implements LifecycleEventTypeP
         return (LifecycleEventTypeProviderImpl) LifecycleEventTypeProvider.provider();
     }
 
+    private final PaperTagEventTypeProvider provider = new PaperTagEventTypeProvider();
+
     @Override
     public <O extends LifecycleEventOwner, E extends LifecycleEvent> LifecycleEventType.Monitorable<O, E> monitor(final String name, final Class<? extends O> ownerType) {
         return new MonitorableLifecycleEventType<>(name, ownerType);
@@ -24,7 +26,7 @@ public final class LifecycleEventTypeProviderImpl implements LifecycleEventTypeP
     }
 
     @Override
-    public TagEventTypeProvider tagProvider() {
-        throw new UnsupportedOperationException("LifecycleEvents.TAGS is not implemented yet"); // FissionMC: Paper tag listeners are deferred
+    public PaperTagEventTypeProvider tagProvider() {
+        return this.provider;
     }
 }

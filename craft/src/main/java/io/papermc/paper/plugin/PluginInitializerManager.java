@@ -1,6 +1,6 @@
 package io.papermc.paper.plugin;
 
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.configuration.PaperConfigurations;
 import io.papermc.paper.plugin.entrypoint.Entrypoint;
 import io.papermc.paper.plugin.entrypoint.LaunchEntryPointHandler;
@@ -23,7 +23,7 @@ import java.nio.file.Path;
 
 public class PluginInitializerManager {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
     private static PluginInitializerManager impl;
     private final Path pluginDirectory;
     private final Path updateDirectory;
@@ -146,7 +146,7 @@ public class PluginInitializerManager {
         // Wipe the provider storage
         LaunchEntryPointHandler.INSTANCE.populateProviderStorage();
         try {
-            load(net.fissionmc.craft.FissionOptions.get());
+            load(dedicatedServer.options);
         } catch (Exception e) {
             throw new RuntimeException("Failed to reload!", e);
         }

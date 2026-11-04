@@ -1,6 +1,6 @@
 package io.papermc.paper.plugin.provider.source;
 
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.entrypoint.EntrypointHandler;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,7 +15,7 @@ public class PluginFlagProviderSource implements ProviderSource<List<Path>, List
 
     public static final PluginFlagProviderSource INSTANCE = new PluginFlagProviderSource();
     private static final FileProviderSource FILE_PROVIDER_SOURCE = new FileProviderSource("File '%s' specified through 'add-plugin' argument"::formatted);
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     @Override
     public List<Path> prepareContext(List<Path> context) {
