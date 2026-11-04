@@ -33,6 +33,9 @@ import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Paper: sources/net/minecraft/server/players/PlayerList.java.patch
@@ -54,6 +57,18 @@ public abstract class PlayerListMixin {
     @Shadow public abstract boolean canBypassPlayerLimit(NameAndId nameAndId);
     @Shadow private boolean verifyChatTrusted(final PlayerChatMessage message) { throw new AssertionError(); }
     @Shadow private Path locateStatsFile(final GameProfile gameProfile) { throw new AssertionError(); }
+
+    // CraftBukkit start
+    private org.bukkit.craftbukkit.CraftServer cserver;
+
+    // FissionMC: Paper runs this at the top of the constructor body; at RETURN every field CraftServer's constructor
+    // reads (players) is set as well.
+    @Inject(method = "<init>", at = @At("RETURN"))
+    private void paper$createCraftServer(CallbackInfo ci) {
+        this.cserver = this.server.server = new org.bukkit.craftbukkit.CraftServer((net.minecraft.server.dedicated.DedicatedServer) this.server, (PlayerList) (Object) this);
+        this.server.console = new com.destroystokyo.paper.console.TerminalConsoleCommandSender(); // Paper
+    }
+    // CraftBukkit end
 
     // Surface: public. Mixin requires private fields; the loader widens it.
     private @Nullable String collideRuleTeamName; // Paper - Configurable player collision // TODO(behaviour): set up in placeNewPlayer/remove

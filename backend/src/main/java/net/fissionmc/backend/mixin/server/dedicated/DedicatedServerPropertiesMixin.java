@@ -19,7 +19,7 @@ public abstract class DedicatedServerPropertiesMixin extends net.minecraft.serve
 
     // CraftBukkit start
     public DedicatedServerProperties reload(final RegistryAccess registryAccess, final Properties properties, final joptsimple.OptionSet options) {
-        // TODO(behaviour): Paper's Settings/DedicatedServerProperties take the OptionSet (command line overrides); options are not threaded through yet
+        // FissionMC: the command line overrides Paper threads through here are applied by SettingsMixin (getOverride)
         return this.reload(registryAccess, properties);
         // CraftBukkit end
     }

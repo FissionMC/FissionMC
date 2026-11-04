@@ -5,6 +5,10 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** Paper: sources/net/minecraft/core/registries/BuiltInRegistries.java.patch */
 @Mixin(BuiltInRegistries.class)
@@ -32,7 +36,46 @@ public abstract class BuiltInRegistriesMixin {
         freeze();
         validate(REGISTRY);
     }
-    // TODO(behaviour): vanilla bootStrap() should delegate to bootStrap(() -> {}); internalRegister registers the API
-    // registry; createContents class-loads org.bukkit.Registry and locks reference holders; freeze() runs
-    // PaperRegistryListenerManager freeze listeners with STATIC_ACCESS_CONVERSIONS.
+    // Paper start - bootStrap() delegates to bootStrap(() -> {})
+    @Inject(method = "bootStrap()V", at = @At("HEAD"), cancellable = true)
+    private static void paper$bootStrap(CallbackInfo ci) {
+        bootStrap(() -> {});
+        ci.cancel();
+    }
+    // Paper end
+
+    // FissionMC: Paper registers right after Bootstrap.checkBootstrapCalled; the argument (typed with the private
+    // RegistryBootstrap) cannot be captured there, so this runs at HEAD on the registry argument.
+    @org.spongepowered.asm.mixin.injection.ModifyVariable(method = "internalRegister", at = @At("HEAD"), argsOnly = true)
+    private static net.minecraft.core.WritableRegistry<?> paper$registerApiRegistry(final net.minecraft.core.WritableRegistry<?> registry) {
+        io.papermc.paper.registry.PaperRegistryAccess.instance().registerRegistry(registry); // Paper - initialize API registry
+        return registry;
+    }
+
+    @Inject(method = "createContents", at = @At("HEAD"))
+    private static void paper$classLoadBukkitRegistry(CallbackInfo ci) {
+        // Paper start - class-load org.bukkit.Registry
+        // we have to class-load Registry here to create all the CraftRegistry instances
+        // that will be created when Registry is class-loaded before RegistryAccess#getRegistry
+        // would try to create them in lockReferenceHolder
+        try {
+            Class.forName(org.bukkit.Registry.class.getName());
+        } catch (final ClassNotFoundException ex) {
+            throw new RuntimeException(ex);
+        }
+        // Paper end - class-load org.bukkit.Registry
+    }
+
+    // LOADERS.forEach((key, value) -> { ...; PaperRegistryAccess.instance().lockReferenceHolders(...) })
+    @Inject(method = "lambda$createContents$0", at = @At("TAIL"))
+    private static void paper$lockReferenceHolders(final net.minecraft.resources.Identifier key, final java.util.function.Supplier<?> value, CallbackInfo ci) {
+        io.papermc.paper.registry.PaperRegistryAccess.instance().lockReferenceHolders(net.minecraft.resources.ResourceKey.createRegistryKey(key)); // Paper - lock reference holder creation
+    }
+
+    // freeze(): for each registry: bindBootstrappedTagsToEmpty(registry); [Paper: runFreezeListeners]; registry.freeze();
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "freeze", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/registries/BuiltInRegistries;bindBootstrappedTagsToEmpty(Lnet/minecraft/core/Registry;)V"))
+    private static void paper$runFreezeListeners(final Registry<?> registry, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        original.call(registry);
+        io.papermc.paper.registry.PaperRegistryListenerManager.INSTANCE.runFreezeListeners(registry.key(), STATIC_ACCESS_CONVERSIONS); // Paper
+    }
 }

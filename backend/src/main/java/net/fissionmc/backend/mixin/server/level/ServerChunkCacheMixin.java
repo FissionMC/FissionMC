@@ -32,6 +32,15 @@ public abstract class ServerChunkCacheMixin {
     @Shadow private void clearCache() {}
     @Shadow public abstract void save(boolean flushStorage);
 
+    // Paper - initialize SavedDataStorage earlier: Paper passes the level's SavedDataStorage (created in
+    // MinecraftServer.createLevel and holding PaperLevelOverrides/PaperWorldMetadata/PaperWorldPDC) into the constructor.
+    // FissionMC: it arrives through ServerLevelInit (ServerLevel.create); without it Paper's per-world data is never saved.
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "<init>", at = @org.spongepowered.asm.mixin.injection.At(value = "NEW", target = "(Ljava/nio/file/Path;Lcom/mojang/datafixers/DataFixer;Lnet/minecraft/core/HolderLookup$Provider;)Lnet/minecraft/world/level/storage/SavedDataStorage;"))
+    private SavedDataStorage paper$levelSavedDataStorage(final java.nio.file.Path dataFolder, final com.mojang.datafixers.DataFixer fixerUpper, final net.minecraft.core.HolderLookup.Provider registries, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<SavedDataStorage> original) {
+        final net.fissionmc.backend.world.ServerLevelInit init = net.fissionmc.backend.world.ServerLevelInit.peek();
+        return init != null ? init.savedDataStorage() : original.call(dataFolder, fixerUpper, registries);
+    }
+
     private boolean spawnFriendlies = true; // Paper - add back spawnFriendlies field
     // TODO(behaviour): tickChunks hunks (spawnFriendlies, ticksPerSpawnCategory, PlayerNaturallySpawnCreaturesEvent), getChunk unloading checks, pollTask callbackExecutor
     // Paper start

@@ -8,8 +8,14 @@ class FissionLogger(private val id: String) : ILogger {
     override fun getId() = id
     override fun getType() = "fission"
 
+    private companion object {
+        // The JVM's own stderr: the server later replaces System.out/err (log4j IoBuilder, Paper's SysoutCatcher, which
+        // needs Bukkit.getServer()) while classes are still being transformed.
+        val ERR: java.io.PrintStream = System.err
+    }
+
     private fun out(level: String, msg: String, args: Array<out Any?>) {
-        System.err.println("[Mixin/$level] [$id] " + format(msg, args))
+        ERR.println("[Mixin/$level] [$id] " + format(msg, args))
     }
 
     private fun format(msg: String, args: Array<out Any?>): String {
@@ -22,8 +28,8 @@ class FissionLogger(private val id: String) : ILogger {
     }
 
     private fun out(level: String, msg: String, t: Throwable) {
-        System.err.println("[Mixin/$level] [$id] $msg")
-        t.printStackTrace()
+        ERR.println("[Mixin/$level] [$id] $msg")
+        t.printStackTrace(ERR)
     }
 
     override fun catching(level: Level, t: Throwable) = out(level.name, "caught", t)

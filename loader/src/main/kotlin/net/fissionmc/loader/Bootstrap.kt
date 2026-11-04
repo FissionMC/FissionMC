@@ -26,7 +26,6 @@ object Bootstrap {
         System.setProperty("mixin.service", FissionMixinService::class.java.name)
 
         MixinBootstrap.init()
-        com.llamalad7.mixinextras.MixinExtrasBootstrap.init()
         System.getProperty("fission.mixins", "").split(',').filter { it.isNotBlank() }.forEach(Mixins::addConfiguration)
         MixinEnvironment.getDefaultEnvironment().side = MixinEnvironment.Side.SERVER
         // Mixin only exposes phase changes package-privately; launchers drive them reflectively.
@@ -35,6 +34,7 @@ object Bootstrap {
         goto.invoke(null, MixinEnvironment.Phase.INIT)
         goto.invoke(null, MixinEnvironment.Phase.DEFAULT)
         (MixinService.getService() as FissionMixinService).installTransformer()
+        com.llamalad7.mixinextras.MixinExtrasBootstrap.init() // needs the active transformer
 
         Thread.currentThread().contextClassLoader = loader
         loader.loadClass(mainClass).getMethod("main", Array<String>::class.java).invoke(null, args)
