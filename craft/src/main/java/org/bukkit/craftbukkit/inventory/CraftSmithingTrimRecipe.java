@@ -30,7 +30,7 @@ public class CraftSmithingTrimRecipe extends SmithingTrimRecipe implements Craft
 
     @Override
     public RecipeHolder<?> toMinecraftRecipe() {
-        return new RecipeHolder<>(CraftNamespacedKey.toResourceKey(Registries.RECIPE, this.getKey()), new net.minecraft.world.item.crafting.SmithingTrimRecipe(
+        return new RecipeHolder<>(CraftNamespacedKey.toResourceKey(Registries.RECIPE, this.getKey()), net.minecraft.world.item.crafting.SmithingTrimRecipe.create( // FissionMC: Paper-added constructor routed through a factory
             new net.minecraft.world.item.crafting.Recipe.CommonInfo(true),
             CraftRecipe.toIngredient(this.getTemplate(), false),
             CraftRecipe.toIngredient(this.getBase(), false),

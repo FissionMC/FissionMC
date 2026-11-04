@@ -37,7 +37,7 @@ public class CraftMerchantRecipe extends MerchantRecipe {
     public CraftMerchantRecipe(ItemStack result, int uses, int maxUses, boolean experienceReward, int experience, float priceMultiplier, int demand, int specialPrice, boolean ignoreDiscounts) {
         super(result, uses, maxUses, experienceReward, experience, priceMultiplier, demand, specialPrice, ignoreDiscounts);
         // Paper end
-        this.handle = new net.minecraft.world.item.trading.MerchantOffer(
+        this.handle = net.minecraft.world.item.trading.MerchantOffer.create( // FissionMC: Paper-added constructor routed through a factory
                 new ItemCost(Items.AIR),
                 Optional.empty(),
                 CraftItemStack.asNMSCopy(result),

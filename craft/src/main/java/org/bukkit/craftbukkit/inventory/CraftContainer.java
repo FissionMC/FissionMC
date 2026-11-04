@@ -185,7 +185,7 @@ public class CraftContainer extends AbstractContainerMenu {
                 this.delegate = new BlastFurnaceMenu(windowId, bottom, top, new SimpleContainerData(AbstractFurnaceMenu.DATA_COUNT));
                 break;
             case LECTERN:
-                this.delegate = new LecternMenu(windowId, top, new SimpleContainerData(LecternMenu.DATA_COUNT), bottom);
+                this.delegate = LecternMenu.create(windowId, top, new SimpleContainerData(LecternMenu.DATA_COUNT), bottom); // FissionMC: Paper-added constructor routed through a factory
                 break;
             case SMOKER:
                 this.delegate = new SmokerMenu(windowId, bottom, top, new SimpleContainerData(AbstractFurnaceMenu.DATA_COUNT));

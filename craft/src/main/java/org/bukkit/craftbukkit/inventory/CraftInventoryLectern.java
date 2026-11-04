@@ -12,8 +12,8 @@ public class CraftInventoryLectern extends CraftInventory implements LecternInve
 
     public CraftInventoryLectern(Container inventory) {
         super(inventory);
-        if (inventory instanceof LecternBlockEntity.LecternInventory) {
-            this.provider = ((LecternBlockEntity.LecternInventory) inventory).getLectern();
+        if (inventory instanceof net.fissionmc.craft.compat.LecternInventory) { // FissionMC: Paper's LecternBlockEntity.LecternInventory is a compat interface
+            this.provider = ((net.fissionmc.craft.compat.LecternInventory) inventory).getLectern();
         }
     }
 
