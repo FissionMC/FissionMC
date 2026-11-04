@@ -10,7 +10,8 @@ public abstract class DedicatedServerSettingsMixin {
     // FissionMC: Paper adds a DedicatedServerSettings(OptionSet) constructor; Mixin cannot add constructors, so this factory
     // replaces it. Surface: public static (see surface/members/server.txt); the loader widens it.
     private static DedicatedServerSettings fromOptions(final joptsimple.OptionSet options) {
-        // TODO(behaviour): Paper loads DedicatedServerProperties.fromFile(source, options) so command line options override properties.
+        // FissionMC: Paper loads DedicatedServerProperties.fromFile(source, options); the command line overrides are applied
+        // by SettingsMixin (getOverride) for every properties object while the start-up options are set.
         return new DedicatedServerSettings(((java.io.File) options.valueOf("config")).toPath());
         // CraftBukkit end
     }

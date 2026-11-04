@@ -359,3 +359,15 @@ net.minecraft.world.clock.ServerClockManager: public net.minecraft.network.proto
 # (respawnDragon/spawnNewGateway/tryRespawn return boolean in Paper: return-type changes, handled at the CraftDragonBattle call sites)
 net.minecraft.world.level.dimension.end.EnderDragonFight: public boolean emptyCrystalRespawnAllowed
 net.minecraft.world.level.dimension.end.EnderDragonFight: public java.util.List<net.minecraft.world.entity.boss.enderdragon.EndCrystal> getSpikeCrystals()
+
+# ---- lifecycle (Paper start-up/shutdown flow) ----
+# Paper: sources/net/minecraft/server/Services.java.patch
+net.minecraft.server.Services: public static net.minecraft.server.Services create(com.mojang.authlib.services.MinecraftServicesDiscoveryService serviceAccess, java.io.File nameCacheDir, java.io.File userCacheFile, joptsimple.OptionSet options) throws java.lang.Exception
+# Paper: sources/net/minecraft/server/MinecraftServer.java.patch
+net.minecraft.server.MinecraftServer: protected void loadLevel(java.lang.String levelId)
+net.minecraft.server.MinecraftServer: protected void initPostWorld()
+# Paper: sources/net/minecraft/server/dedicated/DedicatedPlayerList.java.patch (Paper declares it abstract on PlayerList)
+net.minecraft.server.dedicated.DedicatedPlayerList: public void loadAndSaveFiles()
+# Paper: sources/net/minecraft/world/level/storage/LevelStorageSource.java.patch (Paper changes the 5-argument signature; both Paper overloads added)
+net.minecraft.world.level.storage.LevelStorageSource: public static net.minecraft.world.level.storage.LevelDataAndDimensions getLevelDataAndDimensions(net.minecraft.world.level.storage.LevelStorageSource$LevelStorageAccess worldAccess, com.mojang.serialization.Dynamic<?> levelDataTag, net.minecraft.world.level.WorldDataConfiguration dataConfiguration, net.minecraft.core.Registry<net.minecraft.world.level.dimension.LevelStem> datapackDimensions, net.minecraft.core.HolderLookup$Provider registryAccess, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension)
+net.minecraft.world.level.storage.LevelStorageSource: public static net.minecraft.world.level.storage.LevelDataAndDimensions getLevelDataAndDimensions(net.minecraft.world.level.storage.LevelStorageSource$LevelStorageAccess worldAccess, com.mojang.serialization.Dynamic<?> levelDataTag, net.minecraft.world.level.WorldDataConfiguration dataConfiguration, net.minecraft.core.Registry<net.minecraft.world.level.dimension.LevelStem> datapackDimensions, net.minecraft.core.HolderLookup$Provider registryAccess, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension, java.util.function.Supplier<net.minecraft.world.level.levelgen.WorldGenSettings> worldGenSettingsFactory)
