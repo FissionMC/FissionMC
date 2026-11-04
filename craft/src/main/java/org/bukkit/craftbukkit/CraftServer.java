@@ -1,4 +1,4 @@
-package net.fissionmc.craft;
+package org.bukkit.craftbukkit;
 
 /**
  * Bukkit Server implementation. Generated skeleton: every method throws until implemented.
@@ -10,30 +10,27 @@ public class CraftServer implements org.bukkit.Server {
     private final org.bukkit.plugin.SimpleServicesManager servicesManager = new org.bukkit.plugin.SimpleServicesManager();
     private final org.bukkit.command.SimpleCommandMap commandMap;
     private final org.bukkit.plugin.SimplePluginManager pluginManager;
+    public final io.papermc.paper.plugin.manager.PaperPluginManagerImpl paperPluginManager;
     private final net.fissionmc.craft.scheduler.FissionScheduler scheduler = new net.fissionmc.craft.scheduler.FissionScheduler();
-    private final FissionUnsafeValues unsafe = new FissionUnsafeValues();
+    private final net.fissionmc.craft.FissionUnsafeValues unsafe = new net.fissionmc.craft.FissionUnsafeValues();
     private final net.fissionmc.craft.command.FissionConsoleSender consoleSender = new net.fissionmc.craft.command.FissionConsoleSender();
 
     public CraftServer(net.minecraft.server.dedicated.DedicatedServer console) {
         this.console = console;
         this.commandMap = new org.bukkit.command.SimpleCommandMap(this, new java.util.HashMap<>());
         this.pluginManager = new org.bukkit.plugin.SimplePluginManager(this, commandMap);
+        this.paperPluginManager = new io.papermc.paper.plugin.manager.PaperPluginManagerImpl(this, this.commandMap, pluginManager);
+        this.pluginManager.paperPluginManager = this.paperPluginManager;
     }
 
-    /** Registers this as the Bukkit server and loads every plugin (onLoad only). */
+    /** Registers this as the Bukkit server and loads every discovered plugin (Paper's PLUGIN entrypoint). */
     public void loadPlugins() {
         org.bukkit.Bukkit.setServer(this);
-        pluginManager.registerInterface(org.bukkit.plugin.java.JavaPluginLoader.class);
-        java.io.File dir = getPluginsFolder();
-        dir.mkdirs();
-        for (org.bukkit.plugin.Plugin plugin : pluginManager.loadPlugins(dir)) {
-            try {
-                plugin.getLogger().info("Loading " + plugin.getPluginMeta().getDisplayName());
-                plugin.onLoad();
-            } catch (Throwable t) {
-                logger.log(java.util.logging.Level.SEVERE, "Error loading " + plugin.getName(), t);
-            }
-        }
+        io.papermc.paper.plugin.entrypoint.LaunchEntryPointHandler.INSTANCE.enter(io.papermc.paper.plugin.entrypoint.Entrypoint.PLUGIN);
+    }
+
+    public void disablePlugins() {
+        pluginManager.disablePlugins();
     }
 
     public void enablePlugins(org.bukkit.plugin.PluginLoadOrder type) {

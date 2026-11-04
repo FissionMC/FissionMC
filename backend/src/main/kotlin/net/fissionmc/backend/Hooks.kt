@@ -1,7 +1,9 @@
 package net.fissionmc.backend
 
-import net.fissionmc.craft.CraftServer
+import io.papermc.paper.plugin.PluginInitializerManager
+import net.fissionmc.craft.FissionOptions
 import net.minecraft.server.dedicated.DedicatedServer
+import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.plugin.PluginLoadOrder
 
 /** Kotlin side of the thin Java mixin shims. All real logic lives here. */
@@ -17,6 +19,7 @@ object Hooks {
     fun beforeLevel(server: DedicatedServer) {
         val c = CraftServer(server)
         craft = c
+        PluginInitializerManager.load(FissionOptions.get())
         c.loadPlugins()
         c.enablePlugins(PluginLoadOrder.STARTUP)
     }
@@ -24,5 +27,10 @@ object Hooks {
     @JvmStatic
     fun afterLevel() {
         craft?.enablePlugins(PluginLoadOrder.POSTWORLD)
+    }
+
+    @JvmStatic
+    fun beforeStop() {
+        craft?.disablePlugins()
     }
 }

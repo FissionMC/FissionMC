@@ -8,3 +8,13 @@ dependencies {
     compileOnly(mcLibs)
     compileOnly("org.jspecify:jspecify:1.0.0")
 }
+
+dependencies {
+    api("org.spongepowered:configurate-yaml:4.2.0")
+    compileOnly("org.checkerframework:checker-qual:4.2.3")
+    compileOnly("org.jetbrains:annotations:26.0.2")
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.addAll(listOf("-Xmaxerrs", "5000"))
+}

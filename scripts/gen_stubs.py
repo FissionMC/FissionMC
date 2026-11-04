@@ -50,7 +50,10 @@ def collect(cls, seen, methods):
         l = l.strip()
         if not l.startswith("public abstract") or not l.endswith(";"):
             continue
-        sig = re.sub(r"\s+throws\s+.*$", "", l[len("public abstract "):-1]).replace("$", ".")
+        raw = l[len("public abstract "):-1].replace("$", ".")
+        tm = re.search(r"\s+throws\s+(.*)$", raw)
+        throws = f" throws {tm.group(1)}" if tm else ""
+        sig = re.sub(r"\s+throws\s+.*$", "", raw)
         m = re.match(r"^(.*?)\s+(\w+)\((.*)\)$", sig)
         if not m:
             continue
@@ -60,7 +63,7 @@ def collect(cls, seen, methods):
         if key in methods:
             continue
         plist = ", ".join((f"{p[:-3]}... a{i}" if p.endswith("...") else f"{p} a{i}") for i, p in enumerate(ps))
-        methods[key] = f'    @Override public {ret} {name}({plist}) {{ throw new UnsupportedOperationException("{cls.split(".")[-1]}#{name}"); }}'
+        methods[key] = f'    @Override public {ret} {name}({plist}){throws} {{ throw new UnsupportedOperationException("{cls.split(".")[-1]}#{name}"); }}'
     m = re.search(r"extends\s+(.*?)\s*\{", head)
     if m and "interface" in head:
         for sup in split_params(m.group(1)):

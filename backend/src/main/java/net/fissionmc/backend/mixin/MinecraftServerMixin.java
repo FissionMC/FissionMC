@@ -24,4 +24,11 @@ public abstract class MinecraftServerMixin {
             Hooks.afterLevel();
         }
     }
+
+    @Inject(method = "stopServer", at = @At("HEAD"))
+    private void fission$beforeStop(CallbackInfo ci) {
+        if ((Object) this instanceof DedicatedServer) {
+            Hooks.beforeStop();
+        }
+    }
 }
