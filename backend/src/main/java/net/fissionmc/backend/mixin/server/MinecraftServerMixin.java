@@ -10,7 +10,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import net.fissionmc.backend.Hooks;
+import net.fissionmc.backend.boot.PaperStartup;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -50,8 +50,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Plugin lifecycle: STARTUP plugins before worlds load, POSTWORLD after.
- * Paper: sources/net/minecraft/server/MinecraftServer.java.patch (members; see surface/members/server.txt).
+ * Paper: sources/net/minecraft/server/MinecraftServer.java.patch (members, see surface/members/server.txt; lifecycle
+ * hunks: constructor, loadLevel/initPostWorld, runServer start-up, stopServer - see docs/port/lifecycle.md).
  */
 @Mixin(MinecraftServer.class)
 public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<TickTask> {
@@ -61,6 +61,9 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     @Shadow @Final private Executor executor;
     @Shadow @Final private Services services;
     @Shadow private int emptyTicks;
+    @Shadow private int tickCount;
+    @Shadow private long nextTickTimeNanos;
+    @Shadow public abstract Iterable<ServerLevel> getAllLevels();
     @Shadow private @Nullable String motd;
     @Shadow private void updateEffectiveRespawnData() {} // widened to public by the surface
 
@@ -77,32 +80,11 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     @Shadow protected abstract void sendDifficultyUpdate(ServerPlayer player);
     @Shadow private static void setInitialSpawn(final ServerLevel level, final ServerLevelData levelData, final boolean spawnBonusChest, final boolean isDebug, final LevelLoadListener levelLoadListener) {}
     @Shadow public abstract net.minecraft.world.clock.ServerClockManager clockManager();
+    @Shadow public abstract net.minecraft.server.ServerScoreboard getScoreboard();
+    @Shadow protected abstract void onServerExit();
 
     private MinecraftServerMixin(String name, boolean propagatesCrashes) {
         super(name, propagatesCrashes);
-    }
-
-    // ---- FissionMC lifecycle hooks (pre-existing) ----
-
-    @Inject(method = "loadLevel", at = @At("HEAD"))
-    private void fission$beforeLevel(CallbackInfo ci) {
-        if ((Object) this instanceof DedicatedServer server) {
-            Hooks.beforeLevel(server);
-        }
-    }
-
-    @Inject(method = "loadLevel", at = @At("RETURN"))
-    private void fission$afterLevel(CallbackInfo ci) {
-        if ((Object) this instanceof DedicatedServer) {
-            Hooks.afterLevel();
-        }
-    }
-
-    @Inject(method = "stopServer", at = @At("HEAD"))
-    private void fission$beforeStop(CallbackInfo ci) {
-        if ((Object) this instanceof DedicatedServer) {
-            Hooks.beforeStop();
-        }
     }
 
     // ---- Paper members ----
@@ -204,11 +186,231 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     }
     // Paper end - improve tick loop
 
+    // Paper - spin(): the server thread is a moonrise TickThread (main-thread checks rely on it), with boosted priority
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "spin", at = @At(value = "NEW", target = "(Ljava/lang/Runnable;Ljava/lang/String;)Ljava/lang/Thread;"))
+    private static Thread paper$tickThread(final Runnable runnable, final String name, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Thread> original) {
+        Thread thread = new ca.spottedleaf.moonrise.common.util.TickThread(runnable, name);
+        thread.setPriority(Thread.NORM_PRIORITY + 2); // Paper - Perf: Boost priority
+        return thread;
+    }
+
+    // CraftBukkit start - Paper passes options and worldLoaderContext as new constructor parameters; FissionMC's
+    // Main.main(OptionSet) keeps them in PaperStartup and they are assigned right after super(), before vanilla's body.
+    @Inject(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/thread/ReentrantBlockableEventLoop;<init>(Ljava/lang/String;Z)V", shift = At.Shift.AFTER))
+    private void paper$initEarly(CallbackInfo ci) {
+        SERVER = (MinecraftServer) (Object) this; // Paper - better singleton
+        this.options = PaperStartup.options();
+        this.worldLoaderContext = PaperStartup.WORLD_LOADER.get();
+    }
+    // CraftBukkit end
+
     @Inject(method = "<init>", at = @At("RETURN"))
     private void paper$init(CallbackInfo ci) {
-        SERVER = (MinecraftServer) (Object) this; // Paper - better singleton
-        // TODO(behaviour): constructor hunks - options/worldLoaderContext params, ServerShutdownThread hook, LogManagerShutdownThread.unhook(), per-level gamerules/weather/scheduledEvents
+        // TODO(behaviour): other constructor hunks - per-level gamerules/weather/scheduledEvents, savedDataStorage in the
+        //  level root without WorldGenSettings, lazy ServerConnectionListener (Spigot)
+        // CraftBukkit start
+        if (PaperStartup.active()) {
+            io.papermc.paper.log.LogManagerShutdownThread.unhook(); // Paper - Improved watchdog support
+            Runtime.getRuntime().addShutdownHook(new org.bukkit.craftbukkit.util.ServerShutdownThread((MinecraftServer) (Object) this));
+        }
+        // CraftBukkit end
         this.paperConfigurations = this.services.paper().configurations(); // Paper - add paper configuration files
+    }
+
+    // CraftBukkit - loadLevel() -> loadLevel(String levelId)
+    protected void loadLevel(final String levelId) {
+        boolean startedWorldLoadProfiling = !net.minecraft.util.profiling.jfr.JvmProfiler.INSTANCE.isRunning()
+            && net.minecraft.SharedConstants.DEBUG_JFR_PROFILING_ENABLE_LEVEL_LOADING
+            && net.minecraft.util.profiling.jfr.JvmProfiler.INSTANCE.start(net.minecraft.util.profiling.jfr.Environment.from((MinecraftServer) (Object) this));
+        net.minecraft.util.profiling.jfr.callback.ProfiledDuration profiledDuration = net.minecraft.util.profiling.jfr.JvmProfiler.INSTANCE.onWorldLoadedStarted();
+        // Paper start - rework world loading process
+        io.papermc.paper.world.PaperWorldLoader loader = io.papermc.paper.world.PaperWorldLoader.create((MinecraftServer) (Object) this, levelId);
+        loader.loadInitialWorlds();
+        // Paper end - rework world loading process
+        if (profiledDuration != null) {
+            profiledDuration.finish(true);
+        }
+
+        if (startedWorldLoadProfiling) {
+            try {
+                net.minecraft.util.profiling.jfr.JvmProfiler.INSTANCE.stop();
+            } catch (Throwable t) {
+                MinecraftServer.LOGGER.warn("Failed to stop JFR profiling", t);
+            }
+        }
+    }
+
+    // Paper start - rework world loading process
+    protected void initPostWorld() {
+        // Paper start - Configurable player collision; Handle collideRule team for player collision toggle
+        final net.minecraft.server.ServerScoreboard scoreboard = this.getScoreboard();
+        final java.util.Collection<String> toRemove = scoreboard.getPlayerTeams().stream().filter(team -> team.getName().startsWith("collideRule_")).map(net.minecraft.world.scores.PlayerTeam::getName).collect(java.util.stream.Collectors.toList());
+        for (String teamName : toRemove) {
+            scoreboard.removePlayerTeam(scoreboard.getPlayerTeam(teamName)); // Clean up after ourselves
+        }
+
+        if (!io.papermc.paper.configuration.GlobalConfiguration.get().collisions.enablePlayerCollisions) {
+            this.getPlayerList().collideRuleTeamName = org.apache.commons.lang3.StringUtils.left("collideRule_" + java.util.concurrent.ThreadLocalRandom.current().nextInt(), 16);
+            net.minecraft.world.scores.PlayerTeam collideTeam = scoreboard.addPlayerTeam(this.getPlayerList().collideRuleTeamName);
+            collideTeam.setSeeFriendlyInvisibles(false); // Because we want to mimic them not being on a team at all
+        }
+        // Paper end - Configurable player collision; Handle collideRule team for player collision toggle
+        this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.POSTWORLD);
+        this.server.spark.registerCommandBeforePlugins(this.server); // Paper - spark
+        this.server.spark.enableAfterPlugins(this.server); // Paper - spark
+        io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.setValid(); // Paper - reset invalid state for event fire below
+        io.papermc.paper.plugin.lifecycle.event.LifecycleEventRunner.INSTANCE.callReloadableRegistrarEvent(io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents.COMMANDS, io.papermc.paper.command.brigadier.PaperCommands.INSTANCE, org.bukkit.plugin.Plugin.class, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent.Cause.INITIAL); // Paper - call commands event for regular plugins
+        this.server.getCommandMap().registerServerAliases(); // Paper - relocate initial CommandMap#registerServerAliases() call
+        ((org.bukkit.craftbukkit.help.SimpleHelpMap) this.server.getHelpMap()).initializeCommands();
+        this.server.getPluginManager().callEvent(new org.bukkit.event.server.ServerLoadEvent(org.bukkit.event.server.ServerLoadEvent.LoadType.STARTUP));
+        // TODO(behaviour): this.connection.acceptConnections() - Paper's ServerConnectionListener starts channels with
+        //  autoRead off and enables it here; vanilla's listener (not patched yet) reads from the start.
+    }
+    // Paper end - rework world loading process
+
+    // runServer: after `this.status = this.buildServerStatus();`
+    @Inject(method = "runServer", at = @At(value = "FIELD", target = "Lnet/minecraft/server/MinecraftServer;status:Lnet/minecraft/network/protocol/status/ServerStatus;", opcode = org.objectweb.asm.Opcodes.PUTFIELD, shift = At.Shift.AFTER))
+    private void paper$startupDone(CallbackInfo ci) {
+        if (this.options == null) {
+            return; // FissionMC: not started through Paper's flow
+        }
+        this.server.spark.enableBeforePlugins(); // Paper - spark
+        // Spigot start
+        // Paper start
+        MinecraftServer.LOGGER.info("Running delayed init tasks");
+        new io.papermc.paper.threadedregions.RegionizedServerInitEvent().callEvent(); // Call Folia init event
+        this.server.getScheduler().mainThreadHeartbeat(); // run all 1 tick delay tasks during init,
+        // this is going to be the first thing the tick process does anyway, so move done and run it after
+        // everything is init before watchdog tick.
+        // anything at 3+ won't be caught here but also will trip watchdog....
+        // tasks are default scheduled at -1 + delay, and first tick will tick at 1
+        final long actualDoneTimeMs = System.currentTimeMillis() - org.bukkit.craftbukkit.Main.BOOT_TIME.toEpochMilli(); // Paper - Improve startup message
+        MinecraftServer.LOGGER.info("Done ({})! For help, type \"help\"", String.format(java.util.Locale.ROOT, "%.3fs", actualDoneTimeMs / 1000.00D)); // Paper - Improve startup message
+        this.hasStarted = true;
+        org.spigotmc.WatchdogThread.tick();
+        // Paper end
+        org.spigotmc.WatchdogThread.hasStarted = true; // Paper
+        // Paper start - Add onboarding message for initial server start
+        if (io.papermc.paper.configuration.GlobalConfiguration.isFirstStart) {
+            MinecraftServer.LOGGER.info("*************************************************************************************");
+            MinecraftServer.LOGGER.info("This is the first time you're starting this server.");
+            MinecraftServer.LOGGER.info("It's recommended you read our 'Getting Started' documentation for guidance.");
+            MinecraftServer.LOGGER.info("View this and more helpful information here: https://docs.papermc.io/paper/next-steps");
+            MinecraftServer.LOGGER.info("*************************************************************************************");
+        }
+        // Paper end - Add onboarding message for initial server start
+        // FissionMC: Paper's outdated-version check (PaperVersionFetcher.getUpdateStatusStartupMessage, queries Paper's
+        // download API) is not started: it would report on Paper builds, not FissionMC. Left out on purpose.
+    }
+
+    // Paper - Improved watchdog support; onServerExit moved into stopServer
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "runServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;onServerExit()V"))
+    private boolean paper$onServerExitMovedToStop(MinecraftServer self) {
+        return this.options == null;
+    }
+
+    // tickChildren: after getPlayerList().getPlayers().forEach(p -> p.connection.suspendFlushing())
+    @Inject(method = "tickChildren", at = @At(value = "INVOKE", target = "Ljava/util/List;forEach(Ljava/util/function/Consumer;)V", ordinal = 0, shift = At.Shift.AFTER))
+    private void paper$tickSchedulers(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        if (this.server == null) {
+            return; // FissionMC: not started through Paper's flow
+        }
+        this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
+        // Paper start - Folia scheduler API
+        ((io.papermc.paper.threadedregions.scheduler.FoliaGlobalRegionScheduler) org.bukkit.Bukkit.getGlobalRegionScheduler()).tick();
+        for (ServerPlayer player : this.getPlayerList().getPlayers()) {
+            if (!this.getPlayerList().getPlayers().contains(player)) {
+                continue;
+            }
+            final org.bukkit.craftbukkit.entity.CraftEntity bukkit = player.getBukkitEntityRaw();
+            if (bukkit != null) {
+                bukkit.taskScheduler.executeTick();
+            }
+        }
+        this.getAllLevels().forEach(level -> {
+            for (final net.minecraft.world.entity.Entity entity : io.papermc.paper.FeatureHooks.getAllEntities(level)) {
+                if (entity.isRemoved() || entity instanceof ServerPlayer) {
+                    continue;
+                }
+                final org.bukkit.craftbukkit.entity.CraftEntity bukkit = entity.getBukkitEntityRaw();
+                if (bukkit != null) {
+                    bukkit.taskScheduler.executeTick();
+                }
+            }
+        });
+        // Paper end - Folia scheduler API
+        io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.ADVENTURE_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+        io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.DIALOG_CLICK_MANAGER.handleQueue(this.tickCount); // Paper
+        // TODO(behaviour): rest of tickChildren (per-world time, per-level ticking changes, ...)
+    }
+
+    @Inject(method = "tickServer", at = @At("HEAD"))
+    private void paper$watchdogTick(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        org.spigotmc.WatchdogThread.tick(); // Spigot
+        // TODO(behaviour): removeDisabledPluginsBlockingSleep + pluginsBlockingSleep in the empty-server check
+    }
+
+    // FissionMC: Paper measures from currentTickStart, set by its reworked tick loop (not ported); this is the closest point.
+    private long fission$tickStart;
+
+    // empty-server pause branch: before `this.tickConnection(); return;`
+    @Inject(method = "tickServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;tickConnection()V"))
+    private void paper$pausedTick(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        if (this.server == null) {
+            return;
+        }
+        this.fission$tickStart = System.nanoTime();
+        this.server.spark.tickStart(); // Paper - spark (FissionMC: Paper calls it before the "pausing" message/autoSave)
+        this.server.getScheduler().mainThreadHeartbeat(); // CraftBukkit
+        // Paper start - avoid issues with certain tasks not processing during sleep
+        Runnable task;
+        while ((task = this.processQueue.poll()) != null) {
+            task.run();
+        }
+        for (final ServerLevel level : this.levels.values()) {
+            // process unloads
+            level.getChunkSource().tick(() -> true, false);
+        }
+        // Paper end - avoid issues with certain tasks not processing during sleep
+        this.server.spark.executeMainThreadTasks(); // Paper - spark
+    }
+
+    @Inject(method = "tickServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;tickConnection()V", shift = At.Shift.AFTER))
+    private void paper$pausedTickEnd(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        if (this.server != null) {
+            this.server.spark.tickEnd(((double)(System.nanoTime() - this.fission$tickStart) / 1000000D)); // Paper - spark
+        }
+    }
+
+    // before this.tickCount++
+    @Inject(method = "tickServer", at = @At(value = "FIELD", target = "Lnet/minecraft/server/MinecraftServer;tickCount:I", opcode = org.objectweb.asm.Opcodes.GETFIELD, ordinal = 0))
+    private void paper$tickStart(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        if (this.server == null) {
+            return;
+        }
+        this.fission$tickStart = System.nanoTime();
+        this.server.spark.tickStart(); // Paper - spark
+        new com.destroystokyo.paper.event.server.ServerTickStartEvent(this.tickCount+1).callEvent(); // Paper - Server Tick Events
+    }
+
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "tickServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;autoSave()V", ordinal = 1))
+    private boolean paper$autosavePeriod(MinecraftServer self) {
+        return this.server == null || this.autosavePeriod > 0; // CraftBukkit
+    }
+
+    // before profiler.push("tallying")
+    @Inject(method = "tickServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/profiling/Profiler;get()Lnet/minecraft/util/profiling/ProfilerFiller;", ordinal = 0))
+    private void paper$tickEnd(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        if (this.server == null) {
+            return;
+        }
+        this.server.spark.executeMainThreadTasks(); // Paper - spark
+        // Paper start - Server Tick Events
+        long endTime = System.nanoTime();
+        long remaining = this.nextTickTimeNanos - endTime;
+        new com.destroystokyo.paper.event.server.ServerTickEndEvent(this.tickCount, ((double)(endTime - this.fission$tickStart) / 1000000D), remaining).callEvent();
+        // Paper end - Server Tick Events
+        this.server.spark.tickEnd(((double)(endTime - this.fission$tickStart) / 1000000D)); // Paper - spark
     }
 
     // Paper start - rework world loading process
@@ -398,7 +600,58 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
         }
     }
     // CraftBukkit end
-    // TODO(behaviour): stopServer hunks (set hasStopped under stopLock, shutdownThread, WatchdogThread.doStop, disable plugins, removeAll(isRestarting), hasFullyShutdown ...)
+
+    @Inject(method = "stopServer", at = @At("HEAD"), cancellable = true)
+    private void paper$stopServerHead(CallbackInfo ci) {
+        // TODO(behaviour): if (Thread.currentThread() == this.serverThread) this.executeAllRecentInternalTasks(); // Paper - execute tasks on stop
+        // CraftBukkit start - prevent double stopping on multiple threads
+        synchronized (this.stopLock) {
+            if (this.hasStopped) {
+                ci.cancel();
+                return;
+            }
+            this.hasStopped = true;
+        }
+        if (!this.hasLoggedStop && this.isDebugging()) io.papermc.paper.util.TraceUtil.dumpTraceForThread("Server stopped"); // Paper - Debugging
+        this.shutdownThread = Thread.currentThread(); // Paper - Improved watchdog support
+        org.spigotmc.WatchdogThread.doStop(); // Paper - Improved watchdog support
+        // CraftBukkit end
+    }
+
+    // stopServer: after LOGGER.info("Stopping server"), before this.getConnection().stop()
+    @Inject(method = "stopServer", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;getConnection()Lnet/minecraft/server/network/ServerConnectionListener;", ordinal = 0))
+    private void paper$disablePlugins(CallbackInfo ci) {
+        net.minecraft.commands.Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
+        // CraftBukkit start
+        if (this.server != null) {
+            this.server.spark.disable(); // Paper - spark
+            this.server.disablePlugins();
+            // TODO(behaviour): this.server.waitForAsyncTasksShutdown(); // Paper - Wait for Async Tasks during shutdown (CraftServer member not ported)
+        }
+        // CraftBukkit end
+    }
+    // TODO(behaviour): playerList.removeAll(this.isRestarting) + getConnection().handleAllDisconnections() (Paper)
+
+    @Inject(method = "stopServer", at = @At("TAIL"))
+    private void paper$stopServerTail(CallbackInfo ci) {
+        if (this.options == null) {
+            return; // FissionMC: not started through Paper's flow; vanilla runServer calls onServerExit itself
+        }
+        // Spigot start
+        io.papermc.paper.util.MCUtil.ASYNC_EXECUTOR.shutdown(); // Paper
+        try {
+            io.papermc.paper.util.MCUtil.ASYNC_EXECUTOR.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS); // Paper
+        } catch (InterruptedException ignored) {} // Paper
+        if (org.spigotmc.SpigotConfig.saveUserCacheOnStopOnly) {
+            MinecraftServer.LOGGER.info("Saving usercache.json");
+            this.services.nameToIdCache().save(false); // Paper - Perf: Async GameProfileCache saving
+        }
+        // Spigot end
+        // Paper start - Improved watchdog support - move final shutdown items here
+        net.minecraft.util.Util.shutdownExecutors();
+        this.onServerExit();
+        // Paper end - Improved watchdog support - move final shutdown items here
+    }
 
     public void halt(final boolean wait, final boolean isRestarting) {
         this.isRestarting = isRestarting;
