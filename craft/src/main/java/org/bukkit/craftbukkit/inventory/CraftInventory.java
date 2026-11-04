@@ -512,7 +512,7 @@ public class CraftInventory implements Inventory {
             return InventoryType.SHULKER_BOX;
         } else if (this.inventory instanceof BarrelBlockEntity) {
             return InventoryType.BARREL;
-        } else if (this.inventory instanceof LecternBlockEntity.LecternInventory) {
+        } else if (this.inventory instanceof net.fissionmc.craft.compat.LecternInventory) { // FissionMC: Paper's LecternBlockEntity.LecternInventory is a compat interface
             return InventoryType.LECTERN;
         } else if (this.inventory instanceof ChiseledBookShelfBlockEntity) {
             return InventoryType.CHISELED_BOOKSHELF;

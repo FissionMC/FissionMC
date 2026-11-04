@@ -8,15 +8,14 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
-/**
- * Members Paper adds to {@link TypedEntityData} (paper-server/patches/sources/net/minecraft/world/item/component/TypedEntityData.java.patch).
- */
+/** Paper: sources/net/minecraft/world/item/component/TypedEntityData.java.patch */
 @Mixin(TypedEntityData.class)
 public abstract class TypedEntityDataMixin<IdType> {
     @Shadow @Final private IdType type;
     @Shadow @Final private CompoundTag tag;
 
     // Paper start - utils for item meta
+    // Surface: public static (see surface/members/blocks.txt); Mixin requires non-public statics, the loader widens them.
     private static <IdType> TypedEntityData<IdType> decode(final Codec<IdType> idTypeCodec, final CompoundTag tag) {
         return TypedEntityData.codec(idTypeCodec).decode(net.minecraft.nbt.NbtOps.INSTANCE, tag).result().orElseThrow().getFirst();
     }
