@@ -3,6 +3,8 @@
 
   port.py paper <path-under-paper-server/src/main/java> [...]   file or directory (package path)
   port.py paper --resources <path-under-paper-server/src/main/resources> [...]
+  port.py paper --generated <path-under-paper-server/src/generated/java> [...]
+  port.py newfile <patch path under paper-server/patches/sources> [...]   files Paper creates in a patch
   port.py status                                                ported files whose upstream changed / that we edited
 
 Destination is craft/src/main/java (or resources). `upstream/ported/paper.tsv` records
@@ -46,9 +48,14 @@ def save(rows):
     MANIFEST.write_text("".join(f"{d}\t{s}\t{c}\t{h}\n" for d, (s, c, h) in sorted(rows.items())))
 
 
-def port(args, resources=False):
-    base = "paper-server/src/main/" + ("resources" if resources else "java")
-    dest_base = MODULE / "src/main" / ("resources" if resources else "java")
+ROOTS = {"java": ("paper-server/src/main/java", "src/main/java"),
+         "generated": ("paper-server/src/generated/java", "src/main/java"),
+         "resources": ("paper-server/src/main/resources", "src/main/resources")}
+
+
+def port(args, root="java"):
+    base, dest_rel = ROOTS[root]
+    dest_base = MODULE / dest_rel
     rows, c, n, skip = load(), commit(), 0, skipped()
     for a in args:
         src = CLONE / base / a
@@ -75,6 +82,27 @@ def port(args, resources=False):
     print(f"ported {n} files at {c[:10]}")
 
 
+def newfile(patches):
+    """Extract files that Paper creates through a source patch (--- /dev/null)."""
+    rows, c = load(), commit()
+    for rel in patches:
+        p = CLONE / "paper-server/patches/sources" / rel
+        lines = p.read_text().splitlines()
+        assert lines[0].startswith("--- /dev/null"), f"{rel} does not create a file"
+        target = lines[1].split(None, 1)[1].removeprefix("b/")
+        body = [l[1:] for l in lines[2:] if l.startswith("+")]
+        dest = MODULE / "src/main/java" / target
+        key = str(dest.relative_to(ROOT))
+        if dest.exists() and (key not in rows or sha(dest) != rows[key][2]):
+            print("SKIP (local file or edited):", key)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("\n".join(body) + "\n")
+        rows[key] = (str(p.relative_to(CLONE)), c, sha(dest))
+        print("created", key)
+    save(rows)
+
+
 def status():
     rows = load()
     head = commit()
@@ -90,8 +118,10 @@ if __name__ == "__main__":
     a = sys.argv[1:]
     if a[:1] == ["status"]:
         status()
+    elif a[:1] == ["newfile"]:
+        newfile(a[1:])
     elif a[:1] == ["paper"]:
-        res = "--resources" in a
-        port([x for x in a[1:] if x != "--resources"], res)
+        root = "resources" if "--resources" in a else "generated" if "--generated" in a else "java"
+        port([x for x in a[1:] if not x.startswith("--")], root)
     else:
         sys.exit(__doc__)

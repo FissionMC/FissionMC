@@ -21,10 +21,12 @@ object Bootstrap {
         val mainClass = System.getProperty("fission.main", "net.minecraft.server.Main")
 
         val loader = FissionClassLoader(urls.toTypedArray(), Bootstrap::class.java.classLoader)
+        System.getProperty("fission.surface")?.let { loader.surface = net.fissionmc.loader.surface.Surface.load(File(it)) }
         FissionMixinService.game = loader
         System.setProperty("mixin.service", FissionMixinService::class.java.name)
 
         MixinBootstrap.init()
+        com.llamalad7.mixinextras.MixinExtrasBootstrap.init()
         System.getProperty("fission.mixins", "").split(',').filter { it.isNotBlank() }.forEach(Mixins::addConfiguration)
         MixinEnvironment.getDefaultEnvironment().side = MixinEnvironment.Side.SERVER
         // Mixin only exposes phase changes package-privately; launchers drive them reflectively.

@@ -1,6 +1,6 @@
 package io.papermc.paper.plugin.provider.source;
 
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.entrypoint.EntrypointHandler;
 import java.io.File;
 import java.nio.file.Path;
@@ -12,7 +12,7 @@ public class FileArrayProviderSource implements ProviderSource<File[], List<Path
 
     public static final FileArrayProviderSource INSTANCE = new FileArrayProviderSource();
     private static final FileProviderSource FILE_PROVIDER_SOURCE = new FileProviderSource("File '%s'"::formatted);
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     @Override
     public List<Path> prepareContext(File[] context) {

@@ -2,7 +2,7 @@ package io.papermc.paper.plugin.entrypoint.strategy.modern;
 
 import com.google.common.collect.Lists;
 import com.google.common.graph.MutableGraph;
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import io.papermc.paper.plugin.entrypoint.strategy.JohnsonSimpleCycles;
 import io.papermc.paper.plugin.entrypoint.strategy.PluginGraphCycleException;
@@ -21,7 +21,7 @@ import java.util.Set;
 
 class LoadOrderTree {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     private final Map<String, PluginProvider<?>> providerMap;
     private final MutableGraph<String> graph;

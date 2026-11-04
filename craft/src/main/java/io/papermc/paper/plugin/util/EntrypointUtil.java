@@ -1,13 +1,13 @@
 package io.papermc.paper.plugin.util;
 
-
+import com.mojang.logging.LogUtils;
 import io.papermc.paper.plugin.entrypoint.LaunchEntryPointHandler;
 import io.papermc.paper.plugin.provider.source.ProviderSource;
 import org.slf4j.Logger;
 
 public final class EntrypointUtil {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     public static <I, C> void registerProvidersFromSource(ProviderSource<I, C> source, I contextInput) {
         try {

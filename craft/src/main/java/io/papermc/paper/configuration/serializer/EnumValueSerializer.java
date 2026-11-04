@@ -1,6 +1,6 @@
 package io.papermc.paper.configuration.serializer;
 
-
+import com.mojang.logging.LogUtils;
 import io.leangen.geantyref.TypeToken;
 import java.lang.reflect.AnnotatedType;
 import java.util.Arrays;
@@ -19,7 +19,7 @@ import static io.leangen.geantyref.GenericTypeReflector.erase;
  */
 public class EnumValueSerializer extends ScalarSerializer.Annotated<Enum<?>> {
 
-    private static final Logger LOGGER = net.fissionmc.craft.util.Loggers.classLogger();
+    private static final Logger LOGGER = LogUtils.getClassLogger();
 
     public EnumValueSerializer() {
         super(new TypeToken<Enum<?>>() {});

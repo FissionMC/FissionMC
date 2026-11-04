@@ -1,0 +1,3 @@
+# owner: declaration — see loader/.../surface/Surface.kt. Fully qualified types, `$` for nested classes.
+# Paper: sources/com/mojang/logging/LogUtils.java.patch
+com.mojang.logging.LogUtils: public static org.slf4j.Logger getClassLogger()
