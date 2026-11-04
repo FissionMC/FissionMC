@@ -1,5 +1,10 @@
 package net.fissionmc.backend.mixin.world.entity.decoration;
 
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Shadow;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.decoration.ItemFrame;
@@ -25,5 +30,29 @@ public abstract class ItemFrameMixin {
         double ySize = axis == Direction.Axis.Y ? 0.0625 : height;
         double zSize = axis == Direction.Axis.Z ? 0.0625 : width;
         return AABB.ofSize(position, xSize, ySize, zSize);
+    }
+
+    @Shadow @Final private static EntityDataAccessor<ItemStack> DATA_ITEM;
+
+    @Shadow private void onItemChanged(final ItemStack item) { throw new AssertionError(); }
+
+    // CraftBukkit start
+    // TODO(behaviour): vanilla setItem(ItemStack, boolean) should delegate here with playSound = true (Paper also only plays the sound when updateNeighbours).
+    public void setItem(ItemStack itemStack, final boolean updateNeighbours, boolean playSound) {
+        // CraftBukkit end
+        final ItemFrame self = (ItemFrame) (Object) this;
+        if (!itemStack.isEmpty()) {
+            itemStack = itemStack.copyWithCount(1);
+        }
+
+        this.onItemChanged(itemStack);
+        self.getEntityData().set(DATA_ITEM, itemStack);
+        if (!itemStack.isEmpty() && updateNeighbours && playSound) { // CraftBukkit // Paper - only play sound when update flag is set
+            self.playSound(self.getAddItemSound(), 1.0F, 1.0F);
+        }
+
+        if (updateNeighbours && self.getPos() != null) {
+            self.level().updateNeighbourForOutputSignal(self.getPos(), Blocks.AIR);
+        }
     }
 }

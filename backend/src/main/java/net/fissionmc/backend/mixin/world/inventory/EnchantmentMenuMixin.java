@@ -15,7 +15,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
+import net.minecraft.world.inventory.DataSlot;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 
 /**
  * Paper: sources/net/minecraft/world/inventory/EnchantmentMenu.java.patch
@@ -23,6 +26,14 @@ import org.spongepowered.asm.mixin.Mixin;
  */
 @Mixin(EnchantmentMenu.class)
 public abstract class EnchantmentMenuMixin {
+    @Shadow @Final private DataSlot enchantmentSeed;
+
+    // Paper start - add enchantment seed update API
+    public void setEnchantmentSeed(int seed) {
+        this.enchantmentSeed.set(seed);
+    }
+    // Paper end - add enchantment seed update API
+
     // Paper start - extract offer generation
     // Extracted over modifications in place given nearly every line has diff to account for non-instance fields for
     // cost, enchantment and level clues.

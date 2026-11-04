@@ -347,3 +347,15 @@ net.minecraft.world.level.BaseCommandBlock: public abstract net.minecraft.server
 
 # Paper: sources/net/minecraft/util/Util.java.patch (needed by io/papermc/paper/FeatureHooks.java)
 net.minecraft.util.Util: public static final double COLLISION_EPSILON
+
+# ---- integration (craft compile) ----
+# Paper: sources/net/minecraft/server/dedicated/DedicatedServerSettings.java.patch (Paper adds a constructor; static factory instead)
+net.minecraft.server.dedicated.DedicatedServerSettings: public static net.minecraft.server.dedicated.DedicatedServerSettings fromOptions(joptsimple.OptionSet options)
+
+# Paper: sources/net/minecraft/world/clock/ServerClockManager.java.patch
+net.minecraft.world.clock.ServerClockManager: public net.minecraft.network.protocol.game.ClientboundSetTimePacket createFullSyncPacket(net.minecraft.server.level.ServerPlayer player)
+
+# Paper: sources/net/minecraft/world/level/dimension/end/EnderDragonFight.java.patch
+# (respawnDragon/spawnNewGateway/tryRespawn return boolean in Paper: return-type changes, handled at the CraftDragonBattle call sites)
+net.minecraft.world.level.dimension.end.EnderDragonFight: public boolean emptyCrystalRespawnAllowed
+net.minecraft.world.level.dimension.end.EnderDragonFight: public java.util.List<net.minecraft.world.entity.boss.enderdragon.EndCrystal> getSpikeCrystals()

@@ -1,0 +1,3 @@
+# FissionMC: access changes needed by integration fixes that members/*.txt cannot express. Same syntax as paper.at.
+# Paper: sources/net/minecraft/world/level/dimension/end/EnderDragonFight.java.patch (spawnNewGateway() private -> public; Paper also returns boolean)
+public net.minecraft.world.level.dimension.end.EnderDragonFight spawnNewGateway()V

@@ -189,3 +189,7 @@ net.minecraft.world.item.component.TypedEntityData: public net.minecraft.nbt.Com
 
 # Paper: sources/net/minecraft/world/item/component/AttackRange.java.patch
 net.minecraft.world.item.component.AttackRange: public static final net.minecraft.world.item.component.AttackRange CODEC_DEFAULT
+
+# ---- integration (craft compile) ----
+# Paper: sources/net/minecraft/world/entity/ItemBasedSteering.java.patch
+net.minecraft.world.entity.ItemBasedSteering: public void boost(int boostTime)
