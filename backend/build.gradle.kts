@@ -39,15 +39,19 @@ sourceSets["main"].resources.srcDir(generateMixinConfig)
 
 tasks.register<JavaExec>("run") {
     group = "fission"
-    description = "Boots vanilla $mcVersion through the FissionMC loader"
+    description = "Boots the server through the FissionMC loader and Paper's entry point (org.bukkit.craftbukkit.Main)"
     val loaderCp = project(":loader").extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
     val gameCp = files(mcJar, mcLibs, sourceSets["main"].runtimeClasspath)
     dependsOn(":loader:classes", "classes", ":testplugin:installTestPlugin")
     classpath = loaderCp
     mainClass = "net.fissionmc.loader.Bootstrap"
     workingDir = rootProject.file("run").also { it.mkdirs() }
-    jvmArgs("-Dfission.mixins=fission.mixins.json", "-Dfission.surface=" + rootProject.file("surface").path)
+    jvmArgs(
+        "-Dfission.mixins=fission.mixins.json",
+        "-Dfission.surface=" + rootProject.file("surface").path,
+        "-Dfission.main=org.bukkit.craftbukkit.Main",
+    )
     doFirst { systemProperty("fission.classpath", gameCp.asPath) }
-    args("nogui")
+    args("--nogui")
     standardInput = System.`in`
 }
