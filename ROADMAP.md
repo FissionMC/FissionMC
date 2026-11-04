@@ -17,12 +17,14 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Test plugin enables, registers command + listener
 
 ## M2 Packet pipeline
-- [ ] Mixin into connection pipeline setup
+- [ ] Mixin into connection pipeline setup (master terminates the client connection)
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
 - [ ] Listener chain: priority, cancel, modify, send/receive
 - [ ] Per-player context (state, version, latency)
 - [ ] Public API module for plugins
+- [ ] Master-side packet merge: backends' packet streams -> one coherent client view
+- [ ] Global entity ID space (no clashes between backends)
 
 ## M3 Node network
 - [ ] Transport interface: LocalChannel + TCP
@@ -34,7 +36,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Node registry
 - [ ] World authority: serve world to booting nodes
 - [ ] Ordered event log (sequencer)
-- [ ] Persistence: who writes the world, snapshots
+- [ ] Persistence: master canonical store, backends keep local cache/WAL for owned regions
 
 ## M5 Replication
 - [ ] Boot pull of full world
@@ -47,7 +49,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Static region grid, tick ownership
 - [ ] Player presence broadcast
 - [ ] Edge/ghost chunks
-- [ ] Player + entity handoff across borders
+- [ ] Player + entity handoff across borders (client never reconnects; master re-routes its packets)
 - [ ] Cross-border interactions (explosions, fluids, pathing)
 - [ ] Dynamic region assignment
 
@@ -59,6 +61,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Paper-only APIs (lifecycle, data components, Brigadier)
 - [ ] Shared plugin state through master (economy, perms)
 - [ ] Plugin remapping / CraftBukkit internals compat
+- [ ] Plugin loader: Paper behaviour (plugin.yml, paper-plugin.yml, bootstrappers) but faster (parallel scan/parse, cached descriptor index, lazy class loading)
 
 ## M8 Compatibility harness
 - [ ] Plugin test set (WorldEdit, LuckPerms, Vault, Essentials, ...)
