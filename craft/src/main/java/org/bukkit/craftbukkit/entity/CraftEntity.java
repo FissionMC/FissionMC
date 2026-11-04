@@ -330,7 +330,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
             }
         }
 
-        return this.entity.teleport(new TeleportTransition(
+        return this.entity.teleport(TeleportTransition.create( // FissionMC: Paper-added record constructor -> static factory
             ((CraftWorld) location.getWorld()).getHandle(),
             CraftLocation.toVec3(location),
             Vec3.ZERO,
@@ -341,7 +341,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
             relativeFlags,
             TeleportTransition.DO_NOTHING,
             cause,
-            TeleportTransition.PassengerTeleportationMode.POSITION_RIDER
+            net.fissionmc.craft.compat.PassengerTeleportationMode.POSITION_RIDER // FissionMC: nested enum moved to compat
         )) != null;
     }
 

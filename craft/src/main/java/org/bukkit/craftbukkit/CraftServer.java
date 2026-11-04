@@ -1264,7 +1264,7 @@ public final class CraftServer implements Server {
             new PhantomSpawner(), new PatrolSpawner(), new CatSpawner(), new VillageSiege(), new WanderingTraderSpawner(savedDataStorage)
         );
 
-        ServerLevel serverLevel = new ServerLevel(
+        ServerLevel serverLevel = ServerLevel.create( // FissionMC: Paper-added ServerLevel constructor -> static factory (Mixin cannot add constructors)
             this.console,
             Util.backgroundExecutor(),
             this.console.storageSource,
