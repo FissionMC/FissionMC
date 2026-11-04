@@ -259,6 +259,31 @@ class Surface private constructor(
         }
     }
 
+    /** Names declared in a leading `<A extends ..., B>` list (depth-1 identifiers after '<' or ','). */
+    private fun typeParamNames(text: String): Set<String> {
+        val out = HashSet<String>()
+        var depth = 0
+        var expectName = false
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                c == '<' -> { depth++; if (depth == 1) expectName = true }
+                c == '>' -> { depth--; if (depth == 0) break }
+                c == ',' && depth == 1 -> expectName = true
+                expectName && (c.isLetter() || c == '_') -> {
+                    val start = i
+                    while (i < text.length && (text[i].isLetterOrDigit() || text[i] == '_')) i++
+                    out += text.substring(start, i)
+                    expectName = false
+                    continue
+                }
+            }
+            i++
+        }
+        return out
+    }
+
     private fun parse(d: MemberDecl, node: ClassNode): Parsed? = try {
         parseDecl(d.decl, node)
     } catch (e: Exception) {
@@ -281,7 +306,7 @@ class Surface private constructor(
         // method type params
         var methodParams = emptyList<TypeParam>()
         if (rest.startsWith("<")) {
-            val tp = TypeParser(rest, classVars.keys)
+            val tp = TypeParser(rest, classVars.keys + typeParamNames(rest)) // names first: bounds may be recursive (T extends Comparable<T>)
             methodParams = tp.parseTypeParams()
             rest = tp.rest().trimStart()
         }
