@@ -1,0 +1,132 @@
+/*
+ * This file is part of packetevents - https://github.com/retrooper/packetevents
+ * Copyright (C) 2024 retrooper and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.github.retrooper.packetevents.protocol.item.instrument;
+
+import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.mapper.CopyableEntity;
+import com.github.retrooper.packetevents.protocol.mapper.DeepComparableEntity;
+import com.github.retrooper.packetevents.protocol.mapper.MappedEntity;
+import com.github.retrooper.packetevents.protocol.nbt.NBT;
+import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
+import com.github.retrooper.packetevents.protocol.nbt.NBTFloat;
+import com.github.retrooper.packetevents.protocol.nbt.NBTInt;
+import com.github.retrooper.packetevents.protocol.nbt.NBTNumber;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.sound.Sound;
+import com.github.retrooper.packetevents.util.MathUtil;
+import com.github.retrooper.packetevents.util.mappings.TypesBuilderData;
+import com.github.retrooper.packetevents.wrapper.PacketWrapper;
+import net.kyori.adventure.text.Component;
+import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NullMarked;
+
+@NullMarked
+public interface Instrument extends MappedEntity, CopyableEntity<Instrument>, DeepComparableEntity {
+
+    Sound getSound();
+
+    float getUseSeconds();
+
+    /**
+     * Use duration measured in ticks
+     */
+    default int getUseDuration() {
+        return MathUtil.floor(this.getUseSeconds() * 20);
+    }
+
+    float getRange();
+
+    /**
+     * @versions 26.3+
+     */
+    default int getDurabilityDamage() {
+        return 0;
+    }
+
+    Component getDescription();
+
+    static Instrument read(PacketWrapper<?> wrapper) {
+        return wrapper.readMappedEntityOrDirect(Instruments.getRegistry(), Instrument::readDirect);
+    }
+
+    static Instrument readDirect(PacketWrapper<?> wrapper) {
+        Sound sound = Sound.read(wrapper);
+        float useSeconds = wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_21_2)
+                ? wrapper.readFloat() : wrapper.readVarInt() * 20f;
+        float range = wrapper.readFloat();
+        int durabilityDamage = wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_26_3)
+                ? wrapper.readVarInt() : 0;
+        Component description = wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_21_2)
+                ? wrapper.readComponent() : Component.empty();
+        return new StaticInstrument(sound, useSeconds, range, durabilityDamage, description);
+    }
+
+    static void write(PacketWrapper<?> wrapper, Instrument instrument) {
+        wrapper.writeMappedEntityOrDirect(instrument, Instrument::writeDirect);
+    }
+
+    static void writeDirect(PacketWrapper<?> wrapper, Instrument instrument) {
+        Sound.write(wrapper, instrument.getSound());
+        if (wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_21_2)) {
+            wrapper.writeFloat(instrument.getUseSeconds());
+        } else {
+            wrapper.writeVarInt(instrument.getUseDuration());
+        }
+        wrapper.writeFloat(instrument.getRange());
+        if (wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_26_3)) {
+            wrapper.writeVarInt(instrument.getDurabilityDamage());
+        }
+        if (wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_21_2)) {
+            wrapper.writeComponent(instrument.getDescription());
+        }
+    }
+
+    @Deprecated
+    static Instrument decode(NBT nbt, ClientVersion version, @Nullable TypesBuilderData data) {
+        return decode(nbt, PacketWrapper.createDummyWrapper(version), data);
+    }
+
+    static Instrument decode(NBT nbt, PacketWrapper<?> wrapper, @Nullable TypesBuilderData data) {
+        NBTCompound compound = (NBTCompound) nbt;
+        Sound sound = compound.getOrThrow("sound_event", Sound.CODEC, wrapper);
+        float useSeconds = compound.getNumberTagOrThrow("use_duration").getAsFloat();
+        float range = compound.getNumberTagOrThrow("range").getAsFloat();
+        NBTNumber durabilityDamageTag = compound.getNumberTagOrNull("durability_damage");
+        int durabilityDamage = durabilityDamageTag != null ? durabilityDamageTag.getAsInt() : 0;
+        Component description = compound.getOrThrow("description", wrapper.getSerializers(), wrapper);
+        return new StaticInstrument(data, sound, useSeconds, range, durabilityDamage, description);
+    }
+
+    @Deprecated
+    static NBT encode(Instrument instrument, ClientVersion version) {
+        return encode(PacketWrapper.createDummyWrapper(version), instrument);
+    }
+
+    static NBT encode(PacketWrapper<?> wrapper, Instrument instrument) {
+        NBTCompound compound = new NBTCompound();
+        compound.set("sound_event", instrument.getSound(), Sound.CODEC, wrapper);
+        compound.setTag("use_duration", new NBTFloat(instrument.getUseSeconds()));
+        compound.setTag("range", new NBTFloat(instrument.getRange()));
+        if (instrument.getDurabilityDamage() != 0) {
+            compound.setTag("durability_damage", new NBTInt(instrument.getDurabilityDamage()));
+        }
+        compound.set("description", instrument.getDescription(), wrapper.getSerializers(), wrapper);
+        return compound;
+    }
+}

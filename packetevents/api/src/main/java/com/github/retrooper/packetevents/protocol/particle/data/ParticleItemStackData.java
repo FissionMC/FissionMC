@@ -1,0 +1,104 @@
+/*
+ * This file is part of packetevents - https://github.com/retrooper/packetevents
+ * Copyright (C) 2022 retrooper and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.github.retrooper.packetevents.protocol.particle.data;
+
+import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.item.ItemStack;
+import com.github.retrooper.packetevents.protocol.item.ItemStackCodec;
+import com.github.retrooper.packetevents.protocol.item.ItemStackSerialization;
+import com.github.retrooper.packetevents.protocol.item.type.ItemTypes;
+import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.util.NbtCodec;
+import com.github.retrooper.packetevents.wrapper.PacketWrapper;
+import org.jspecify.annotations.NullMarked;
+
+import java.util.Objects;
+
+@NullMarked
+public class ParticleItemStackData extends ParticleData implements LegacyConvertible {
+
+    private static final NbtCodec<ItemStack> PRE_26_1_ITEM_CODEC = ItemStackCodec.CODEC
+            .withAlternative(ItemStackCodec.INLINE_CODEC);
+
+    private ItemStack itemStack;
+
+    public ParticleItemStackData(ItemStack itemStack) {
+        this.itemStack = itemStack;
+    }
+
+    public ItemStack getItemStack() {
+        return itemStack;
+    }
+
+    public void setItemStack(ItemStack itemStack) {
+        this.itemStack = itemStack;
+    }
+
+    public static ParticleItemStackData read(PacketWrapper<?> wrapper) {
+        if (wrapper.getServerVersion().isNewerThanOrEquals(ServerVersion.V_1_13)) {
+            return new ParticleItemStackData(ItemStackSerialization.readTemplate(wrapper));
+        } else {
+            return new ParticleItemStackData(ItemStack.builder()
+                    .type(ItemTypes.getRegistry().getByIdOrThrow(wrapper.getClientVersion(), wrapper.readVarInt()))
+                    .wrapper(wrapper).build());
+        }
+    }
+
+    public static void write(PacketWrapper<?> wrapper, ParticleItemStackData data) {
+        ItemStackSerialization.writeTemplate(wrapper, data.getItemStack());
+    }
+
+    public static ParticleItemStackData decode(NBTCompound compound, ClientVersion version) {
+        String key = version.isNewerThanOrEquals(ClientVersion.V_1_20_5) ? "item" : "value";
+        NbtCodec<ItemStack> codec = version.isNewerThanOrEquals(ClientVersion.V_26_1)
+                ? ItemStackCodec.TEMPLATE_CODEC : PRE_26_1_ITEM_CODEC;
+        ItemStack stack = compound.getOrThrow(key, codec, PacketWrapper.createDummyWrapper(version));
+        return new ParticleItemStackData(stack);
+    }
+
+    public static void encode(ParticleItemStackData data, ClientVersion version, NBTCompound compound) {
+        String key = version.isNewerThanOrEquals(ClientVersion.V_1_20_5) ? "item" : "value";
+        NbtCodec<ItemStack> codec = version.isNewerThanOrEquals(ClientVersion.V_26_1)
+                ? ItemStackCodec.TEMPLATE_CODEC : PRE_26_1_ITEM_CODEC;
+        compound.set(key, data.itemStack, codec, PacketWrapper.createDummyWrapper(version));
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return false;
+    }
+
+    @Override
+    public LegacyParticleData toLegacy(ClientVersion version) {
+        return LegacyParticleData.ofTwo(itemStack.getType().getId(version), itemStack.getLegacyData());
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null || this.getClass() != obj.getClass()) return false;
+        ParticleItemStackData that = (ParticleItemStackData) obj;
+        return this.itemStack.equals(that.itemStack);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(this.itemStack);
+    }
+}
