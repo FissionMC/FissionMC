@@ -59,3 +59,33 @@ net.minecraft.commands.Commands: public static final java.util.concurrent.Execut
 # ---- integration (craft compile) ----
 # Paper: sources/net/minecraft/core/HolderSet.java.patch
 net.minecraft.core.HolderSet$Named: public boolean contains(io.papermc.paper.registry.TypedKey<?> key)
+
+# ---- wave 2 ----
+# Paper: sources/net/minecraft/tags/TagLoader.java.patch (tag lifecycle cause overloads; implemented in TagLoaderMixin)
+net.minecraft.tags.TagLoader: public java.util.Map<net.minecraft.resources.Identifier, java.util.List<T>> build(java.util.Map<net.minecraft.resources.Identifier, java.util.List<net.minecraft.tags.TagLoader$EntryWithSource>> builders, io.papermc.paper.tag.TagEventConfig<T, ?> eventConfig)
+net.minecraft.tags.TagLoader: public static java.util.List<net.minecraft.core.Registry$PendingTags<?>> loadTagsForExistingRegistries(net.minecraft.server.packs.resources.ResourceManager manager, net.minecraft.core.RegistryAccess layer, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent$Cause cause)
+net.minecraft.tags.TagLoader: public static <T> void loadTagsForRegistry(net.minecraft.server.packs.resources.ResourceManager manager, net.minecraft.core.WritableRegistry<T> registry, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent$Cause cause)
+net.minecraft.tags.TagLoader: public static <T> java.util.Map<net.minecraft.tags.TagKey<T>, java.util.List<net.minecraft.core.Holder<T>>> loadTagsForRegistry(net.minecraft.server.packs.resources.ResourceManager manager, net.minecraft.resources.ResourceKey<? extends net.minecraft.core.Registry<T>> registryKey, net.minecraft.tags.TagLoader$ElementLookup<net.minecraft.core.Holder<T>> lookup, net.minecraft.core.WritableRegistry<T> registry, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent$Cause cause)
+
+# Paper: sources/net/minecraft/nbt/NbtAccounter.java.patch (used by ByteBufCodecs.java.patch, player area)
+net.minecraft.nbt.NbtAccounter: public void pushDepth(int depth)
+
+# Paper: sources/net/minecraft/nbt/CompoundTag.java.patch
+net.minecraft.nbt.CompoundTag: public <T> java.util.Optional<T> readQuiet(java.lang.String name, com.mojang.serialization.Codec<T> codec)
+net.minecraft.nbt.CompoundTag: public <T> java.util.Optional<T> readQuiet(java.lang.String name, com.mojang.serialization.Codec<T> codec, com.mojang.serialization.DynamicOps<net.minecraft.nbt.Tag> ops)
+net.minecraft.nbt.CompoundTag: public <T> java.util.Optional<T> readQuiet(com.mojang.serialization.MapCodec<T> codec)
+net.minecraft.nbt.CompoundTag: public <T> java.util.Optional<T> readQuiet(com.mojang.serialization.MapCodec<T> codec, com.mojang.serialization.DynamicOps<net.minecraft.nbt.Tag> ops)
+
+# Paper: sources/net/minecraft/util/thread/BlockableEventLoop.java.patch (used by MinecraftServer.java.patch, server area)
+net.minecraft.util.thread.BlockableEventLoop: public final boolean executeAllRecentInternalTasks()
+net.minecraft.util.thread.BlockableEventLoop: public boolean runTaskIf(java.util.function.Predicate<? super R> predicate)
+
+# Paper: sources/net/minecraft/util/TickThrottler.java.patch (used by ServerGamePacketListenerImpl.java.patch, player area)
+net.minecraft.util.TickThrottler: public boolean isIncrementAndUnderThreshold()
+net.minecraft.util.TickThrottler: public boolean isIncrementAndUnderThreshold(int incrementStep, int threshold)
+
+# Paper: sources/net/minecraft/util/SpawnUtil.java.patch (CraftBukkit spawn reason / Paper PreCreatureSpawnEvent onAbort)
+net.minecraft.util.SpawnUtil: public static <T extends net.minecraft.world.entity.Mob> java.util.Optional<T> trySpawnMob(net.minecraft.world.entity.EntityType<T> entityType, net.minecraft.world.entity.EntitySpawnReason spawnReason, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos start, int spawnAttempts, int spawnRangeXZ, int spawnRangeY, net.minecraft.util.SpawnUtil$Strategy strategy, boolean checkCollisions, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason, java.lang.Runnable onAbort)
+
+# Paper: sources/net/minecraft/util/StringUtil.java.patch
+net.minecraft.util.StringUtil: public static boolean isReasonablePlayerName(java.lang.String name)
