@@ -101,6 +101,7 @@ net.minecraft.network.Connection: public boolean handledLegacyLoginEvent
 net.minecraft.network.Connection: public net.minecraft.server.level.ServerPlayer savedPlayerForLegacyEvents
 net.minecraft.network.Connection: public org.bukkit.event.player.PlayerResourcePackStatusEvent$Status resourcePackStatus
 net.minecraft.network.Connection: public void enableAutoRead()
+net.minecraft.network.Connection: public void sendPacketAndScheduleNettyTask(net.minecraft.network.protocol.Packet<?> packet, boolean flush, java.lang.Runnable after)
 
 # Paper: sources/net/minecraft/network/DisconnectionDetails.java.patch (record components; FissionMC: fields + accessors + factory)
 net.minecraft.network.DisconnectionDetails: public java.util.Optional<net.minecraft.network.chat.Component> quitMessage()
@@ -181,6 +182,13 @@ net.minecraft.server.players.PlayerList: public void reloadTagData()
 net.minecraft.server.players.PlayerList: public void reloadRecipes()
 net.minecraft.server.players.PlayerList: public net.minecraft.stats.ServerStatsCounter getPlayerStats(net.minecraft.server.level.ServerPlayer player)
 net.minecraft.server.players.PlayerList: public net.minecraft.stats.ServerStatsCounter getPlayerStats(com.mojang.authlib.GameProfile gameProfile)
+net.minecraft.server.players.PlayerList: public net.fissionmc.craft.compat.LoginResult fission$canPlayerLogin(java.net.SocketAddress address, net.minecraft.server.players.NameAndId nameAndId)
+net.minecraft.server.players.PlayerList: public boolean disconnectAllPlayersWithProfile(com.mojang.authlib.GameProfile profile)
+net.minecraft.server.players.PlayerList: public net.kyori.adventure.text.Component fission$remove(net.minecraft.server.level.ServerPlayer player)
+net.minecraft.server.players.PlayerList: public net.kyori.adventure.text.Component fission$remove(net.minecraft.server.level.ServerPlayer player, net.kyori.adventure.text.Component leaveMessage)
+net.minecraft.server.players.PlayerList: public void fission$broadcastWorldborder(net.minecraft.network.protocol.Packet<?> packet, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension)
+net.minecraft.server.players.PlayerList: public void removeAll(boolean isRestarting)
+net.minecraft.server.players.PlayerList: public void sendActiveEffects(net.minecraft.world.entity.LivingEntity livingEntity, java.util.function.Consumer<net.minecraft.network.protocol.Packet<? super net.minecraft.network.protocol.game.ClientGamePacketListener>> packetConsumer)
 
 # Paper: sources/net/minecraft/server/players/NameAndId.java.patch
 net.minecraft.server.players.NameAndId: public com.mojang.authlib.GameProfile toUncompletedGameProfile()
@@ -235,3 +243,28 @@ net.minecraft.network.chat.OutgoingChatMessage$Player: public void sendToPlayer(
 # ---- integration (backend compile) ----
 # Paper: sources/net/minecraft/network/protocol/game/ClientboundSetPlayerTeamPacket.java.patch
 net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket: public static net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket createMultiplePlayerPacket(net.minecraft.world.scores.PlayerTeam team, java.util.Collection<java.lang.String> players, net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket$Action action)
+
+# Paper: sources/net/minecraft/server/level/ServerPlayer.java.patch (wave 2: respawn; RespawnResult moved to net.fissionmc.craft.compat.RespawnResult)
+net.minecraft.server.level.ServerPlayer: public net.minecraft.world.level.portal.TeleportTransition findRespawnPositionAndUseSpawnBlock(boolean consumeSpawnBlock, net.minecraft.world.level.portal.TeleportTransition$PostTeleportTransition postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent$RespawnReason respawnReason)
+net.minecraft.server.level.ServerPlayer: public net.fissionmc.craft.compat.RespawnResult findRespawnPositionAndUseSpawnBlock0(boolean consumeSpawnBlock, net.minecraft.world.level.portal.TeleportTransition$PostTeleportTransition postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent$RespawnReason respawnReason)
+net.minecraft.server.level.ServerPlayer: public void reset()
+
+# Paper: sources/net/minecraft/server/network/ServerConnectionListener.java.patch
+net.minecraft.server.network.ServerConnectionListener: public void acceptConnections()
+net.minecraft.server.network.ServerConnectionListener: public void handleAllDisconnections()
+
+# Paper: sources/net/minecraft/server/network/config/PrepareSpawnTask.java.patch (constructor args passed via fission$init, see ServerConfigurationPacketListenerImplMixin)
+net.minecraft.server.network.config.PrepareSpawnTask: public void fission$init(com.mojang.authlib.GameProfile profile, net.minecraft.server.network.ServerConfigurationPacketListenerImpl listener)
+net.minecraft.server.network.config.PrepareSpawnTask: public com.mojang.authlib.GameProfile fission$profile()
+net.minecraft.server.network.config.PrepareSpawnTask: public net.minecraft.server.network.ServerConfigurationPacketListenerImpl fission$listener()
+net.minecraft.server.network.config.PrepareSpawnTask: public boolean fission$newPlayer()
+net.minecraft.server.network.config.PrepareSpawnTask: public net.minecraft.server.MinecraftServer fission$server()
+
+# Paper: sources/net/minecraft/server/level/ServerPlayerGameMode.java.patch (wave 2: interact/destroy fields)
+net.minecraft.server.level.ServerPlayerGameMode: public boolean captureSentBlockEntities
+net.minecraft.server.level.ServerPlayerGameMode: public boolean capturedBlockEntity
+net.minecraft.server.level.ServerPlayerGameMode: public boolean interactResult
+net.minecraft.server.level.ServerPlayerGameMode: public boolean firedInteract
+net.minecraft.server.level.ServerPlayerGameMode: public net.minecraft.core.BlockPos interactPosition
+net.minecraft.server.level.ServerPlayerGameMode: public net.minecraft.world.InteractionHand interactHand
+net.minecraft.server.level.ServerPlayerGameMode: public net.minecraft.world.item.ItemStack interactItemStack
