@@ -41,3 +41,28 @@ Shared main-thread state for signature/record changes Mixin cannot make: `backen
 - [~] world/level/block/CocoaBlock.java.patch (done: BlockGrowEvent; config: cocoaModifier)
 - [~] world/level/block/SweetBerryBushBlock.java.patch (done: BlockGrowEvent, EntityInsideBlockEvent, block damager, PlayerHarvestBlockEvent; config: sweetBerryModifier)
 - [~] world/inventory/*Menu.java.patch (done: Bukkit views (getBukkitView) for Anvil, Beacon, BrewingStand, Cartography, Chest, Crafter, Dispenser, Furnace, Grindstone and similar menus; EnchantmentMenu: PrepareItemEnchantEvent in slotsChanged (replaced body), EnchantItemEvent in clickMenuButton lambda (replaced body), fillEnchantmentOffers; left: TODO(behaviour) in EnchantmentMenuMixin - InventoryHolders (enchantSlots with block holder/location); remaining menus not audited hunk-by-hunk, boot only checked that mixins apply)
+
+## Package C pass 1 (menus, fire, pistons, fluids, spread, hoppers, dispensers)
+- [~] world/inventory/AbstractContainerMenu.java.patch (done: InventoryDragEvent, drop-outside setCarried order, removed() SPIGOT-4556, getCarried normalise, slot sanity checks, dropOrPlaceInInventory isAlive; left: ContainerListener.slotChanged 4-arg (PlayerInventorySlotChangeEvent), synchronizer.sendOffHandSlotChange, SPIGOT-8010 drop loop break, moveItemStackTo isCheck (PlayerTradeEvent), click-sync packet for slot max stack. NOTE InventoryClickEvent / InventoryOpen/CloseEvent live in ServerGamePacketListenerImpl / ServerPlayer patches = player area)
+- [~] world/inventory/CraftingMenu.java.patch (done: PrepareItemCraftEvent, checkReachable; left: current-recipe caching perf)
+- [~] world/level/block/FireBlock.java.patch (done: BlockFade in updateShape, fireExtinguished, BlockIgnite/BlockSpread, BlockBurn, TNTPrimeEvent; left: onPlace(context), fire-tick-delay config)
+- [~] world/level/block/BaseFireBlock.java.patch (done: fireExtinguished; left: EntityInsideBlockEvent, EntityCombustByBlockEvent, portal player)
+- [~] world/level/block/piston/PistonBaseBlock.java.patch (done: BlockPistonExtend/RetractEvent incl. retract paths; left: headless-piston guard, dropResources source, desync capture, bedrock protection; config: allowPermanentBlockBreakExploits/allowPistonDuplication)
+- [ ] world/level/block/piston/PistonMovingBlockEntity.java.patch
+- [~] world/level/material/FlowingFluid.java.patch (done: BlockFromToEvent, FluidLevelChangeEvent; left: no-chunk-loading getBlockStateIfLoaded, beforeDestroyingBlock source)
+- [~] world/level/material/LavaFluid.java.patch (done: BlockIgnite, BlockForm; left: lavaHurt pos)
+- [~] world/level/block/LiquidBlock.java.patch (done: BlockFormEvent; config: water-over-lava-flow-speed)
+- [x] world/level/block/SpongeBlock.java.patch (replaced body)
+- [x] world/level/block/LeavesBlock.java.patch
+- [~] world/level/block/SpreadingSnowyBlock.java.patch (config: grassSpread tick rate)
+- [x] world/level/block/SnowLayerBlock.java.patch
+- [~] world/level/block/VineBlock.java.patch (config: Spigot vineModifier)
+- [~] world/level/block/IceBlock.java.patch (done: melt BlockFade; left: playerDestroy includeDrops/dropExp delegation)
+- [x] world/level/block/FrostedIceBlock.java.patch (config: frosted-ice options)
+- [~] world/level/block/entity/HopperBlockEntity.java.patch (done: InventoryMoveItemEvent both directions (replaced bodies), PrepareHopperTransferEvent for eject, InventoryPickupItemEvent, discard cause; left: HopperInventorySearchEvent, PrepareHopperTransferEvent in suckInItems, max stack size, spigot cooldown config)
+- [~] world/level/block/DispenserBlock.java.patch (done: getDispenseBehavior fix (cast to mixin class was illegal), BlockFailedDispense, BlockPreDispense; left: openMenu().isPresent())
+- [~] world/level/block/DropperBlock.java.patch (done: failed/pre-dispense, InventoryMoveItemEvent via stand-in return)
+- [~] core/dispenser/DefaultDispenseItemBehavior.java.patch (done: BlockDispenseEvent in spawnItem(…, source) via wrapped addFreshEntity; facing not cached)
+- [~] core/dispenser/{Boat,Minecart,ShulkerBox,Projectile}*Behavior.java.patch (PARTIAL: event fired up front, cancel/reroute honoured, item/velocity edits ignored)
+- [ ] core/dispenser/DispenseItemBehavior.java.patch (bucket/armor stand/chest/bone meal/etc. behaviours - anonymous lambdas), FlintAndSteel, Shears, SpawnEgg, Equipment, SulfurCube
+- [ ] remaining unlisted block entities: AbstractFurnaceBlockEntity (FurnaceSmelt/Burn/Extract/StartSmelt), BrewingStandBlockEntity (BrewEvent, BrewingStartEvent), Beacon (effect events), Beehive, Campfire, Lectern, Jukebox, SignBlockEntity (SignChangeEvent), ComposterBlock, NetherPortalBlock, TripWire, Farmland, ConcretePowder, Cauldrons, Bamboo, Turtle egg, ChorusFlower, Sapling, Tnt

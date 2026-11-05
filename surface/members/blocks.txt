@@ -256,3 +256,7 @@ net.minecraft.world.level.block.state.BlockBehaviour$BlockStateBase: public fina
 net.minecraft.world.item.ItemStack: public void hurtAndBreak(int amount, net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.LivingEntity player, java.util.function.Consumer<net.minecraft.world.item.ItemStack> onBreak, boolean force)
 # Paper: sources/net/minecraft/world/level/block/SignBlock.java.patch
 net.minecraft.world.level.block.SignBlock: public void openTextEdit(net.minecraft.world.entity.player.Player player, net.minecraft.world.level.block.entity.SignBlockEntity sign, net.minecraft.world.level.block.entity.SignTextSlot slot, io.papermc.paper.event.player.PlayerOpenSignEvent$Cause cause)
+# Paper: sources/net/minecraft/world/level/block/BaseFireBlock.java.patch
+net.minecraft.world.level.block.BaseFireBlock: public void fireExtinguished(net.minecraft.world.level.LevelAccessor world, net.minecraft.core.BlockPos position)
+# Paper: sources/net/minecraft/core/dispenser/DefaultDispenseItemBehavior.java.patch
+net.minecraft.core.dispenser.DefaultDispenseItemBehavior: public static boolean spawnItem(net.minecraft.world.level.Level level, net.minecraft.world.item.ItemStack itemStack, int accuracy, net.minecraft.core.Direction direction, net.minecraft.core.Position position, net.minecraft.core.dispenser.BlockSource source)
