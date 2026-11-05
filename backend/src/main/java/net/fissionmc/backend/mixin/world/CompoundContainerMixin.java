@@ -9,7 +9,6 @@ import org.spongepowered.asm.mixin.Shadow;
 
 /**
  * Paper: sources/net/minecraft/world/CompoundContainer.java.patch
- * TODO(behaviour): getMaxStackSize returns Math.min of both sides (CraftBukkit - check both sides).
  */
 @Mixin(CompoundContainer.class)
 public abstract class CompoundContainerMixin {
@@ -18,6 +17,12 @@ public abstract class CompoundContainerMixin {
 
     @Shadow public abstract int getContainerSize();
     @Shadow public abstract ItemStack getItem(int slot);
+
+    // CraftBukkit - check both sides
+    @org.spongepowered.asm.mixin.injection.Inject(method = "getMaxStackSize", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), cancellable = true)
+    private void craftbukkit$maxStackSize(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Integer> cir) {
+        cir.setReturnValue(Math.min(this.container1.getMaxStackSize(), this.container2.getMaxStackSize()));
+    }
 
     // CraftBukkit start - add fields and methods
     private java.util.List<org.bukkit.entity.HumanEntity> transaction = new java.util.ArrayList<>();
