@@ -24,13 +24,13 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 ## M2 Packet pipeline
 - [x] License: GPL-3.0
 - [x] Vendor PacketEvents api + netty-common (pinned), upstream tracker script + daily workflow
-- [ ] Gradle integration of vendored PacketEvents; own platform module replaces its spigot one
+- [~] Gradle integration of vendored PacketEvents (`:packetevents`, compiles; mapping resources `assets/mappings/*.nbt` NOT generated, so PacketEvents `User`/registries fail at runtime); own platform class `FissionPacketEventsAPI` in `:packets` replaces the spigot injector
 - [ ] Built-in virtual plugin "packetevents" so depend: [packetevents] resolves
 - [ ] Strip PacketEvents injector; feed it from core pipeline
-- [ ] Mixin into connection pipeline setup (master terminates the client connection)
+- [~] Master terminates the client connection (Netty listener, status/login/encryption/compression/limbo coded, pure parts unit-tested; PacketEvents-dependent tests blocked by missing mapping resources, no real client run)
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
-- [ ] Listener chain: priority, cancel, modify, send/receive
+- [~] Listener chain: `PacketBus` over PacketEvents' EventManager, receive side wired in master limbo phases only; untested
 - [ ] Per-player context (state, version, latency)
 - [ ] Public API module for plugins
 - [ ] Master-side packet merge: backends' packet streams -> one coherent client view

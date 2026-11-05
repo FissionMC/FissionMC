@@ -1,6 +1,7 @@
 dependencies {
     api(project(":net"))
     api(project(":packets"))
+    testImplementation(kotlin("test"))
 }
 
 dependencies { testImplementation(kotlin("test")) }

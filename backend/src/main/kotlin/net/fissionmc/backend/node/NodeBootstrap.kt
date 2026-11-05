@@ -94,6 +94,7 @@ object NodeBootstrap {
         // From here on, messages from the master go to the registered handlers.
         l.handler = { msg -> extraHandlers.forEach { it(msg) } }
         net.fissionmc.backend.replication.Replication.attach(cfg.nodeId)
+        net.fissionmc.backend.relay.PlayerRelayBackend.attach()
         started = true
         connectListeners.forEach { it(l) }
     }
