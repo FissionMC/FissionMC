@@ -2,6 +2,8 @@ package net.fissionmc.backend.node
 
 import net.fissionmc.master.MasterServer
 import net.fissionmc.master.NodeRegistry
+import net.fissionmc.master.RegisteredNode
+import net.fissionmc.master.ReplicationHub
 import net.fissionmc.net.*
 import net.fissionmc.net.world.WorldPuller
 import net.fissionmc.protocol.MC_VERSION
@@ -30,6 +32,20 @@ object NodeBootstrap {
     /** Later subsystems (replication, packet routing) register here to receive master messages. */
     @JvmStatic fun addMessageHandler(h: (NodeMessage) -> Unit) { extraHandlers += h }
 
+    private val connectListeners = java.util.concurrent.CopyOnWriteArrayList<(NodeLink) -> Unit>()
+
+    /** Called with every master link once the world is pulled: the first connection and every reconnect. */
+    @JvmStatic fun addConnectListener(h: (NodeLink) -> Unit) { connectListeners += h }
+
+    @Volatile private var started = false
+
+    /** A new master link after the first one (reconnect): route its messages, then tell the listeners. */
+    private fun relinked(l: NodeLink) {
+        link = l
+        l.handler = { msg -> extraHandlers.forEach { it(msg) } }
+        connectListeners.forEach { runCatching { it(l) }.onFailure { e -> log.warning("connect listener failed: $e") } }
+    }
+
     @JvmStatic
     fun start(universe: Path, levelName: String) {
         val cfg = NodeConfig.load(Path.of("fission.properties").toAbsolutePath())
@@ -56,7 +72,10 @@ object NodeBootstrap {
         val ready = java.util.concurrent.CompletableFuture<NodeLink>()
         val client = NodeClient(
             transport, address,
-            onReady = { l, peer -> log.info("Connected to master ${peer.nodeId}"); ready.complete(l) },
+            onReady = { l, peer ->
+                log.info("Connected to master ${peer.nodeId}")
+                if (!ready.complete(l) && started) relinked(l)
+            },
             onFailure = { log.warning("Master connection failed: ${it.message}") },
             onDisconnect = { log.warning("Lost connection to master: $it") },
         ).start()
@@ -74,21 +93,27 @@ object NodeBootstrap {
         log.info("World ready: ${r.downloaded} downloaded (${r.bytes / 1024} KiB), ${r.unchanged} unchanged, ${r.deleted} removed in ${(System.nanoTime() - t0) / 1_000_000} ms")
         // From here on, messages from the master go to the registered handlers.
         l.handler = { msg -> extraHandlers.forEach { it(msg) } }
+        net.fissionmc.backend.replication.Replication.attach(cfg.nodeId)
+        started = true
+        connectListeners.forEach { it(l) }
     }
 
     /** Hosts the master in this JVM; returns the in-JVM address the backend should dial. */
     private fun startCombinedMaster(cfg: NodeConfig): NodeAddress {
         val registry = NodeRegistry()
+        val hub = ReplicationHub()
+        registry.addListener(hub.listener)
+        val onMessage: (RegisteredNode, NodeMessage) -> Unit = { n, m -> hub.handle(n, m) }
         val local = NodeAddress.Local("fission-master")
         val localT = NettyTransport(NodeSupport.masterNode(MC_VERSION))
         closeables += localT
-        val m = MasterServer(localT, local, cfg.worldRoot, registry).start()
+        val m = MasterServer(localT, local, cfg.worldRoot, registry, onMessage).start()
         closeables += m
         master = m
         cfg.listen?.let { tcp ->
             val tcpT = NettyTransport(NodeSupport.masterNode(MC_VERSION), security = NodeSupport.masterSecurity(cfg))
             closeables += tcpT
-            closeables += MasterServer(tcpT, tcp, cfg.worldRoot, registry).start()
+            closeables += MasterServer(tcpT, tcp, cfg.worldRoot, registry, onMessage).start()
             log.info("Master also listening for remote backends on ${tcp.host}:${tcp.port}")
         }
         log.info("Master hosted in this JVM, serving worlds from ${cfg.worldRoot}")
@@ -100,5 +125,6 @@ object NodeBootstrap {
         val c = closeables; closeables = mutableListOf()
         c.asReversed().forEach { runCatching { it.close() } }
         link = null
+        started = false
     }
 }
