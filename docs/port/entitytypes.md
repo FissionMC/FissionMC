@@ -1,0 +1,154 @@
+# Entity subtypes port (wave 2, area 5)
+
+Conventions: subclass overrides of Paper's cause/source overloads (`remove(reason, cause)`, `push(x, y, z, entity)`, ...) are
+added as real overrides calling `super.<overload>`; the vanilla override in the same class is cancelled at HEAD and delegates
+to the overload (so `Entity.remove(reason, cause)` must keep calling `setRemoved`, never the vanilla `remove(reason)`).
+
+- [ ] sources/net/minecraft/world/entity/ambient/Bat.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/AgeableWaterCreature.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/allay/Allay.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/Animal.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/armadillo/Armadillo.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/axolotl/Axolotl.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/bee/Bee.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/camel/Camel.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/cow/AbstractCow.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/cow/MushroomCow.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/dolphin/Dolphin.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/equine/AbstractChestedHorse.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/equine/AbstractHorse.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/equine/Llama.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/equine/SkeletonHorse.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/equine/SkeletonTrapGoal.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/equine/TraderLlama.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/feline/Cat.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/feline/Ocelot.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/fish/AbstractSchoolingFish.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/fish/Pufferfish.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/fish/WaterAnimal.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/fox/Fox.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/frog/Frog.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/frog/ShootTongue.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/frog/Tadpole.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/goat/Goat.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/golem/CopperGolem.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/golem/IronGolem.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/golem/SnowGolem.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/happyghast/HappyGhast.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/nautilus/AbstractNautilus.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/nautilus/Nautilus.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/panda/Panda.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/parrot/Parrot.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/parrot/ShoulderRidingEntity.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/pig/Pig.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/rabbit/Rabbit.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/sheep/Sheep.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/sniffer/Sniffer.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/turtle/Turtle.java.patch
+- [ ] sources/net/minecraft/world/entity/animal/wolf/Wolf.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/EndCrystal.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/EnderDragon.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonDeathPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonHoldingPatternPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonLandingApproachPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonLandingPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonSittingFlamingPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonStrafePlayerPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonTakeoffPhase.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/EnderDragonPhaseManager.java.patch
+- [ ] sources/net/minecraft/world/entity/boss/wither/WitherBoss.java.patch
+- [ ] sources/net/minecraft/world/entity/decoration/ArmorStand.java.patch
+- [ ] sources/net/minecraft/world/entity/decoration/BlockAttachedEntity.java.patch
+- [ ] sources/net/minecraft/world/entity/decoration/Cushion.java.patch
+- [ ] sources/net/minecraft/world/entity/decoration/ItemFrame.java.patch
+- [ ] sources/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java.patch
+- [ ] sources/net/minecraft/world/entity/decoration/painting/Painting.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/breeze/Breeze.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/creaking/Creaking.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Creeper.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/cubemob/AbstractCubeMob.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/cubemob/Slime.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/cubemob/SulfurCube.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/ElderGuardian.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Enderman.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Endermite.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Ghast.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Guardian.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/hoglin/HoglinBase.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/hoglin/Hoglin.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/illager/Evoker.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/illager/Illusioner.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/illager/Pillager.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/illager/SpellcasterIllager.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/illager/Vindicator.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Monster.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Phantom.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/piglin/AbstractPiglin.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/piglin/PiglinAi.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/piglin/Piglin.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Ravager.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Shulker.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Silverfish.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/skeleton/AbstractSkeleton.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/skeleton/Bogged.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/skeleton/Skeleton.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/skeleton/WitherSkeleton.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/spider/CaveSpider.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/spider/Spider.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Strider.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Vex.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/warden/AngerManagement.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/warden/Warden.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/Witch.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/zombie/Drowned.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/zombie/Husk.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/zombie/Zombie.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/zombie/ZombieVillager.java.patch
+- [ ] sources/net/minecraft/world/entity/monster/zombie/ZombifiedPiglin.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/CatSpawner.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/ClientSideMerchant.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/InventoryCarrier.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/villager/AbstractVillager.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/villager/Villager.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/wanderingtrader/WanderingTrader.java.patch
+- [ ] sources/net/minecraft/world/entity/npc/wanderingtrader/WanderingTraderSpawner.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java.patch (all hunks (owner-first constructor via ThreadLocal; tryPickup(player, item) via field read by vanilla tryPickup))
+- [x] sources/net/minecraft/world/entity/projectile/arrow/Arrow.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/arrow/SpectralArrow.java.patch (all hunks)
+- [ ] sources/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/EvokerFangs.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/EyeOfEnder.java.patch (all hunks)
+- [ ] sources/net/minecraft/world/entity/projectile/FireworkRocketEntity.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/FishingHook.java.patch (all hunks (catchingFish and retrieve replaced bodies; retrieve(rod) delegates with MAIN_HAND))
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/AbstractHurtingProjectile.java.patch (all hunks (bukkitYield/isIncendiary consumed by subclasses))
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/DragonFireball.java.patch
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/LargeFireball.java.patch
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java.patch
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/AbstractWindCharge.java.patch
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/BreezeWindCharge.java.patch
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/WindCharge.java.patch
+- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/WitherSkull.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/LlamaSpit.java.patch (all hunks)
+- [~] sources/net/minecraft/world/entity/projectile/Projectile.java.patch (done: hitCancelled/onHitBlock, preHitTargetOrDeflectSelf, pearl owner reset, relative velocity + finite check, vanished-entity hit cancel, lerpRotation; left: Projectile.Delayed / spawnProjectile*Delayed (nested record, needs compat class; callers are in the items area))
+- [x] sources/net/minecraft/world/entity/projectile/ShulkerBullet.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/AbstractThrownPotion.java.patch (all hunks (onHit/splash replaced; boolean onHitAsPotion as fission$onHitAsPotion overridden by subclass mixins))
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/Snowball.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEgg.java.patch (all hunks (onHit replaced body))
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownEnderpearl.java.patch (all hunks (onHit replaced body))
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownExperienceBottle.java.patch (all hunks (onHit replaced body))
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownLingeringPotion.java.patch (all hunks (as fission$onHitAsPotion))
+- [x] sources/net/minecraft/world/entity/projectile/throwableitemprojectile/ThrownSplashPotion.java.patch (all hunks (as fission$onHitAsPotion))
+- [x] sources/net/minecraft/world/entity/projectile/ThrowableProjectile.java.patch (all hunks)
+- [ ] sources/net/minecraft/world/entity/raid/Raider.java.patch
+- [ ] sources/net/minecraft/world/entity/raid/Raid.java.patch
+- [ ] sources/net/minecraft/world/entity/raid/Raids.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/ContainerEntity.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/minecart/MinecartCommandBlock.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/minecart/MinecartTNT.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java.patch
+- [ ] sources/net/minecraft/world/entity/vehicle/VehicleEntity.java.patch
