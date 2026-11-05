@@ -50,8 +50,18 @@ public abstract class ServerPlayerGameModeMixin {
     private ItemStack interactItemStack;
     private org.bukkit.event.player.PlayerInteractEvent fission$leftClickEvent;
 
-    // TODO(behaviour): Paper makes changeGameModeForPlayer(GameType) delegate here with Cause.UNKNOWN; this overload fires the
-    // event and then reuses the (event-free) vanilla body. Once the 1-arg method fires the event itself, inline the body here instead.
+    private boolean fission$eventFired;
+
+    // Paper: the vanilla 1-arg method delegates to the event overload (Cause.UNKNOWN); this overload reuses the vanilla body.
+    @Inject(method = "changeGameModeForPlayer(Lnet/minecraft/world/level/GameType;)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$changeGameModeUnknown(final GameType gameModeForPlayer, final CallbackInfoReturnable<Boolean> cir) {
+        if (this.fission$eventFired) {
+            return;
+        }
+        org.bukkit.event.player.PlayerGameModeChangeEvent event = this.changeGameModeForPlayer(gameModeForPlayer, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.UNKNOWN, null);
+        cir.setReturnValue(event != null && !event.isCancelled());
+    }
+
     public org.bukkit.event.player.@Nullable PlayerGameModeChangeEvent changeGameModeForPlayer(final GameType gameModeForPlayer, final org.bukkit.event.player.PlayerGameModeChangeEvent.Cause playerGameModeChangeCause, final net.kyori.adventure.text.@Nullable Component cancelMessage) {
         // Paper end - Expand PlayerGameModeChangeEvent
         if (gameModeForPlayer == this.gameModeForPlayer) {
@@ -68,7 +78,12 @@ public abstract class ServerPlayerGameModeMixin {
             return event; // Paper - Expand PlayerGameModeChangeEvent
         }
         // CraftBukkit end
-        this.changeGameModeForPlayer(gameModeForPlayer);
+        this.fission$eventFired = true;
+        try {
+            this.changeGameModeForPlayer(gameModeForPlayer); // vanilla body (event already fired)
+        } finally {
+            this.fission$eventFired = false;
+        }
         return event; // Paper - Expand PlayerGameModeChangeEvent
     }
 

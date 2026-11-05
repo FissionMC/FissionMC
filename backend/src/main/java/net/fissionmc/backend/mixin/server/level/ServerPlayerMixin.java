@@ -39,6 +39,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -81,7 +82,7 @@ public abstract class ServerPlayerMixin extends Player {
     // Surface: public fields (see surface/members/player.txt). Mixin requires private fields; the loader widens them.
     // TODO(behaviour): Paper changes `language` to default to null
     private java.util.Locale adventure$locale = java.util.Locale.US; // Paper
-    private int containerUpdateDelay; // Paper - Configurable container update tick rate // TODO(behaviour): used in tick()
+    private int containerUpdateDelay; // Paper - Configurable container update tick rate
     private long loginTime; // Paper - Replace OfflinePlayer#getLastPlayed
     private int patrolSpawnDelay; // Paper - Pillager patrol spawn settings and per player options
     // Paper start - cancellable death event
@@ -92,15 +93,15 @@ public abstract class ServerPlayerMixin extends Player {
     private @Nullable String lastKnownName; // Better rename detection
     private String displayName;
     private net.kyori.adventure.text.Component adventure$displayName; // Paper
-    private @Nullable Component listName; // TODO(behaviour): getTabListDisplayName() returns listName
-    private int listOrder = 0; // TODO(behaviour): getTabListOrder() returns listOrder
+    private @Nullable Component listName;
+    private int listOrder = 0;
     private org.bukkit.Location compassTarget;
     private int newExp = 0;
     private int newLevel = 0;
     private int newTotalExp = 0;
     private boolean keepLevel = false;
     private double maxHealthCache;
-    private boolean joining = true; // TODO(behaviour): reset in tick()
+    private boolean joining = true;
     private boolean sentListPacket = false;
     private boolean suppressTrackerForLogin = false; // Paper - Fire PlayerJoinEvent when Player is actually ready
     // CraftBukkit end
@@ -110,7 +111,6 @@ public abstract class ServerPlayerMixin extends Player {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void fission$init(final MinecraftServer server, final ServerLevel level, final GameProfile gameProfile, final ClientInformation clientInformation, final CallbackInfo ci) {
-        // TODO(behaviour): Paper calls updateOptionsNoEvents instead of updateOptions here (don't call options events on login)
         // CraftBukkit start
         this.displayName = this.getScoreboardName();
         this.adventure$displayName = net.kyori.adventure.text.Component.text(this.getScoreboardName()); // Paper
@@ -137,7 +137,7 @@ public abstract class ServerPlayerMixin extends Player {
     }
     // Paper end - release entity api
 
-    // TODO(behaviour): Paper makes removeEntitiesOnShoulder/respawnEntityOnShoulder use this (void -> boolean)
+    // TODO(behaviour): Paper makes removeEntitiesOnShoulder only clear the shoulder tag when this returns non-null (void -> boolean)
     private @Nullable Entity respawnEntityOnShoulder0(final CompoundTag tag) { // CraftBukkit void->boolean
         ServerLevel serverLevel = this.fission$self().level();
         if (!tag.isEmpty()) {
@@ -153,8 +153,7 @@ public abstract class ServerPlayerMixin extends Player {
                         }
 
                         entity.setPos(this.getX(), this.getY() + 0.7F, this.getZ());
-                        // TODO(behaviour): Paper passes CreatureSpawnEvent.SpawnReason.SHOULDER_ENTITY to addWithUUID
-                        return serverLevel.addWithUUID(entity) ? entity : null; // Paper - spawn reason
+                        return serverLevel.addWithUUID(entity, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.SHOULDER_ENTITY) ? entity : null; // Paper - spawn reason
                     }).orElse(null); // Paper - release entity api - return entity
             }
         }
@@ -175,7 +174,6 @@ public abstract class ServerPlayerMixin extends Player {
     // Paper end - Post effects API
 
     // Paper start - Inventory close reason
-    // TODO(behaviour): vanilla closeContainer() should delegate here with Reason.UNKNOWN
     public void closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason reason) {
         org.bukkit.craftbukkit.event.CraftEventFactory.handleInventoryCloseEvent(this, reason); // CraftBukkit
         // Paper end - Inventory close reason
@@ -195,13 +193,13 @@ public abstract class ServerPlayerMixin extends Player {
     }
     // Paper end - special close for unloaded inventory
 
-    // TODO(behaviour): vanilla teleportTo(double, double, double) should delegate here with TeleportCause.UNKNOWN; dismountTo uses DISMOUNT
+    // vanilla teleportTo(double, double, double) goes through connection.teleport(PMR, Set) which delegates with TeleportCause.UNKNOWN
+    // TODO(behaviour): dismountTo should use TeleportCause.DISMOUNT
     public void teleportTo(final double x, final double y, final double z, final org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) {
         this.connection.teleport(new PositionMoveRotation(new Vec3(x, y, z), Vec3.ZERO, 0.0F, 0.0F), Relative.union(Relative.DELTA, Relative.ROTATION), cause);
         // Paper end - pass cause
     }
 
-    // TODO(behaviour): vanilla setGameMode(GameType) should delegate here with Cause.UNKNOWN
     public org.bukkit.event.player.@Nullable PlayerGameModeChangeEvent setGameMode(final GameType mode, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause cause, net.kyori.adventure.text.@Nullable Component message) {
         boolean wasSpectator = this.isSpectator();
         org.bukkit.event.player.PlayerGameModeChangeEvent event = this.gameMode.changeGameModeForPlayer(mode, cause, message);
@@ -236,16 +234,20 @@ public abstract class ServerPlayerMixin extends Player {
     // TODO(behaviour): vanilla sendChatMessage(3) should delegate here with unsigned = null
 
     // Paper start - don't call options events on login
-    // TODO(behaviour): Paper's updateOptions fires PlayerClientOptionsChangeEvent/PlayerChangedMainHandEvent/PlayerLocaleChangeEvent,
-    // then calls this. Here the (event-free) vanilla body is reused; once updateOptions fires events this must not route through it.
+    private boolean fission$noOptionEvents;
+
     public void updateOptionsNoEvents(final ClientInformation information) {
         // Paper end
-        this.fission$self().updateOptions(information);
+        this.fission$noOptionEvents = true;
+        try {
+            this.fission$self().updateOptions(information); // vanilla body; the event hook below is skipped
+        } finally {
+            this.fission$noOptionEvents = false;
+        }
         this.adventure$locale = java.util.Objects.requireNonNullElse(net.kyori.adventure.translation.Translator.parseLocale(this.fission$self().language), java.util.Locale.US); // Paper
     }
 
     // Paper start - Add PlayerSetSpawnEvent
-    // TODO(behaviour): vanilla setRespawnPosition(2) should delegate here with Cause.UNKNOWN
     public boolean setRespawnPosition(ServerPlayer.@Nullable RespawnConfig respawnConfig, final boolean showMessage, com.destroystokyo.paper.event.player.PlayerSetSpawnEvent.Cause cause) {
         org.bukkit.Location spawnLoc = null;
         boolean actuallyDisplayInChat = false;
@@ -635,4 +637,113 @@ public abstract class ServerPlayerMixin extends Player {
         this.skipDropExperience = false; // CraftBukkit - SPIGOT-7462: Reset experience drop skip, so that further deaths drop xp
     }
     // CraftBukkit end
+
+    // ---- wave 2 hooks (ServerPlayer.java.patch) ----
+    // Paper - don't call options events on login
+    @WrapOperation(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;updateOptions(Lnet/minecraft/server/level/ClientInformation;)V"))
+    private void paper$noOptionEventsOnLogin(final ServerPlayer self, final ClientInformation information, final Operation<Void> original) {
+        this.updateOptionsNoEvents(information);
+    }
+
+    // Paper - settings event / CraftBukkit main hand + locale events
+    @Inject(method = "updateOptions", at = @At("HEAD"))
+    private void paper$updateOptionsEvents(final ClientInformation information, final CallbackInfo ci) {
+        if (this.fission$noOptionEvents) {
+            return;
+        }
+        // Paper start - settings event
+        new com.destroystokyo.paper.event.player.PlayerClientOptionsChangeEvent(this.getBukkitEntity(), net.minecraft.util.Util.make(new java.util.IdentityHashMap<>(), map -> {
+            map.put(com.destroystokyo.paper.ClientOption.LOCALE, information.language());
+            map.put(com.destroystokyo.paper.ClientOption.VIEW_DISTANCE, information.viewDistance());
+            map.put(com.destroystokyo.paper.ClientOption.CHAT_VISIBILITY, com.destroystokyo.paper.ClientOption.ChatVisibility.valueOf(information.chatVisibility().name()));
+            map.put(com.destroystokyo.paper.ClientOption.CHAT_COLORS_ENABLED, information.chatColors());
+            map.put(com.destroystokyo.paper.ClientOption.SKIN_PARTS, new com.destroystokyo.paper.PaperSkinParts(information.modelCustomisation()));
+            map.put(com.destroystokyo.paper.ClientOption.MAIN_HAND, information.mainHand() == net.minecraft.world.entity.HumanoidArm.LEFT ? org.bukkit.inventory.MainHand.LEFT : org.bukkit.inventory.MainHand.RIGHT);
+            map.put(com.destroystokyo.paper.ClientOption.TEXT_FILTERING_ENABLED, information.textFilteringEnabled());
+            map.put(com.destroystokyo.paper.ClientOption.ALLOW_SERVER_LISTINGS, information.allowsListing());
+            map.put(com.destroystokyo.paper.ClientOption.PARTICLE_VISIBILITY, com.destroystokyo.paper.ClientOption.ParticleVisibility.valueOf(information.particleStatus().name()));
+        })).callEvent();
+        // Paper end - settings event
+        // CraftBukkit start
+        if (this.fission$self().getMainArm() != information.mainHand()) {
+            org.bukkit.event.player.PlayerChangedMainHandEvent event = new org.bukkit.event.player.PlayerChangedMainHandEvent(
+                this.getBukkitEntity(),
+                information.mainHand() == net.minecraft.world.entity.HumanoidArm.LEFT ? org.bukkit.inventory.MainHand.LEFT : org.bukkit.inventory.MainHand.RIGHT
+            );
+            event.callEvent();
+        }
+        if (this.fission$self().language == null || !this.fission$self().language.equals(information.language())) { // Paper
+            org.bukkit.event.player.PlayerLocaleChangeEvent event = new org.bukkit.event.player.PlayerLocaleChangeEvent(
+                this.getBukkitEntity(),
+                information.language()
+            );
+            event.callEvent();
+        }
+        // CraftBukkit end
+    }
+
+    // CraftBukkit - joining flag
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void paper$tickJoining(final CallbackInfo ci) {
+        if (this.joining) {
+            this.joining = false;
+        }
+    }
+
+    // Paper - Configurable container update tick rate
+    @WrapWithCondition(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;broadcastChanges()V"))
+    private boolean paper$containerUpdateRate(final net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        if (--this.containerUpdateDelay <= 0) {
+            this.containerUpdateDelay = this.fission$self().level().paperConfig().tickRates.containerUpdate;
+            return true;
+        }
+        return false;
+    }
+
+    // Paper - Prevent opening inventories when frozen
+    @ModifyExpressionValue(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;stillValid(Lnet/minecraft/world/entity/player/Player;)Z"))
+    private boolean paper$containerImmobile(final boolean stillValid) {
+        return stillValid && !this.isImmobile();
+    }
+
+    // Paper - Inventory close reason
+    @WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;closeContainer()V"))
+    private void paper$closeCantUse(final ServerPlayer self, final Operation<Void> original) {
+        this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.CANT_USE);
+    }
+
+    @Inject(method = "closeContainer()V", at = @At("HEAD"), cancellable = true)
+    private void paper$closeContainerUnknown(final CallbackInfo ci) {
+        ci.cancel();
+        this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.UNKNOWN);
+    }
+
+    @Inject(method = "setGameMode(Lnet/minecraft/world/level/GameType;)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$setGameModeUnknown(final GameType mode, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        org.bukkit.event.player.PlayerGameModeChangeEvent event = this.setGameMode(mode, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.UNKNOWN, null); // Paper - Expand PlayerGameModeChangeEvent
+        cir.setReturnValue(event != null && !event.isCancelled());
+    }
+
+    @Inject(method = "setRespawnPosition(Lnet/minecraft/server/level/ServerPlayer$RespawnConfig;Z)V", at = @At("HEAD"), cancellable = true)
+    private void paper$setRespawnPositionUnknown(final ServerPlayer.RespawnConfig respawnConfig, final boolean showMessage, final CallbackInfo ci) {
+        ci.cancel();
+        this.setRespawnPosition(respawnConfig, showMessage, com.destroystokyo.paper.event.player.PlayerSetSpawnEvent.Cause.UNKNOWN);
+    }
+
+    @Inject(method = "getTabListDisplayName", at = @At("HEAD"), cancellable = true)
+    private void craftbukkit$tabListName(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Component> cir) {
+        cir.setReturnValue(this.listName); // CraftBukkit
+    }
+
+    @Inject(method = "getTabListOrder", at = @At("HEAD"), cancellable = true)
+    private void craftbukkit$tabListOrder(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Integer> cir) {
+        cir.setReturnValue(this.listOrder); // CraftBukkit
+    }
+
+    // Paper - spawn reason for shoulder entities respawned by removeEntitiesOnShoulder
+    @Inject(method = "respawnEntityOnShoulder", at = @At("HEAD"), cancellable = true)
+    private void paper$shoulderReason(final CompoundTag tag, final CallbackInfo ci) {
+        ci.cancel();
+        this.respawnEntityOnShoulder0(tag);
+    }
 }

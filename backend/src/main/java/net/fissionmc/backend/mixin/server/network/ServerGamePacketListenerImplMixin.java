@@ -1059,6 +1059,150 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
         // Paper end - Add API for client-side signs
     }
 
+    // ---- tab complete (Paper - AsyncTabCompleteEvent) ----
+    private static final java.util.concurrent.ExecutorService TAB_COMPLETE_EXECUTOR = java.util.concurrent.Executors.newFixedThreadPool(4,
+        new com.google.common.util.concurrent.ThreadFactoryBuilder().setDaemon(true).setNameFormat("Async Tab Complete Thread - #%d").setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(MinecraftServer.LOGGER)).build());
+    @Shadow @Final private net.minecraft.server.network.ServerCommandSuggestionsProvider commandSuggestionsProvider;
+
+    @Inject(method = "handleCustomCommandSuggestions", at = @At("HEAD"), cancellable = true)
+    private void paper$asyncTabComplete(final net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket packet, final CallbackInfo ci) {
+        ci.cancel();
+        // Paper start - throttle tab completions (TODO(perf): tabSpamThrottler not ported, only the length check)
+        if (org.spigotmc.SpigotConfig.tabComplete < 0) {
+            return;
+        }
+        final int index;
+        if (packet.command().length() > 64 && ((index = packet.command().indexOf(' ')) == -1 || index >= 64)) {
+            this.disconnectAsync(Component.translatable("disconnect.spam"), org.bukkit.event.player.PlayerKickEvent.Cause.SPAM);
+            return;
+        }
+        // Paper end - throttle tab completions
+        // Paper start - AsyncTabCompleteEvent
+        TAB_COMPLETE_EXECUTOR.execute(() -> callAndHandleAsyncTabCompleteEvent(packet));
+    }
+
+    public void callAndHandleAsyncTabCompleteEvent(final net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket packet) {
+        final com.destroystokyo.paper.event.server.AsyncTabCompleteEvent event = new com.destroystokyo.paper.event.server.AsyncTabCompleteEvent(
+            this.getCraftPlayer(), packet.command(), true, null
+        );
+        event.callEvent();
+        final List<com.destroystokyo.paper.event.server.AsyncTabCompleteEvent.Completion> completions = event.isCancelled()
+            ? com.google.common.collect.ImmutableList.of()
+            : event.completions();
+        // If the event isn't handled, we can assume that we have no completions, and so we'll ask the server
+        if (!event.isHandled()) {
+            if (event.isCancelled()) {
+                return;
+            }
+
+            this.sendServerSuggestions(packet); // This method will schedule work onto the main thread.
+        } else if (!completions.isEmpty()) {
+            // Handle non-recoverable exceptions
+            com.mojang.brigadier.StringReader reader = new com.mojang.brigadier.StringReader(packet.command());
+            if (reader.canRead() && reader.peek() == '/') {
+                reader.skip();
+            }
+
+            com.mojang.brigadier.CommandDispatcher<net.minecraft.commands.CommandSourceStack> dispatcher = this.server.getCommands().getDispatcher();
+            com.mojang.brigadier.ParseResults<net.minecraft.commands.CommandSourceStack> parse = dispatcher.parse(reader, this.player.createCommandSourceStack());
+            if (!parse.getExceptions().isEmpty()
+                && parse.getExceptions().values().stream().anyMatch(e -> e instanceof io.papermc.paper.brigadier.TagParseCommandSyntaxException)) {
+                this.player.connection.disconnect(Component.translatable("disconnect.spam"), org.bukkit.event.player.PlayerKickEvent.Cause.SPAM);
+                return;
+            }
+
+            final com.mojang.brigadier.suggestion.SuggestionsBuilder builder0 = new com.mojang.brigadier.suggestion.SuggestionsBuilder(packet.command(), packet.command().length());
+            final com.mojang.brigadier.suggestion.SuggestionsBuilder builder = builder0.createOffset(builder0.getInput().lastIndexOf(' ') + 1);
+            for (final com.destroystokyo.paper.event.server.AsyncTabCompleteEvent.Completion completion : completions) {
+                final Integer intSuggestion = com.google.common.primitives.Ints.tryParse(completion.suggestion());
+                if (intSuggestion != null) {
+                    builder.suggest(intSuggestion, io.papermc.paper.adventure.PaperAdventure.asVanilla(completion.tooltip()));
+                } else {
+                    builder.suggest(completion.suggestion(), io.papermc.paper.adventure.PaperAdventure.asVanilla(completion.tooltip()));
+                }
+            }
+            com.mojang.brigadier.suggestion.Suggestions suggestions = builder.buildFuture().join();
+            com.destroystokyo.paper.event.brigadier.AsyncPlayerSendSuggestionsEvent suggestEvent = new com.destroystokyo.paper.event.brigadier.AsyncPlayerSendSuggestionsEvent(this.getCraftPlayer(), suggestions, packet.command());
+            if (suggestEvent.callEvent() && !suggestEvent.getSuggestions().isEmpty()) { // prevents [<args>] from showing for plugins with nothing more to offer
+                this.connection.send(new net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket(
+                    packet.id(), net.minecraft.server.network.ServerCommandSuggestionsProvider.limitSuggestionCount(suggestEvent.getSuggestions())
+                ));
+            }
+        }
+    }
+
+    public void sendServerSuggestions(final net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket packet) {
+        // Paper end - Async TabComplete Event
+        int clientId = packet.id();
+        this.commandSuggestionsProvider
+            .request(packet.command())
+            .thenAccept(suggestions -> {
+                // Paper start
+                com.destroystokyo.paper.event.brigadier.AsyncPlayerSendSuggestionsEvent suggestEvent = new com.destroystokyo.paper.event.brigadier.AsyncPlayerSendSuggestionsEvent(this.getCraftPlayer(), suggestions, packet.command());
+                if (suggestEvent.callEvent() && !suggestEvent.getSuggestions().isEmpty()) { // prevents [<args>] from showing for plugins with nothing more to offer
+                    this.send(new net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket(clientId, net.minecraft.server.network.ServerCommandSuggestionsProvider.limitSuggestionCount(suggestEvent.getSuggestions())));
+                }
+                // Paper end
+            });
+    }
+
+    // ---- permission checks (Paper) ----
+    @ModifyExpressionValue(method = {"handleSetCommandMinecart"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;canUseGameMasterBlocks()Z"))
+    private boolean paper$minecartCommandPermission(final boolean canUse) {
+        return canUse || (this.player.isCreative() && this.player.getBukkitEntity().hasPermission("minecraft.commandblock")); // Paper - command block permission
+    }
+
+    @ModifyExpressionValue(method = {"handleSetCommandBlock"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;canUseGameMasterBlocks()Z"))
+    private boolean paper$commandBlockPermission(final boolean canUse) {
+        return canUse || (this.player.isCreative() && this.player.getBukkitEntity().hasPermission("minecraft.commandblock")); // Paper - command block permission
+    }
+
+    @ModifyExpressionValue(method = {"handleSetGameRule", "sendGameRuleValues"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/server/permissions/PermissionSet;hasPermission(Lnet/minecraft/server/permissions/Permission;)Z"))
+    private boolean paper$gameRulePermission(final boolean has) {
+        return has || this.player.getBukkitEntity().hasPermission("minecraft.command.gamerule"); // Paper - add permission check
+    }
+
+    // ---- recipe book click (Paper - Add PlayerRecipeBookClickEvent) ----
+    @WrapOperation(method = "handlePlaceRecipe", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/RecipeBookMenu;handlePlacement(ZZLnet/minecraft/world/item/crafting/RecipeHolder;Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/player/Inventory;)Lnet/minecraft/world/inventory/RecipeBookMenu$PostPlaceAction;"))
+    private net.minecraft.world.inventory.RecipeBookMenu.PostPlaceAction paper$recipeBookClick(final net.minecraft.world.inventory.RecipeBookMenu menu, boolean makeAll, final boolean creative, net.minecraft.world.item.crafting.RecipeHolder<?> recipe,
+                                                                                                final net.minecraft.server.level.ServerLevel level, final net.minecraft.world.entity.player.Inventory inventory,
+                                                                                                final Operation<net.minecraft.world.inventory.RecipeBookMenu.PostPlaceAction> original) {
+        // Paper start - Add PlayerRecipeBookClickEvent
+        org.bukkit.NamespacedKey recipeName = org.bukkit.craftbukkit.util.CraftNamespacedKey.fromMinecraft(recipe.id().identifier());
+        com.destroystokyo.paper.event.player.PlayerRecipeBookClickEvent paperEvent = new com.destroystokyo.paper.event.player.PlayerRecipeBookClickEvent(
+            this.player.getBukkitEntity(), recipeName, makeAll
+        );
+        if (!paperEvent.callEvent()) {
+            return net.minecraft.world.inventory.RecipeBookMenu.PostPlaceAction.NOTHING;
+        }
+        recipeName = paperEvent.getRecipe();
+        makeAll = paperEvent.isMakeAll();
+        if (org.bukkit.event.player.PlayerRecipeBookClickEvent.getHandlerList().getRegisteredListeners().length > 0) {
+            // Paper end - Add PlayerRecipeBookClickEvent
+            // CraftBukkit start - implement PlayerRecipeBookClickEvent
+            org.bukkit.inventory.Recipe bukkitRecipe = this.cserver.getRecipe(recipeName); // Paper - Add PlayerRecipeBookClickEvent - forward to legacy event
+            if (bukkitRecipe == null) {
+                return net.minecraft.world.inventory.RecipeBookMenu.PostPlaceAction.NOTHING;
+            }
+            // Paper start - Add PlayerRecipeBookClickEvent - forward to legacy event
+            org.bukkit.event.player.PlayerRecipeBookClickEvent event = CraftEventFactory.callRecipeBookClickEvent(this.player, bukkitRecipe, makeAll);
+            recipeName = ((org.bukkit.Keyed) event.getRecipe()).getKey();
+            makeAll = event.isShiftClick();
+        }
+        if (!(this.player.containerMenu instanceof net.minecraft.world.inventory.RecipeBookMenu)) {
+            return net.minecraft.world.inventory.RecipeBookMenu.PostPlaceAction.NOTHING;
+        }
+        // Paper end - Add PlayerRecipeBookClickEvent - forward to legacy event
+
+        // Cast to keyed should be safe as the recipe will never be a MerchantRecipe.
+        recipe = this.server.getRecipeManager().byKey(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.RECIPE, org.bukkit.craftbukkit.util.CraftNamespacedKey.toMinecraft(recipeName))).orElse(null); // Paper - Add PlayerRecipeBookClickEvent - forward to legacy event
+        if (recipe == null) {
+            return net.minecraft.world.inventory.RecipeBookMenu.PostPlaceAction.NOTHING;
+        }
+        return original.call(menu, makeAll, creative, recipe, level, inventory);
+        // CraftBukkit end
+    }
+
     // ---- handlePlayerAction ----
     @Inject(method = "handlePlayerAction", at = @At(value = "INVOKE", target = ENSURE, shift = At.Shift.AFTER), cancellable = true)
     private void paper$actionImmobile(final net.minecraft.network.protocol.game.ServerboundPlayerActionPacket packet, final CallbackInfo ci) {
