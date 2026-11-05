@@ -5,6 +5,7 @@ import com.mojang.brigadier.tree.ArgumentCommandNode;
 import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,8 +17,6 @@ public abstract class CommandNodeMixin<S> {
     @Shadow @Final private Map<String, CommandNode<S>> children;
     @Shadow @Final private Map<String, LiteralCommandNode<S>> literals;
     @Shadow @Final private Map<String, ArgumentCommandNode<S, ?>> arguments;
-
-    @Shadow public abstract Collection<? extends CommandNode<S>> getRelevantNodes(StringReader input);
 
     // `requirement` is widened to public non-final by surface/misc.at (Paper: "public-f").
     // Fields below: surface declares them public; the loader widens after Mixin.
@@ -35,14 +34,51 @@ public abstract class CommandNodeMixin<S> {
     // CraftBukkit end
 
     // Paper start - prioritize mc commands in function parsing
+    // Paper moves the vanilla getRelevantNodes(StringReader) body here; the vanilla overload is unchanged, which is
+    // equivalent to Paper's delegation with a null source (the source checks below never match null).
     @org.jetbrains.annotations.ApiStatus.Internal
     public Collection<? extends CommandNode<S>> getRelevantNodes(final StringReader input, final Object source) {
-        // TODO(behaviour): Paper moves the vanilla getRelevantNodes(StringReader) body here and adds the
-        // "minecraft:" literal preference for CommandSource.NULL / command-block sources; the vanilla
-        // overload then delegates here, and CommandDispatcher#parseNodes calls this overload with the source.
-        return this.getRelevantNodes(input);
+        if (literals.size() > 0) {
+            final int cursor = input.getCursor();
+            while (input.canRead() && input.peek() != ' ') {
+                input.skip();
+            }
+            final String text = input.getString().substring(cursor, input.getCursor());
+            input.setCursor(cursor);
+            LiteralCommandNode<S> literal = null;
+            if (source instanceof net.minecraft.commands.CommandSourceStack css && css.source == net.minecraft.commands.CommandSource.NULL) {
+                if (!text.contains(":")) {
+                    literal = this.literals.get("minecraft:" + text);
+                }
+            } else if (source instanceof net.minecraft.commands.CommandSourceStack css && fission$isCommandBlockSource(css.source)) { // Paper: css.source instanceof BaseCommandBlock.CloseableCommandBlockSource
+                if (css.getServer().server.getCommandBlockOverride(text) && !text.contains(":")) {
+                    literal = this.literals.get("minecraft:" + text);
+                }
+            }
+            if (literal == null) {
+                literal = this.literals.get(text);
+            }
+            if (literal != null) {
+                return Collections.singleton(literal);
+            } else {
+                return arguments.values();
+            }
+        } else {
+            return arguments.values();
+        }
     }
     // Paper end - prioritize mc commands in function parsing
+
+    // FissionMC: compares the class name instead of `instanceof` so the check does not class-load
+    // BaseCommandBlock$CloseableCommandBlockSource; its wave-1 mixin (BaseCommandBlock_CloseableCommandBlockSourceMixin,
+    // server area) currently fails to apply (CHECKCAST to another mixin class). Switch back to instanceof once fixed.
+    @org.spongepowered.asm.mixin.Unique
+    private static boolean fission$isCommandBlockSource(final Object source) {
+        for (Class<?> c = source == null ? null : source.getClass(); c != null; c = c.getSuperclass()) {
+            if (c.getName().equals("net.minecraft.world.level.BaseCommandBlock$CloseableCommandBlockSource")) return true;
+        }
+        return false;
+    }
 
     // Paper start - Brigadier Command API
     public void clearAll() {

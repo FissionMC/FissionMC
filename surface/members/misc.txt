@@ -59,3 +59,10 @@ net.minecraft.commands.Commands: public static final java.util.concurrent.Execut
 # ---- integration (craft compile) ----
 # Paper: sources/net/minecraft/core/HolderSet.java.patch
 net.minecraft.core.HolderSet$Named: public boolean contains(io.papermc.paper.registry.TypedKey<?> key)
+
+# ---- wave 2 ----
+# Paper: sources/net/minecraft/tags/TagLoader.java.patch (tag lifecycle cause overloads; implemented in TagLoaderMixin)
+net.minecraft.tags.TagLoader: public java.util.Map<net.minecraft.resources.Identifier, java.util.List<T>> build(java.util.Map<net.minecraft.resources.Identifier, java.util.List<net.minecraft.tags.TagLoader$EntryWithSource>> builders, io.papermc.paper.tag.TagEventConfig<T, ?> eventConfig)
+net.minecraft.tags.TagLoader: public static java.util.List<net.minecraft.core.Registry$PendingTags<?>> loadTagsForExistingRegistries(net.minecraft.server.packs.resources.ResourceManager manager, net.minecraft.core.RegistryAccess layer, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent$Cause cause)
+net.minecraft.tags.TagLoader: public static <T> void loadTagsForRegistry(net.minecraft.server.packs.resources.ResourceManager manager, net.minecraft.core.WritableRegistry<T> registry, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent$Cause cause)
+net.minecraft.tags.TagLoader: public static <T> java.util.Map<net.minecraft.tags.TagKey<T>, java.util.List<net.minecraft.core.Holder<T>>> loadTagsForRegistry(net.minecraft.server.packs.resources.ResourceManager manager, net.minecraft.resources.ResourceKey<? extends net.minecraft.core.Registry<T>> registryKey, net.minecraft.tags.TagLoader$ElementLookup<net.minecraft.core.Holder<T>> lookup, net.minecraft.core.WritableRegistry<T> registry, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent$Cause cause)
