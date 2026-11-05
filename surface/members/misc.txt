@@ -83,3 +83,9 @@ net.minecraft.util.thread.BlockableEventLoop: public boolean runTaskIf(java.util
 # Paper: sources/net/minecraft/util/TickThrottler.java.patch (used by ServerGamePacketListenerImpl.java.patch, player area)
 net.minecraft.util.TickThrottler: public boolean isIncrementAndUnderThreshold()
 net.minecraft.util.TickThrottler: public boolean isIncrementAndUnderThreshold(int incrementStep, int threshold)
+
+# Paper: sources/net/minecraft/util/SpawnUtil.java.patch (CraftBukkit spawn reason / Paper PreCreatureSpawnEvent onAbort)
+net.minecraft.util.SpawnUtil: public static <T extends net.minecraft.world.entity.Mob> java.util.Optional<T> trySpawnMob(net.minecraft.world.entity.EntityType<T> entityType, net.minecraft.world.entity.EntitySpawnReason spawnReason, net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos start, int spawnAttempts, int spawnRangeXZ, int spawnRangeY, net.minecraft.util.SpawnUtil$Strategy strategy, boolean checkCollisions, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason reason, java.lang.Runnable onAbort)
+
+# Paper: sources/net/minecraft/util/StringUtil.java.patch
+net.minecraft.util.StringUtil: public static boolean isReasonablePlayerName(java.lang.String name)

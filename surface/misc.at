@@ -4,3 +4,7 @@
 protected com.mojang.authlib.services.MinecraftServicesDiscoveryService <init>(Ljava/net/Proxy;ZLjava/util/function/Supplier;)V
 # Paper: sources/com/mojang/brigadier/tree/CommandNode.java.patch ("public Predicate<S> requirement; // Paper - public-f")
 public-f com.mojang.brigadier.tree.CommandNode requirement
+# Paper: sources/net/minecraft/util/random/WeightedList.java.patch (non-final, protected constructor, protected Builder.result)
+public-f net.minecraft.util.random.WeightedList
+protected net.minecraft.util.random.WeightedList <init>(Ljava/util/List;)V
+protected net.minecraft.util.random.WeightedList$Builder result
