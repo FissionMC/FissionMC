@@ -37,14 +37,14 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Global entity ID space (no clashes between backends)
 
 ## M3 Node network
-- [ ] Transport interface: LocalChannel + TCP
+- [x] Transport interface: LocalChannel + TCP
 - [ ] Message codecs on NMS StreamCodec
-- [ ] Node auth (keypairs), handshake, heartbeat, reconnect
-- [ ] Master hostable in a backend's JVM
+- [x] Node auth (Ed25519 mutual), handshake, heartbeat, reconnect (NodeClient)
+- [~] Master hostable in a backend's JVM (transport ready; backend wiring pending)
 
 ## M4 Master
-- [ ] Node registry
-- [ ] World authority: serve world to booting nodes
+- [x] Node registry
+- [~] World authority: serve world to booting nodes (file pull works; master-side live changes pending)
 - [ ] Ordered event log (sequencer)
 - [ ] Persistence: master canonical store, backends keep local cache/WAL for owned regions
 

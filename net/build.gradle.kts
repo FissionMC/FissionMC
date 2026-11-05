@@ -3,4 +3,7 @@ dependencies {
     api(platform("io.netty:netty-bom:4.2.20.Final"))
     api("io.netty:netty-transport")
     api("io.netty:netty-codec-base")
+    testImplementation(kotlin("test"))
 }
+
+tasks.withType<Test>().configureEach { useJUnitPlatform() }

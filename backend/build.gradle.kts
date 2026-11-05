@@ -7,6 +7,7 @@ val mcLibs = rootProject.fileTree(".cache/$mcVersion/x/META-INF/libraries") { in
 
 dependencies {
     api(project(":net"))
+    api(project(":master"))
     api(project(":packets"))
     implementation(project(":loader"))
     implementation(project(":craft"))
