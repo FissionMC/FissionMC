@@ -115,9 +115,11 @@ class CipherEncoder(private val cipher: Cipher) : ChannelOutboundHandlerAdapter(
  * A backend replays an s2c file through vanilla's client decoders: `gradlew :backend:run -PcheckStream=<file>`.
  */
 class StreamDump(dir: java.nio.file.Path, n: Int) : io.netty.channel.ChannelDuplexHandler() {
-    private val s2c = java.nio.file.Files.newOutputStream(dir.resolve("client-$n-s2c.bin"))
-    private val c2s = java.nio.file.Files.newOutputStream(dir.resolve("client-$n-c2s.bin"))
-    private fun copy(msg: Any, out: java.io.OutputStream) { val b = msg as? ByteBuf ?: return; val a = ByteArray(b.readableBytes()); b.getBytes(b.readerIndex(), a); out.write(a); out.flush() }
+    // buffered, flushed once a second and on close: a synchronous file write per packet on the netty loop made relayed play visibly slow
+    private val s2c = java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(dir.resolve("client-$n-s2c.bin")), 1 shl 16)
+    private val c2s = java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(dir.resolve("client-$n-c2s.bin")), 1 shl 16)
+    private fun copy(msg: Any, out: java.io.OutputStream) { val b = msg as? ByteBuf ?: return; val a = ByteArray(b.readableBytes()); b.getBytes(b.readerIndex(), a); out.write(a) }
+    override fun handlerAdded(ctx: ChannelHandlerContext) { ctx.executor().scheduleAtFixedRate({ runCatching { s2c.flush(); c2s.flush() } }, 1, 1, java.util.concurrent.TimeUnit.SECONDS) }
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) { copy(msg, c2s); ctx.fireChannelRead(msg) }
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) { copy(msg, s2c); ctx.write(msg, promise) }
     override fun channelInactive(ctx: ChannelHandlerContext) { s2c.close(); c2s.close(); ctx.fireChannelInactive() }

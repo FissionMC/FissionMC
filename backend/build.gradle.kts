@@ -74,6 +74,7 @@ tasks.register<JavaExec>("run") {
         (project.findProperty("checkPipeline") as String?)?.let { systemProperty("fission.check-pipeline", it) }
         (project.findProperty("checkChunk") as String?)?.let { systemProperty("fission.check-chunk", it) }
         (project.findProperty("recordChunk") as String?)?.let { systemProperty("fission.record-chunk", it) }
+        (project.findProperty("checkGameplay") as String?)?.let { systemProperty("fission.check-gameplay", it) }
         (project.findProperty("checkStream") as String?)?.let { systemProperty("fission.check-stream", it) }
     }
     // ./gradlew :backend:run -PmixinExport=1 : Mixin writes the transformed classes to run/.mixin.out (javap them to see what really got merged)

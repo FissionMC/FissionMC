@@ -80,13 +80,34 @@ object PlayerRelayBackend {
     }
 
     @JvmStatic fun attach() {
-        NodeBootstrap.addMessageHandler { m -> if (m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) inbox.add(m) }
+        NodeBootstrap.addMessageHandler { m ->
+            if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }
+        }
         enabled = true
         log.info("[fission] player relay enabled")
     }
 
+    @Volatile private var serverRef: MinecraftServer? = null
+    private val wakePending = java.util.concurrent.atomic.AtomicBoolean()
+
+    /**
+     * Relayed frames used to wait for the next tickServer HEAD (up to 50 ms, 25 ms on average). Vanilla runs queued packet tasks on the server
+     * thread between ticks (BlockableEventLoop.execute is drained while the server waits for the next tick), so do the same: hand the drain to
+     * the server thread right away, coalescing bursts into one task.
+     */
+    private fun wake() {
+        val s = serverRef ?: return
+        if (wakePending.compareAndSet(false, true)) s.execute { wakePending.set(false); drain(s) }
+    }
+
     @JvmStatic fun tick(server: MinecraftServer) {
+        serverRef = server
         LimboCheck.once(server)
+        GameplayCheck.tick(server)
+        drain(server)
+    }
+
+    private fun drain(server: MinecraftServer) {
         if (!enabled) return
         val link = NodeBootstrap.link
         if (link == null || !link.isOpen) { if (sessions.isNotEmpty()) closeAll("master link lost"); inbox.clear(); return }

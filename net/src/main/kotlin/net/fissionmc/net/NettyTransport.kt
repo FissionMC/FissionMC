@@ -46,6 +46,7 @@ class NettyTransport(
         val b = ServerBootstrap()
         val sock = when (address) {
             is NodeAddress.Tcp -> b.group(tcpGroup).channel(NioServerSocketChannel::class.java)
+                .childOption(ChannelOption.TCP_NODELAY, true)   // relayed player packets are small and latency bound: no Nagle
                 .localAddress(InetSocketAddress(address.host, address.port))
             is NodeAddress.Local -> b.group(localGroup).channel(LocalServerChannel::class.java)
                 .localAddress(LocalAddress(address.name))
@@ -64,7 +65,7 @@ class NettyTransport(
             override fun initChannel(ch: Channel) = init(ch, true) { link = it }
         }
         val f = when (address) {
-            is NodeAddress.Tcp -> b.group(tcpGroup).channel(NioSocketChannel::class.java).handler(handler)
+            is NodeAddress.Tcp -> b.group(tcpGroup).channel(NioSocketChannel::class.java).option(ChannelOption.TCP_NODELAY, true).handler(handler)
                 .connect(InetSocketAddress(address.host, address.port))
             is NodeAddress.Local -> b.group(localGroup).channel(LocalChannel::class.java).handler(handler)
                 .connect(LocalAddress(address.name))
