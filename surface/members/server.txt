@@ -228,6 +228,7 @@ net.minecraft.world.level.ServerExplosion: public boolean excludeSourceFromDamag
 
 # Paper: sources/net/minecraft/world/level/NaturalSpawner.java.patch
 net.minecraft.world.level.NaturalSpawner: public static int globalLimitForCategory(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.MobCategory category, int spawnableChunkCount)
+net.minecraft.world.level.NaturalSpawner: public static java.util.List<net.minecraft.world.entity.MobCategory> getFilteredSpawningCategories(net.minecraft.world.level.NaturalSpawner$SpawnState state, boolean spawnFriendlies, boolean spawnEnemies, boolean spawnPersistent, net.minecraft.server.level.ServerLevel level)
 
 # Paper: sources/net/minecraft/world/level/LevelSettings.java.patch
 net.minecraft.world.level.LevelSettings: public net.minecraft.world.level.LevelSettings withLevelName(java.lang.String name)
@@ -248,6 +249,8 @@ net.minecraft.world.level.chunk.ChunkAccess: public void setNoiseBiome(int quart
 # Paper: sources/net/minecraft/world/level/chunk/LevelChunk.java.patch
 net.minecraft.world.level.chunk.LevelChunk: public boolean mustNotSave
 net.minecraft.world.level.chunk.LevelChunk: public boolean needsDecoration
+net.minecraft.world.level.chunk.LevelChunk: public void loadCallback()
+net.minecraft.world.level.chunk.LevelChunk: public void unloadCallback()
 net.minecraft.world.level.chunk.LevelChunk: public final net.minecraft.world.level.material.FluidState getFluidIfLoaded(net.minecraft.core.BlockPos pos)
 net.minecraft.world.level.chunk.LevelChunk: public final net.minecraft.world.level.block.state.BlockState getBlockStateIfLoaded(net.minecraft.core.BlockPos pos)
 

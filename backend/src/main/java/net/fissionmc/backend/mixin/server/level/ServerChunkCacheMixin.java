@@ -27,6 +27,7 @@ public abstract class ServerChunkCacheMixin {
     @Shadow @Final private SavedDataStorage savedDataStorage;
     @Shadow @Final private ThreadedLevelLightEngine lightEngine;
     @Shadow public boolean spawnEnemies;
+    @Shadow @Final private net.minecraft.server.level.ServerLevel level;
     @Shadow private @Nullable ChunkHolder getVisibleChunkIfPresent(long key) { throw new AssertionError(); }
     @Shadow abstract boolean runDistanceManagerUpdates(); // package-private in vanilla (widened by paper.at)
     @Shadow private void clearCache() {}
@@ -42,7 +43,55 @@ public abstract class ServerChunkCacheMixin {
     }
 
     private boolean spawnFriendlies = true; // Paper - add back spawnFriendlies field
-    // TODO(behaviour): tickChunks hunks (spawnFriendlies, ticksPerSpawnCategory, PlayerNaturallySpawnCreaturesEvent), getChunk unloading checks, pollTask callbackExecutor
+
+    // CraftBukkit start - don't add new ticket for currently unloading chunk
+    @org.spongepowered.asm.mixin.injection.ModifyVariable(method = "getChunkFutureMainThread", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), argsOnly = true, ordinal = 0)
+    private boolean paper$notWhileUnloading(final boolean loadOrGenerate, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true, ordinal = 0) final int x, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true, ordinal = 1) final int z) {
+        ChunkHolder chunkHolder = this.getVisibleChunkIfPresent(ChunkPos.pack(x, z));
+        boolean currentlyUnloading = false;
+        if (chunkHolder != null) {
+            net.minecraft.server.level.FullChunkStatus oldChunkState = net.minecraft.server.level.ChunkLevel.fullStatus(chunkHolder.oldTicketLevel);
+            net.minecraft.server.level.FullChunkStatus currentChunkState = net.minecraft.server.level.ChunkLevel.fullStatus(chunkHolder.getTicketLevel());
+            currentlyUnloading = (oldChunkState.isOrAfter(net.minecraft.server.level.FullChunkStatus.FULL) && !currentChunkState.isOrAfter(net.minecraft.server.level.FullChunkStatus.FULL));
+        }
+        return loadOrGenerate && !currentlyUnloading;
+        // CraftBukkit end
+    }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "chunkAbsent", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/server/level/ChunkHolder;getTicketLevel()I"))
+    private int paper$chunkAbsentOldTicketLevel(final ChunkHolder chunkHolder) {
+        return chunkHolder.oldTicketLevel; // CraftBukkit - using oldTicketLevel for isLoaded checks
+    }
+
+    @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "tick", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/world/TickRateManager;runsNormally()Z", ordinal = 0))
+    private boolean paper$unloadFrozenChunks(final boolean runsNormally) {
+        return runsNormally || this.level.spigotConfig.unloadFrozenChunks; // Spigot
+    }
+
+    // CraftBukkit - this prevents entity cleanup, other issues on servers with no players
+    @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "tickChunks(Lnet/minecraft/util/profiling/ProfilerFiller;)V", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Ljava/lang/Boolean;booleanValue()Z", ordinal = 0))
+    private boolean paper$noSpawningWithoutPlayers(final boolean doMobSpawning) {
+        return doMobSpawning && !this.level.players().isEmpty(); // CraftBukkit
+    }
+
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "tickChunks(Lnet/minecraft/util/profiling/ProfilerFiller;)V", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/world/level/NaturalSpawner;getFilteredSpawningCategories(Lnet/minecraft/world/level/NaturalSpawner$SpawnState;ZZ)Ljava/util/List;"))
+    private java.util.List<net.minecraft.world.entity.MobCategory> paper$filteredSpawningCategories(final net.minecraft.world.level.NaturalSpawner.SpawnState spawnCookie, final boolean spawnEnemies, final boolean vanillaSpawnPersistent, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<java.util.List<net.minecraft.world.entity.MobCategory>> original) {
+        if (!(this.spawnEnemies || this.spawnFriendlies)) { // Paper
+            return java.util.List.of();
+        }
+        // Paper start - PlayerNaturallySpawnCreaturesEvent
+        for (net.minecraft.server.level.ServerPlayer player : this.level.players()) {
+            int chunkRange = Math.min(level.spigotConfig.mobSpawnRange, player.getBukkitEntity().getViewDistance());
+            chunkRange = Math.min(chunkRange, 8);
+            player.playerNaturallySpawnedEvent = new com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent(player.getBukkitEntity(), (byte) chunkRange);
+            player.playerNaturallySpawnedEvent.callEvent();
+        }
+        // Paper end - PlayerNaturallySpawnCreaturesEvent
+        boolean spawnPersistent = this.level.ticksPerSpawnCategory.getLong(org.bukkit.entity.SpawnCategory.ANIMAL) != 0L && this.level.getGameTime() % this.level.ticksPerSpawnCategory.getLong(org.bukkit.entity.SpawnCategory.ANIMAL) == 0L; // CraftBukkit
+        return net.minecraft.world.level.NaturalSpawner.getFilteredSpawningCategories(spawnCookie, this.spawnFriendlies, this.spawnEnemies, spawnPersistent, this.level); // CraftBukkit
+    }
+    // TODO(behaviour): getChunk cache check (CraftBukkit - the chunk can become accessible in the meantime; not ported: needs a LOAD-only modification)
+    // config: unsupported-settings.ticking.chunks (tickChunks gate)
     // Paper start
     private final ca.spottedleaf.concurrentutil.map.concurrent.longs.ConcurrentChainedLong2ReferenceHashTable<LevelChunk> fullChunks = ca.spottedleaf.concurrentutil.map.concurrent.longs.ConcurrentChainedLong2ReferenceHashTable.createWithCapacity(ca.spottedleaf.concurrentutil.map.concurrent.longs.ConcurrentChainedLong2ReferenceHashTable.defaultCapacity(), 0.25f);
     public int getFullChunksCount() {
@@ -60,7 +109,6 @@ public abstract class ServerChunkCacheMixin {
     }
     // CraftBukkit end
     // Paper start
-    // TODO(behaviour): LevelChunk load/unload hunks call addLoadedChunk/removeLoadedChunk (until then fullChunks stays empty)
     public void addLoadedChunk(LevelChunk chunk) {
         this.fullChunks.put(chunk.getPos().pack(), chunk); // FissionMC: Paper uses the cached ChunkAccess#coordinateKey
     }
@@ -107,7 +155,7 @@ public abstract class ServerChunkCacheMixin {
     // Paper end
 
     // CraftBukkit start
-    // TODO(behaviour): vanilla close() -> close(true)
+    // FissionMC: vanilla close() is close(true) already
     public void close(boolean save) throws IOException {
         if (save) {
             this.save(true);
@@ -132,7 +180,7 @@ public abstract class ServerChunkCacheMixin {
     }
     // CraftBukkit end
 
-    // TODO(behaviour): vanilla setSpawnSettings(boolean) -> setSpawnSettings(spawnEnemies, this.spawnFriendlies)
+    // FissionMC: vanilla setSpawnSettings(boolean) only sets spawnEnemies, as Paper's delegation does
     public void setSpawnSettings(final boolean spawnEnemies, final boolean spawnFriendlies) {
         this.spawnEnemies = spawnEnemies;
         this.spawnFriendlies = spawnFriendlies;
