@@ -40,20 +40,20 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [x] Transport interface: LocalChannel + TCP
 - [ ] Message codecs on NMS StreamCodec
 - [x] Node auth (Ed25519 mutual), handshake, heartbeat, reconnect (NodeClient)
-- [~] Master hostable in a backend's JVM (transport ready; backend wiring pending)
+- [x] Master hostable in a backend's JVM (combined mode) and as a separate process; two-process boot with Ed25519 auth + reconnect verified
 
 ## M4 Master
 - [x] Node registry
 - [~] World authority: serve world to booting nodes (file pull works; master-side live changes pending)
-- [ ] Ordered event log (sequencer)
+- [x] Ordered event log (sequencer): seq numbers, bounded log, per-node ack, resume/replay on reconnect (unit-tested + real boot)
 - [ ] Persistence: master canonical store, backends keep local cache/WAL for owned regions
 
 ## M5 Replication
-- [ ] Boot pull of full world
-- [ ] Network updates v1: block change, entity kill/spawn, inventory
-- [ ] Conflict ordering (master order wins)
-- [ ] Two-server demo: break block on A, appears on B
-- [ ] Replicated vs local table (redstone, fluids, lighting, AI)
+- [x] Boot pull of full world
+- [~] Network updates v1: block change done and booted; entity removal (non-player deaths) implemented but not booted; spawn/inventory/chat not started
+- [~] Conflict ordering (master order wins): implemented (pending-local-change rule), unit-level only for the sequencer, not exercised with a real race
+- [x] Two-server demo: block set on A appears on B (docs/replication-demo.md)
+- [~] Replicated vs local table: block changes + entity removals replicate; everything else local (physics noise is replicated as block changes, see docs)
 
 ## M6 Regions and presence
 - [ ] Static region grid, tick ownership

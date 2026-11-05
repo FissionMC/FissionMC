@@ -120,11 +120,12 @@ object Replication {
                 val k = Key(e.dimension, e.x, e.y, e.z)
                 val stillPending = synchronized(pending) {
                     val n = pending[k] ?: 0
-                    if (own) { if (n <= 1) pending.remove(k) else pending[k] = n - 1 }
+                    if (own && n > 0) { if (n == 1) pending.remove(k) else pending[k] = n - 1 }
                     n
                 }
-                if (own) return // our own change, already in the world
+                if (own && stillPending > 0) return // echo of our live change, already in the world
                 if (stillPending > 0) { log.info("[fission] seq=${m.seq} BlockChange ${k.dim} ${e.x},${e.y},${e.z} skipped: a newer local change is ordered later"); return }
+                // (an own event without a pending entry is history from before a restart of this backend: apply it)
                 val level = level(server, e.dimension) ?: return log.warning("[fission] seq=${m.seq}: unknown dimension ${e.dimension}")
                 val state = Block.stateById(e.stateId)
                 applying.set(true)
@@ -134,7 +135,6 @@ object Replication {
                 log.info("[fission] applied seq=${m.seq} BlockChange from ${m.origin} ${e.dimension} ${e.x},${e.y},${e.z} -> $state (readback ${if (now == state) "ok" else "MISMATCH $now"})")
             }
             is EntityRemoved -> {
-                if (own) return
                 val level = level(server, e.dimension) ?: return
                 val entity = level.getEntityInAnyDimension(UUID(e.uuidHigh, e.uuidLow))
                 if (entity != null && entity !is Player && !entity.isRemoved) {
