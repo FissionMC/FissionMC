@@ -173,3 +173,21 @@ Not mine although left over (wave-1 mixins written by another area, or not runti
 - [x] net/minecraft/resources/ResourceManagerRegistryLoadTask.java.patch (Conversions per load, lockReferenceHolders, runFreezeListeners, tag lifecycle overload with registry + Cause.INITIAL)
 - [x] net/minecraft/resources/NetworkRegistryLoadTask.java.patch (null conversions: the field defaults to null)
 - [x] net/minecraft/tags/TagLoader.java.patch (pre/post flatten tag events around build(); Paper's Cause overloads added as public statics (thread-local cause/registry) for WorldLoader/MinecraftServer reload callers in the server area)
+
+### scoreboards
+- [x] net/minecraft/world/scores/Objective.java.patch (lazy formatted display name, using the vanilla field)
+- [x] net/minecraft/world/scores/PlayerTeam.java.patch (lenient TeamColor codec)
+- [x] net/minecraft/world/scores/Scoreboard.java.patch (clear team entries on removal; saveEmptyScoreboardTeams filter)
+
+### nbt
+- [x] net/minecraft/nbt/ByteArrayTag.java.patch (length < 1 << 24)
+- [x] net/minecraft/nbt/IntArrayTag.java.patch (same)
+- [x] net/minecraft/nbt/LongArrayTag.java.patch (same)
+- [x] net/minecraft/nbt/NbtAccounter.java.patch (pushDepth(int) member, for ByteBufCodecs in the player area)
+- [x] net/minecraft/nbt/NbtIo.java.patch (LimitStream for ByteBufInputStream)
+- [~] net/minecraft/nbt/CompoundTag.java.patch (done: readQuiet x4; left: Object2ObjectOpenHashMap backing maps / copy() (memory footprint, perf only))
+
+### util
+- [~] net/minecraft/util/Util.java.patch (done: COLLISION_EPSILON, DIMENSION_DATA_IO_POOL (wave 1), Download pool limited to 4 threads, getNanos = System.nanoTime, background executor threads at NORM_PRIORITY-1 and never expiring, Paper worker thread count / Paper.WorkerThreadCount; left: nothing functional — Paper's makeExecutor(name, priority) signature itself is not added since the only caller is the static initialiser)
+- [x] net/minecraft/util/thread/BlockableEventLoop.java.patch (executeAllRecentInternalTasks, runTaskIf, scheduleOnMain (wave 1))
+- [x] net/minecraft/util/TickThrottler.java.patch (atomic counter, isIncrementAndUnderThreshold overloads; not class-loaded during the boot test)
