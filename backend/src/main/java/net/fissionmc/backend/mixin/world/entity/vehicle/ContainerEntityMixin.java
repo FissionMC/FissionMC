@@ -7,8 +7,8 @@ import org.spongepowered.asm.mixin.Mixin;
 /** Paper: sources/net/minecraft/world/entity/vehicle/ContainerEntity.java.patch */
 @Mixin(ContainerEntity.class)
 public interface ContainerEntityMixin {
-    // TODO(behaviour): add/readChestVehicleSaveData save lootableData and always save items;
-    //  unpackChestVehicleLootTable uses lootableData().shouldReplenish/shouldClearLootTable; interactWithContainerVehicle cancel handling.
+    // FissionMC: the in-method hunks of this patch are applied at the call sites in AbstractChestBoatMixin and
+    //  AbstractMinecartContainerMixin (see net.fissionmc.backend.entitytypes.ContainerEntityPaper).
 
     // Paper start - LootTable API
     default com.destroystokyo.paper.loottable.PaperLootableInventoryData lootableData() {

@@ -142,13 +142,13 @@ to the overload (so `Entity.remove(reason, cause)` must keep calling `setRemoved
 - [ ] sources/net/minecraft/world/entity/raid/Raider.java.patch
 - [ ] sources/net/minecraft/world/entity/raid/Raid.java.patch
 - [ ] sources/net/minecraft/world/entity/raid/Raids.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/ContainerEntity.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java.patch
+- [~] sources/net/minecraft/world/entity/vehicle/boat/AbstractBoat.java.patch (done: VehicleDamage/Destroy/EntityCollision/Move/Update events, remove cause; left: not audited hunk-by-hunk (e.g. boat drop/ejection, passenger hunks))
+- [~] sources/net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.java.patch (done: remove(reason, cause) drops contents, Container viewers (transaction), LootTable API, open InventoryOpenEvent path; left: not audited hunk-by-hunk)
+- [~] sources/net/minecraft/world/entity/vehicle/ContainerEntity.java.patch (done: ContainerEntityPaper helper (loot table / viewers); left: not audited hunk-by-hunk)
+- [~] sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecartContainer.java.patch (done: Container viewers, LootTable API, remove cause; left: not audited hunk-by-hunk)
+- [~] sources/net/minecraft/world/entity/vehicle/minecart/AbstractMinecart.java.patch (done: Vehicle events, move/update events, collision; left: not audited hunk-by-hunk (behaviour-specific hunks live in NewMinecartBehavior/OldMinecartBehavior, not started))
 - [ ] sources/net/minecraft/world/entity/vehicle/minecart/MinecartCommandBlock.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/minecart/MinecartTNT.java.patch
+- [~] sources/net/minecraft/world/entity/vehicle/minecart/MinecartTNT.java.patch (done: member stubs; left: TODO(behaviour) explode() passes isIncendiary and fires ExplosionPrimeEvent (MinecartTNTMixin))
 - [ ] sources/net/minecraft/world/entity/vehicle/minecart/NewMinecartBehavior.java.patch
 - [ ] sources/net/minecraft/world/entity/vehicle/minecart/OldMinecartBehavior.java.patch
-- [ ] sources/net/minecraft/world/entity/vehicle/VehicleEntity.java.patch
+- [~] sources/net/minecraft/world/entity/vehicle/VehicleEntity.java.patch (done: VehicleEntityMixin (VehicleDamageEvent/VehicleDestroyEvent); left: not audited hunk-by-hunk)
