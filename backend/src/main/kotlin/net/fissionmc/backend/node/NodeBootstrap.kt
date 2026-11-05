@@ -104,7 +104,16 @@ object NodeBootstrap {
         val registry = NodeRegistry()
         val hub = ReplicationHub()
         registry.addListener(hub.listener)
-        val onMessage: (RegisteredNode, NodeMessage) -> Unit = { n, m -> hub.handle(n, m) }
+        val relay = net.fissionmc.master.PlayerRelay(registry)
+        registry.addListener(relay.listener)
+        val onMessage: (RegisteredNode, NodeMessage) -> Unit = { n, m -> if (!relay.handle(n, m)) hub.handle(n, m) }
+        // clients connect to the master half of this JVM when client.* is configured in fission.properties (client.enabled=false turns it off)
+        val clientCfg = net.fissionmc.master.client.ClientConfig.load(Path.of("fission.properties").toAbsolutePath())
+        if (clientCfg.enabled && java.nio.file.Files.readAllLines(Path.of("fission.properties").toAbsolutePath()).any { it.trim().startsWith("client.listen") }) {
+            val cs = net.fissionmc.master.client.ClientServer(clientCfg, relay = relay, log = { log.info(it) }).start()
+            closeables += cs
+            registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { cs.attachWaiting() } })
+        }
         val local = NodeAddress.Local("fission-master")
         val localT = NettyTransport(NodeSupport.masterNode(MC_VERSION))
         closeables += localT

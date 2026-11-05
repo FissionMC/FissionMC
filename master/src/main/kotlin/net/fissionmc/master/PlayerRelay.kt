@@ -9,10 +9,16 @@ import java.util.concurrent.atomic.AtomicLong
 interface RelayClient {
     val profile: net.fissionmc.master.client.PlayerProfile
     val protocol: Int
+    /** The client's real address and the host name it connected with (forwarded to the backend), if known. */
+    val remoteAddress: java.net.InetSocketAddress? get() = null
+    val virtualHost: String get() = ""
     /** A packet frame (id + payload) from the backend for this client. Called on the node link's thread. */
     fun deliver(frame: ByteArray)
-    /** The backend session ended; the client should be disconnected. */
-    fun detached(reason: String)
+    /**
+     * The backend session ended. [backendLost] is true when the backend itself went away (the client may be sent back to limbo);
+     * otherwise the backend closed/kicked the player; [reason] starting with `kick:` carries a message for the client.
+     */
+    fun detached(reason: String, backendLost: Boolean = false)
 }
 
 /**
@@ -35,6 +41,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
         val id = ids.getAndIncrement()
         val p = client.profile
         bindings[id] = Binding(id, node, client)
+        client.remoteAddress?.let { a -> node.link.send(PlayerClientInfo(id, a.address?.hostAddress ?: a.hostString, a.port, client.virtualHost)) }
         node.link.send(PlayerAttach(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, p.name,
             p.properties.map { ProfilePropertyData(it.name, it.value, it.signature) }, client.protocol))
         return id
@@ -67,7 +74,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** All players of a backend that left lose their session. */
     val listener = object : NodeRegistry.Listener {
         override fun left(node: RegisteredNode, reason: String) {
-            bindings.values.filter { it.node === node }.forEach { bindings.remove(it.id); it.client.detached("backend ${node.info.nodeId} lost: $reason") }
+            bindings.values.filter { it.node === node }.forEach { bindings.remove(it.id); it.client.detached("backend ${node.info.nodeId} lost: $reason", true) }
         }
     }
 }

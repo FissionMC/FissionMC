@@ -5,7 +5,7 @@ dependencies {
 }
 
 dependencies { testImplementation(kotlin("test")) }
-tasks.withType<Test>().configureEach { useJUnitPlatform() }
+tasks.withType<Test>().configureEach { useJUnitPlatform(); systemProperty("fission.debug.packets", "1") }
 
 tasks.register<JavaExec>("run") {
     group = "fission"

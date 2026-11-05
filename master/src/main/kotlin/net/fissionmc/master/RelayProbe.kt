@@ -20,7 +20,7 @@ class RelayProbe(private val relay: PlayerRelay) : NodeRegistry.Listener {
                 while (i < frame.size) { val b = frame[i++].toInt(); id = id or ((b and 0x7f) shl shift); shift += 7; if (b and 0x80 == 0) break }
                 println("[probe] frame #${++n} from ${node.info.nodeId}: packet id $id, ${frame.size} bytes")
             }
-            override fun detached(reason: String) = println("[probe] detached: $reason")
+            override fun detached(reason: String, backendLost: Boolean) = println("[probe] detached: $reason")
         }
         // the backend registers its handlers only after the world pull and the first ticks; wait for that
         java.util.Timer(true).schedule(object : java.util.TimerTask() {

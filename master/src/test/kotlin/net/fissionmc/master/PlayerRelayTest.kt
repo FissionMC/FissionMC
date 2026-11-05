@@ -25,9 +25,11 @@ class PlayerRelayTest {
     private class FakeClient(val name: String) : RelayClient {
         override val profile = PlayerProfile(UUID.nameUUIDFromBytes(name.toByteArray()), name, listOf(ProfileProperty("textures", "v", null)))
         override val protocol = 777
-        val got = mutableListOf<ByteArray>(); var detachedReason: String? = null
+        val got = mutableListOf<ByteArray>(); var detachedReason: String? = null; var lost: Boolean? = null
+        override val remoteAddress = java.net.InetSocketAddress(java.net.InetAddress.getByAddress(byteArrayOf(10, 1, 2, 3)), 50505)
+        override val virtualHost = "play.example.org"
         override fun deliver(frame: ByteArray) { got += frame }
-        override fun detached(reason: String) { detachedReason = reason }
+        override fun detached(reason: String, backendLost: Boolean) { detachedReason = reason; lost = backendLost }
     }
     private fun registryWith(vararg ids: String): Pair<NodeRegistry, Map<String, FakeLink>> {
         val reg = NodeRegistry(); val links = ids.associateWith { FakeLink() }
@@ -39,7 +41,7 @@ class PlayerRelayTest {
         val reg = MessageRegistry.core().registerPlayerMessages()
         val msgs = listOf(
             PlayerAttach(7, 1L, -2L, "Steve", listOf(ProfilePropertyData("textures", "v", "sig"), ProfilePropertyData("x", "y", null)), 777),
-            PlayerPacketToBackend(7, byteArrayOf(1, 2, 3)), PlayerPacketToClient(7, ByteArray(100_000) { it.toByte() }), PlayerDetach(7, "bye"),
+            PlayerClientInfo(7, "10.1.2.3", 50505, "play.example.org"), PlayerPacketToBackend(7, byteArrayOf(1, 2, 3)), PlayerPacketToClient(7, ByteArray(100_000) { it.toByte() }), PlayerDetach(7, "bye"),
         )
         for (m in msgs) {
             val b = Unpooled.buffer(); reg.encode(m, b); val d = reg.decode(b)
@@ -63,6 +65,9 @@ class PlayerRelayTest {
         val id1 = relay.attach(c1)!!; val id2 = relay.attach(c2)!!
         assertEquals(1, links["b1"]!!.sent.filterIsInstance<PlayerAttach>().size)
         assertEquals(1, links["b2"]!!.sent.filterIsInstance<PlayerAttach>().size)
+        val info = links["b1"]!!.sent.filterIsInstance<PlayerClientInfo>().single()
+        assertEquals(PlayerClientInfo(id1, "10.1.2.3", 50505, "play.example.org"), info)
+        assertTrue(links["b1"]!!.sent.indexOf(info) < links["b1"]!!.sent.indexOfFirst { it is PlayerAttach })   // info precedes attach
         val a = links["b1"]!!.sent.filterIsInstance<PlayerAttach>().single()
         assertEquals("one", a.name); assertEquals(1, a.properties.size)
 
@@ -73,7 +78,7 @@ class PlayerRelayTest {
         assertTrue(c1.got.isEmpty())
         relay.handle(reg["b1"]!!, PlayerPacketToClient(id1, byteArrayOf(5)))
         assertContentEquals(byteArrayOf(5), c1.got.single())
-        relay.handle(reg["b2"]!!, PlayerDetach(id2, "kicked")); assertEquals("kicked", c2.detachedReason)
+        relay.handle(reg["b2"]!!, PlayerDetach(id2, "kicked")); assertEquals("kicked", c2.detachedReason); assertEquals(false, c2.lost)
     }
 
     @Test fun `saturated link reports backpressure and client detach reaches the backend`() {
@@ -93,6 +98,6 @@ class PlayerRelayTest {
         val c1 = FakeClient("one"); val c2 = FakeClient("two")
         relay.attach(c1); relay.attach(c2)
         links["b1"]!!.close("gone")
-        assertNotNull(c1.detachedReason); assertNull(c2.detachedReason)
+        assertNotNull(c1.detachedReason); assertEquals(true, c1.lost); assertNull(c2.detachedReason)
     }
 }

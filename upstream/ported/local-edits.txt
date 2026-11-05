@@ -1,0 +1,2 @@
+# Edits FissionMC made inside files that are ported from Paper (re-apply if the file is re-ported). path <TAB> what
+craft/src/main/java/io/papermc/paper/plugin/PluginInitializerManager.java	load(): one added line calling net.fissionmc.craft.builtin.BuiltinPlugins.register() (built-in packetevents plugin)

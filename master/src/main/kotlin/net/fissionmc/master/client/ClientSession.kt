@@ -40,9 +40,20 @@ import javax.crypto.Cipher
  * All packets are decoded/encoded with PacketEvents wrappers.
  */
 class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAdapter(), net.fissionmc.master.RelayClient {
-    private enum class Mode { LIMBO, AWAIT_ACK, RELAY }
+    private enum class Mode { LIMBO, AWAIT_ACK, RELAY, REJOIN }
     private var mode = Mode.LIMBO
+    private var configSent = false
     private var relayId: Long? = null
+    private var hostName = ""
+    private var tap: net.fissionmc.packets.PacketTap? = null
+    private var tracker = net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
+    override val remoteAddress: java.net.InetSocketAddress? get() = channel.remoteAddress() as? java.net.InetSocketAddress
+    override val virtualHost: String get() = hostName
+
+    /** Client frame heading for the backend through the packet bus; null = a listener dropped it. */
+    private fun fromClient(bytes: ByteArray): ByteArray? = tap?.fromClient(bytes) ?: if (tap == null) bytes.also { tracker.onClientFrame(it) } else null
+    /** Backend frame heading for the client through the packet bus; null = dropped. */
+    private fun toClient(bytes: ByteArray): ByteArray? = tap?.toClient(bytes) ?: if (tap == null) bytes.also { tracker.onServerFrame(it) } else null
     private val pendingFromBackend = java.util.ArrayDeque<ByteArray>()
     private lateinit var channel: Channel
     private lateinit var user: User
@@ -83,7 +94,9 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         }, 20, 20, TimeUnit.MILLISECONDS)
     }
 
-    override fun deliver(frame: ByteArray) { channel.eventLoop().execute {
+    override fun deliver(rawFrame: ByteArray) { channel.eventLoop().execute {
+        if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) return@execute
+        val frame = toClient(rawFrame) ?: return@execute
         when (mode) {
             Mode.RELAY -> {
                 if (!channel.isActive) return@execute
@@ -97,13 +110,33 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     } }
     private var overflow = 0
 
-    override fun detached(reason: String) { channel.eventLoop().execute { relayId = null; server.log("[client $playerName] backend session ended: $reason"); channel.close() } }
+    override fun detached(reason: String, backendLost: Boolean) { channel.eventLoop().execute {
+        relayId = null
+        server.log("[client $playerName] backend session ended: $reason")
+        if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) { channel.close(); return@execute }
+        // the client's real phase is what the tracker saw, not what we last set by hand
+        user.decoderState = tracker.clientState; user.encoderState = tracker.serverState
+        when {
+            backendLost && mode == Mode.RELAY && tracker.clientState == ConnectionState.PLAY && tracker.serverState == ConnectionState.PLAY -> backToLimbo()
+            reason.startsWith("kick:") -> disconnect(reason.removePrefix("kick:"))
+            else -> channel.close()   // mid-configuration there is no way back, the client has to reconnect
+        }
+    } }
+
+    /** The backend died while the client was playing: reconfigure the client into limbo (play -> configuration -> limbo). */
+    private fun backToLimbo() {
+        mode = Mode.REJOIN; pendingFromBackend.clear(); configSent = false
+        server.log("[client] $playerName: backend lost, back to limbo")
+        send(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerConfigurationStart())
+    }
 
     /** Moves a limbo player to a backend (if one is alive): play -> configuration, then the backend's configuration/play is relayed. */
     fun tryAttach() { channel.eventLoop().execute {
         if (mode != Mode.LIMBO || user.decoderState != ConnectionState.PLAY || !channel.isActive) return@execute
         val id = server.relay?.attach(this) ?: return@execute
         relayId = id; mode = Mode.AWAIT_ACK
+        tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log)
+        tracker = tap?.tracker ?: net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
         keepAlive?.cancel(false)
         send(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerConfigurationStart())
         server.log("[client] $playerName -> backend (player $id)")
@@ -120,14 +153,17 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             try {
                 val bytes = ByteArray(buf.readableBytes()); buf.readBytes(bytes)
                 val id = relayId
-                if (id != null && !server.relay!!.toBackend(id, bytes)) pauseReading()
+                val out = fromClient(bytes)
+                if (id != null && out != null && !server.relay!!.toBackend(id, out)) pauseReading()
             } finally { ReferenceCountUtil.release(buf) }
             return
         }
         try {
+            val st = user.decoderState   // PacketEvents' internal listener advances the user's state while the event is fired
             val event = EventCreationUtil.createReceiveEvent(channel, user, null, buf, false)
             if (!net.fissionmc.packets.PacketBus.fireReceive(event)) return   // a listener cancelled it
-            when (user.decoderState) {
+            if (System.getProperty("fission.debug.packets") != null) server.log("[client] $username <- $st ${event.packetType}")
+            when (st) {
                 ConnectionState.HANDSHAKING -> onHandshake(event)
                 ConnectionState.STATUS -> onStatus(event)
                 ConnectionState.LOGIN -> onLogin(event)
@@ -142,12 +178,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     fun send(w: PacketWrapper<*>) {
         
         w.prepareForSend(channel, true, false)
-        channel.writeAndFlush(w.buffer)
+        channel.writeAndFlush(w.buffer).addListener { f -> if (!f.isSuccess) server.log("[client $playerName] write failed: ${f.cause()}") }
     }
     private fun sendAll(ws: List<PacketWrapper<*>>) { ws.forEach { w -> w.prepareForSend(channel, true, false); channel.write(w.buffer) }; channel.flush() }
 
     fun disconnect(reason: String) {
         if (!channel.isActive) return
+        server.log("[client ${channel.remoteAddress()}] disconnect: $reason")
         val c = Component.text(reason)
         val w: PacketWrapper<*>? = when (user.encoderState) {
             ConnectionState.LOGIN -> WrapperLoginServerDisconnect(c)
@@ -164,6 +201,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private fun onHandshake(e: PacketReceiveEvent) {
         val h = WrapperHandshakingClientHandshake(e)
         protocolVersion = h.protocolVersion
+        hostName = h.serverAddress
+        server.log("[client] handshake protocol=${h.protocolVersion} host=${h.serverAddress}:${h.serverPort} intention=${h.intention}")
         val next = when (h.intention) {
             ConnectionIntention.STATUS -> ConnectionState.STATUS
             ConnectionIntention.LOGIN -> ConnectionState.LOGIN
@@ -210,10 +249,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 channel.pipeline().addAfter("encrypt", "decrypt", CipherDecoder(LoginCrypto.aes(secret, Cipher.DECRYPT_MODE)))
                 val hash = LoginCrypto.serverHash("", secret, server.keyPair.public.encoded)
                 // auth off the event loop; the result comes back onto it
+                server.log("[client] $username: verifying with the session server")
                 server.authenticator.authenticate(username, hash).whenComplete { p, err ->
+                    if (err != null) server.log("[client] $username: authentication error: $err")
                     channel.eventLoop().execute {
-                        if (err != null || p == null) disconnect("Failed to verify username")
-                        else finishAuth(p)
+                        try {
+                            if (err != null || p == null) disconnect("Failed to verify username") else finishAuth(p)
+                        } catch (t: Throwable) { exceptionCaught(channel.pipeline().context(this), t) }
                     }
                 }
             }
@@ -239,11 +281,11 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val up = UserProfile(p.uuid, p.name)
         p.properties.forEach { up.textureProperties.add(com.github.retrooper.packetevents.protocol.player.TextureProperty(it.name, it.value, it.signature)) }
         user.profile.uuid = p.uuid; user.profile.name = p.name
+        server.log("[client] ${p.name}: sending login success (${up.textureProperties.size} properties)")
         send(WrapperLoginServerLoginSuccess(up))
     }
 
     // ---- configuration ----
-    private var configSent = false
     private fun onConfiguration(e: PacketReceiveEvent) {
         when (e.packetType) {
             PacketType.Configuration.Client.SELECT_KNOWN_PACKS -> if (!configSent) {
@@ -273,6 +315,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     private fun onPlay(e: PacketReceiveEvent) {
+        if (mode == Mode.REJOIN) {
+            if (e.packetType == PacketType.Play.Client.CONFIGURATION_ACK) {
+                user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION
+                mode = Mode.LIMBO; tap = null; send(Limbo.knownPacks())
+            }
+            return
+        }
         if (mode == Mode.AWAIT_ACK) {
             if (e.packetType == PacketType.Play.Client.CONFIGURATION_ACK) {
                 user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION

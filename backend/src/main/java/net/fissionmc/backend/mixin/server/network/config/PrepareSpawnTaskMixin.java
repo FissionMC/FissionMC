@@ -52,12 +52,8 @@ public abstract class PrepareSpawnTaskMixin {
         this.listener = listener;
         // Paper end - passthrough profile and packet listener
         this.nameAndId = new net.minecraft.server.players.NameAndId(profile); // Paper - passthrough profile and packet listener - create from profile
-        this.loadListener = new LevelLoadListener() { // FissionMC: LevelLoadListener.noop() does not exist in the vanilla jar
-            @Override public void start(final LevelLoadListener.Stage stage, final int count) {}
-            @Override public void update(final LevelLoadListener.Stage stage, final int count, final int total) {}
-            @Override public void finish(final LevelLoadListener.Stage stage) {}
-            @Override public void updateFocus(final net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension, final net.minecraft.world.level.ChunkPos pos) {}
-        }; // Paper - per level load listener - this is already a no-op on dedicated server, but we moved it to Level
+        this.loadListener = new net.fissionmc.backend.support.NoopLevelLoadListener(); // FissionMC: LevelLoadListener.noop() does not exist in the vanilla jar; top-level class (mixins cannot hold anonymous classes)
+        // Paper - per level load listener - this is already a no-op on dedicated server, but we moved it to Level
     }
 
     // FissionMC: accessors for the inner State classes' mixins

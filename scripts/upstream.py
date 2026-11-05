@@ -56,6 +56,8 @@ def clone(u, depth=1):
 def cmd_update(name):
     u = load()[name]
     assert u["type"] == "vendor", f"{name} is a reference upstream; use pin"
+    if name == "packetevents":
+        print("NOTE: packetevents/resources/assets/mappings/*.nbt are generated (:api:compressMappings) and must be regenerated after this update; see upstream/packetevents-resources.md")
     tmp, src = clone(u)
     try:
         sha = sh("git", "rev-parse", "HEAD", cwd=src)

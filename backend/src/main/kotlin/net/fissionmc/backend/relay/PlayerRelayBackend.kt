@@ -15,6 +15,7 @@ import io.netty.channel.embedded.EmbeddedChannel
 import net.fissionmc.backend.node.NodeBootstrap
 import net.fissionmc.protocol.*
 import net.minecraft.network.Connection
+import net.minecraft.network.HiddenByteBuf
 import net.minecraft.network.protocol.PacketFlow
 import net.minecraft.network.protocol.configuration.ConfigurationProtocols
 import net.minecraft.server.MinecraftServer
@@ -44,25 +45,34 @@ object PlayerRelayBackend {
     private val log = Logger.getLogger("FissionMC")
     @Volatile private var enabled = false
     private val inbox = ConcurrentLinkedQueue<NodeMessage>()
-    private val sessions = HashMap<Long, Virtual>()   // server thread only
+    private val sessions = HashMap<Long, Virtual>()
+    private val infos = HashMap<Long, PlayerClientInfo>()          // server thread only
+    private val pendingFrames = HashMap<Long, MutableList<ByteArray>>() // frames that arrived while the async pre-login runs
+    private class Ready(val a: PlayerAttach, val profile: GameProfile?, val deny: String?, val error: Throwable?) { var info: PlayerClientInfo? = null }
+    private val ready = ConcurrentLinkedQueue<Ready>()
+    private val loginPool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "fission-relay-login").also { it.isDaemon = true } }
     /** Packets queued behind a saturated master link before the player is dropped. */
     private const val MAX_UNWRITABLE_FRAMES = 20_000
 
     val activePlayers: Int get() = synchronized(sessions) { sessions.size }
 
-    private class Virtual(val id: Long, val name: String) { lateinit var conn: Connection; lateinit var channel: EmbeddedChannel; var blocked = 0 }
+    private class Virtual(val id: Long, val name: String) { lateinit var conn: Connection; lateinit var channel: EmbeddedChannel; var blocked = 0; var tap: net.fissionmc.packets.PacketTap? = null }
 
-    /** The channel reports a loopback address (EmbeddedChannel's default address type is not an InetSocketAddress). */
-    private class VirtualChannel(init: ChannelInitializer<Channel>) : EmbeddedChannel(init) {
-        override fun remoteAddress0(): SocketAddress = InetSocketAddress(InetAddress.getLoopbackAddress(), 0)
+    /** The channel reports the client's real address forwarded by the master (loopback if unknown); EmbeddedChannel's default address type is not an InetSocketAddress. */
+    private class VirtualChannel(private val remote: InetSocketAddress, init: ChannelInitializer<Channel>) : EmbeddedChannel(init) {
+        override fun remoteAddress0(): SocketAddress = remote
     }
 
     /** First handler in the pipeline: everything the server writes towards the client ends here and is sent to the master. */
     private class Out(val v: Virtual) : ChannelOutboundHandlerAdapter() {
         override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
-            if (msg !is ByteBuf) { ctx.write(msg, promise); return }
-            val b = msg
-            val bytes = ByteArray(b.readableBytes()); b.readBytes(bytes); b.release()
+            // vanilla hides frames from netty's byte buf handlers inside HiddenByteBuf (local pipeline): unwrap; pass the pipeline tasks on
+            val b = HiddenByteBuf.unpack(msg) as? ByteBuf
+            if (b == null) { ctx.write(msg, promise); return }
+            val raw = ByteArray(b.readableBytes()); b.readBytes(raw); b.release()
+            // packet bus: backend -> client direction (a listener may cancel or modify)
+            val bytes = v.tap?.let { synchronized(it) { it.toClient(raw) } } ?: raw.takeIf { v.tap == null }
+            if (bytes == null) { promise.setSuccess(); return }
             val l = NodeBootstrap.link
             if (l != null && l.isOpen) {
                 l.send(PlayerPacketToClient(v.id, bytes))
@@ -85,26 +95,64 @@ object PlayerRelayBackend {
         if (link == null || !link.isOpen) { if (sessions.isNotEmpty()) closeAll("master link lost"); inbox.clear(); return }
         while (true) {
             when (val m = inbox.poll() ?: break) {
-                is PlayerAttach -> runCatching { create(server, m) }.onFailure {
-                    log.warning("[fission] could not attach ${m.name}: $it"); link.send(PlayerDetach(m.playerId, "attach failed: ${it.message}"))
+                is PlayerClientInfo -> infos[m.playerId] = m
+                is PlayerAttach -> { pendingFrames[m.playerId] = ArrayList(); preLogin(m, infos.remove(m.playerId)) }
+                is PlayerPacketToBackend -> {
+                    val v = sessions[m.playerId]
+                    if (v != null) feed(v, m.bytes) else pendingFrames[m.playerId]?.add(m.bytes)
                 }
-                is PlayerPacketToBackend -> sessions[m.playerId]?.let { v ->
-                    // Replies to a closed channel are dropped; a decoding error is handled by vanilla's Connection.exceptionCaught.
-                    if (v.channel.isOpen) { v.channel.writeInbound(Unpooled.wrappedBuffer(m.bytes)); v.channel.runPendingTasks() }
-                }
-                is PlayerDetach -> sessions.remove(m.playerId)?.let { synchronized(sessions) {}; it.channel.close() }
+                is PlayerDetach -> { pendingFrames.remove(m.playerId); infos.remove(m.playerId); sessions.remove(m.playerId)?.channel?.close() }
+            }
+        }
+        // players whose async pre-login finished
+        while (true) {
+            val r = ready.poll() ?: break
+            val frames = pendingFrames.remove(r.a.playerId) ?: continue   // detached meanwhile
+            if (r.error != null) { log.warning("[fission] pre-login of ${r.a.name} failed: ${r.error}"); link.send(PlayerDetach(r.a.playerId, "kick:Login failed")); continue }
+            if (r.deny != null) { link.send(PlayerDetach(r.a.playerId, "kick:${r.deny}")); continue }
+            runCatching { create(server, r.a, r.profile!!, r.info) }.onSuccess { v -> frames.forEach { feed(v, it) } }.onFailure {
+                log.warning("[fission] could not attach ${r.a.name}: $it"); link.send(PlayerDetach(r.a.playerId, "attach failed: ${it.message}"))
             }
         }
     }
 
-    private fun create(server: MinecraftServer, a: PlayerAttach) {
+    /** A client frame for [v] through the packet bus into vanilla's connection (server thread). */
+    private fun feed(v: Virtual, bytes: ByteArray) {
+        val frame = v.tap?.let { synchronized(it) { it.fromClient(bytes) } } ?: bytes.takeIf { v.tap == null } ?: return
+        // Replies to a closed channel are dropped; a decoding error is handled by vanilla's Connection.exceptionCaught.
+        if (v.channel.isOpen) { v.channel.writeInbound(HiddenByteBuf.pack(Unpooled.wrappedBuffer(frame))); v.channel.runPendingTasks() }
+    }
+
+    /**
+     * Pre-login like the ported login listener does it: AsyncPlayerPreLoginEvent on a worker thread (Bukkit refuses it on the server
+     * thread), then PlayerPreLoginEvent if anything listens. PlayerLoginEvent, bans, whitelist and PlayerJoinEvent come from the
+     * ported configuration-finished/placeNewPlayer code that runs for the virtual connection like for any client.
+     */
+    private fun preLogin(a: PlayerAttach, info: PlayerClientInfo?) {
+        val ip = info?.let { runCatching { InetAddress.getByName(it.address) }.getOrNull() } ?: InetAddress.getLoopbackAddress()
         val props = ArrayListMultimap.create<String, Property>()
         a.properties.forEach { props.put(it.name, Property(it.name, it.value, it.signature)) }
-        val profile = GameProfile(UUID(a.uuidHigh, a.uuidLow), a.name, PropertyMap(props))
+        val gp = GameProfile(UUID(a.uuidHigh, a.uuidLow), a.name, PropertyMap(props))
+        loginPool.execute {
+            try {
+                val bukkitProfile = com.destroystokyo.paper.profile.CraftPlayerProfile.asBukkitCopy(gp)
+                val ev = org.bukkit.event.player.AsyncPlayerPreLoginEvent(a.name, ip, ip, gp.id(), false, bukkitProfile)
+                org.bukkit.Bukkit.getPluginManager().callEvent(ev)
+                val finalProfile = com.destroystokyo.paper.profile.CraftPlayerProfile.asAuthlibCopy(ev.playerProfile.also { it.complete(true) })
+                val deny = if (ev.loginResult != org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result.ALLOWED)
+                    net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(ev.kickMessage()) else null
+                ready.add(Ready(a, finalProfile, deny, null).also { it.info = info })
+            } catch (t: Throwable) { ready.add(Ready(a, null, null, t).also { it.info = info }) }
+        }
+    }
+
+    private fun create(server: MinecraftServer, a: PlayerAttach, profile: GameProfile, info: PlayerClientInfo?): Virtual {
         val v = Virtual(a.playerId, a.name)
         val conn = Connection(PacketFlow.SERVERBOUND)
         v.conn = conn
-        v.channel = VirtualChannel(object : ChannelInitializer<Channel>() {
+        conn.hostname = info?.hostname ?: ""
+        val remote = InetSocketAddress(info?.let { runCatching { InetAddress.getByName(it.address) }.getOrNull() } ?: InetAddress.getLoopbackAddress(), info?.port ?: 0)
+        v.channel = VirtualChannel(remote, object : ChannelInitializer<Channel>() {
             override fun initChannel(ch: Channel) {
                 val p = ch.pipeline()
                 Connection.configureSerialization(p, PacketFlow.SERVERBOUND, true, null)
@@ -112,6 +160,7 @@ object PlayerRelayBackend {
                 p.addFirst("fission_out", Out(v))
             }
         })
+        v.tap = net.fissionmc.packets.PacketTap.create(v.channel, profile.id(), profile.name(), com.github.retrooper.packetevents.protocol.player.ClientVersion.getById(a.protocol)) { log.info("[fission] ${a.name}: $it") }
         v.channel.closeFuture().addListener {
             val removed = synchronized(sessions) { sessions.remove(v.id) }   // idempotent
             NodeBootstrap.link?.takeIf { it.isOpen }?.send(PlayerDetach(v.id, "closed on backend"))
@@ -124,7 +173,8 @@ object PlayerRelayBackend {
         conn.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, listener)
         server.connection.connections.add(conn)
         listener.startConfiguration()
-        log.info("[fission] relayed player ${a.name} attached (player ${a.playerId})")
+        log.info("[fission] relayed player ${a.name} attached (player ${a.playerId}) from ${remote.address.hostAddress}")
+        return v
     }
 
     private fun closeAll(why: String) {

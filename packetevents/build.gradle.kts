@@ -25,6 +25,7 @@ val generatePeVersion by tasks.registering {
 the<SourceSetContainer>()["main"].java.srcDirs(
     "api/src/main/java", "netty-common/src/main/java", genDir,
     "patch/adventure-text-serializer-gson/src/main/java", "patch/adventure-text-serializer-legacy/src/main/java")
+the<SourceSetContainer>()["main"].resources.srcDir("resources")   // generated mapping resources, see upstream/packetevents-resources.md
 tasks.withType<JavaCompile>().configureEach {
     dependsOn(generatePeVersion)
     options.compilerArgs.add("-Xlint:none")

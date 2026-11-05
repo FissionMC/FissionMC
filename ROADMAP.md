@@ -24,13 +24,13 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 ## M2 Packet pipeline
 - [x] License: GPL-3.0
 - [x] Vendor PacketEvents api + netty-common (pinned), upstream tracker script + daily workflow
-- [~] Gradle integration of vendored PacketEvents (`:packetevents`, compiles; mapping resources `assets/mappings/*.nbt` NOT generated, so PacketEvents `User`/registries fail at runtime); own platform class `FissionPacketEventsAPI` in `:packets` replaces the spigot injector
-- [ ] Built-in virtual plugin "packetevents" so depend: [packetevents] resolves
+- [~] Gradle integration of vendored PacketEvents (`:packetevents`; generated mapping resources committed under `packetevents/resources`, see upstream/packetevents-resources.md); own platform class `FissionPacketEventsAPI` in `:packets` replaces the spigot injector
+- [x] Built-in virtual plugin "packetevents" so depend: [packetevents] resolves (generated descriptor jar, boot-verified: loads and enables)
 - [ ] Strip PacketEvents injector; feed it from core pipeline
-- [~] Master terminates the client connection (Netty listener, status/login/encryption/compression/limbo coded, pure parts unit-tested; PacketEvents-dependent tests blocked by missing mapping resources, no real client run)
+- [~] Master terminates the client connection (Netty listener, status/login/encryption/compression/limbo coded, status/login/online-auth/limbo flows unit-tested end to end with PacketEvents codecs on both ends; no real client run)
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
-- [~] Listener chain: `PacketBus` over PacketEvents' EventManager, receive side wired in master limbo phases only; untested
+- [~] Listener chain: `PacketBus` + `PacketTap` over PacketEvents' EventManager, wired in master limbo phases, master relay (both directions) and backend virtual connection (both directions); `PacketTapTest` covers both directions, cancel and modify; backend boot shows the tap initialises
 - [ ] Per-player context (state, version, latency)
 - [ ] Public API module for plugins
 - [ ] Master-side packet merge: backends' packet streams -> one coherent client view

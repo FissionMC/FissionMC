@@ -49,7 +49,17 @@ class TestClient(port: Int) : AutoCloseable {
 
     fun enableEncryption(secret: ByteArray) {
         val dec = LoginCrypto.aes(secret, Cipher.DECRYPT_MODE); val enc = LoginCrypto.aes(secret, Cipher.ENCRYPT_MODE)
-        input = javax.crypto.CipherInputStream(input, dec); output = javax.crypto.CipherOutputStream(output, enc)
+        val rawIn = input; val rawOut = output
+        // byte-at-a-time CFB8 (the JDK's CipherInputStream/OutputStream can hold bytes back)
+        input = object : java.io.InputStream() {
+            override fun read(): Int { val b = rawIn.read(); return if (b < 0) -1 else dec.update(byteArrayOf(b.toByte()))[0].toInt() and 0xff }
+            override fun read(b: ByteArray, off: Int, len: Int): Int { val n = rawIn.read(b, off, len); if (n <= 0) return n; val d = dec.update(b, off, n); System.arraycopy(d, 0, b, off, n); return n }
+        }
+        output = object : java.io.OutputStream() {
+            override fun write(b: Int) { rawOut.write(enc.update(byteArrayOf(b.toByte()))) }
+            override fun write(b: ByteArray, off: Int, len: Int) { rawOut.write(enc.update(b, off, len)) }
+            override fun flush() { rawOut.flush() }
+        }
     }
     fun setState(s: ConnectionState) { user.decoderState = s; user.encoderState = s }
     fun setCompression(t: Int) { threshold = t }
@@ -74,34 +84,20 @@ class TestClient(port: Int) : AutoCloseable {
 
     private fun readVarInt(): Int { var v = 0; var i = 0; while (true) { val b = input.read(); require(b >= 0) { "eof" }; v = v or ((b and 0x7f) shl (7 * i++)); if (b and 0x80 == 0) return v } }
 
-    /** Reads one frame and returns its PacketEvents receive/send event buffer. */
-    fun readType(): Pair<PacketTypeCommon, ByteBuf> {
+    private fun readBody(): ByteArray {
         val len = readVarInt(); var body = DataInputStream(input).readNBytes(len)
         if (threshold >= 0) {
             val bb = Unpooled.wrappedBuffer(body); val size = VarInts.tryRead(bb)!!
-            body = if (size == 0) ByteArray(bb.readableBytes()).also { bb.readBytes(it) } else {
-                val inf = Inflater(); inf.setInput(ByteArray(bb.readableBytes()).also { bb.readBytes(it) }); ByteArray(size).also { inf.inflate(it) }
-            }
+            val rest = ByteArray(bb.readableBytes()).also { bb.readBytes(it) }
+            body = if (size == 0) rest else { val inf = Inflater(); inf.setInput(rest); ByteArray(size).also { inf.inflate(it) } }
         }
-        val buf = Unpooled.wrappedBuffer(body)
-        val ev = EventCreationUtil.createSendEvent(channel, user, null, buf, false)
-        return ev.packetType to buf.also { it.readerIndex(0) }
+        return body
     }
+    private fun readEvent() = EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(readBody()), false)
     fun <W : PacketWrapper<W>> expect(type: PacketTypeCommon, make: (com.github.retrooper.packetevents.event.PacketSendEvent) -> W): W {
-        val len = readVarInt(); var body = DataInputStream(input).readNBytes(len)
-        if (threshold >= 0) {
-            val bb = Unpooled.wrappedBuffer(body); val size = VarInts.tryRead(bb)!!
-            body = if (size == 0) ByteArray(bb.readableBytes()).also { bb.readBytes(it) } else {
-                val inf = Inflater(); inf.setInput(ByteArray(bb.readableBytes()).also { bb.readBytes(it) }); ByteArray(size).also { inf.inflate(it) }
-            }
-        }
-        val ev = EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(body), false)
-        assertEquals(type, ev.packetType, "unexpected packet ${ev.packetType}")
-        return make(ev)
+        val ev = readEvent(); assertEquals(type, ev.packetType, "unexpected packet ${ev.packetType}"); return make(ev)
     }
-    fun skip(type: PacketTypeCommon) { val len = readVarInt(); var body = DataInputStream(input).readNBytes(len)
-        if (threshold >= 0) { val bb = Unpooled.wrappedBuffer(body); VarInts.tryRead(bb); body = ByteArray(bb.readableBytes()).also { bb.readBytes(it) } }
-        val ev = EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(body), false); assertEquals(type, ev.packetType) }
+    fun skip(type: PacketTypeCommon) { val ev = readEvent(); assertEquals(type, ev.packetType, "unexpected packet ${ev.packetType}") }
     override fun close() { sock.close(); channel.finishAndReleaseAll() }
 }
 
@@ -124,7 +120,7 @@ class ClientServerTest {
 
     private fun joinLimbo(c: TestClient, port: Int, name: String, afterLoginStart: () -> Unit = {}): UUID {
         c.send(WrapperHandshakingClientHandshake(777, "localhost", port, ConnectionIntention.LOGIN)); c.setState(ConnectionState.LOGIN)
-        c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, name, null, null))
+        c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, name, null, UUID(0, 1)))
         afterLoginStart()
         val t = c.expect(PacketType.Login.Server.SET_COMPRESSION) { WrapperLoginServerSetCompression(it) }.threshold
         c.setCompression(t)
@@ -179,7 +175,7 @@ class ClientServerTest {
         server(true).use { s ->
             TestClient(s.port).use { c ->
                 c.send(WrapperHandshakingClientHandshake(777, "localhost", s.port, ConnectionIntention.LOGIN)); c.setState(ConnectionState.LOGIN)
-                c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, "Mallory", null, null))
+                c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, "Mallory", null, UUID(0, 1)))
                 val req = c.expect(PacketType.Login.Server.ENCRYPTION_REQUEST) { WrapperLoginServerEncryptionRequest(it) }
                 val secret = ByteArray(16) { 1 }
                 fun rsa(d: ByteArray) = Cipher.getInstance("RSA/ECB/PKCS1Padding").apply { init(Cipher.ENCRYPT_MODE, req.publicKey) }.doFinal(d)
@@ -194,7 +190,7 @@ class ClientServerTest {
         server(false).use { s ->
             TestClient(s.port).use { c ->
                 c.send(WrapperHandshakingClientHandshake(700, "localhost", s.port, ConnectionIntention.LOGIN)); c.setState(ConnectionState.LOGIN)
-                c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, "Old", null, null))
+                c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, "Old", null, UUID(0, 1)))
                 c.skip(PacketType.Login.Server.DISCONNECT)
             }
         }
@@ -202,6 +198,18 @@ class ClientServerTest {
 }
 
 class CodecTest {
+    @Test fun `compression round trips small and large frames`() {
+        val ch = io.netty.channel.embedded.EmbeddedChannel(DecompressionDecoder(), CompressionEncoder(64))
+        for (n in listOf(10, 63, 64, 100, 5000)) {
+            val data = ByteArray(n) { (it % 7).toByte() }
+            ch.writeOutbound(Unpooled.wrappedBuffer(data))
+            val wire = ch.readOutbound<io.netty.buffer.ByteBuf>()
+            ch.writeInbound(wire)
+            val back = ch.readInbound<io.netty.buffer.ByteBuf>()
+            assertEquals(data.toList(), ByteArray(back.readableBytes()).also { back.readBytes(it) }.toList(), "size $n")
+        }
+    }
+
     @Test fun `varint round trip and size`() {
         for (v in listOf(0, 1, 127, 128, 255, 25565, 2097151, Int.MAX_VALUE, -1)) {
             val b = Unpooled.buffer(); VarInts.write(b, v)

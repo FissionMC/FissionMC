@@ -12,6 +12,13 @@ data class PlayerAttach(
     val properties: List<ProfilePropertyData>, val protocol: Int,
 ) : NodeMessage
 
+/**
+ * Master -> backend, sent right BEFORE the [PlayerAttach] of the same [playerId]: where the client really connects from.
+ * [address] is the client IP literal, [port] its port, [hostname] the server address from the client's handshake.
+ * Kept separate from [PlayerAttach] so id 48's layout stays unchanged. Without it the backend reports loopback.
+ */
+data class PlayerClientInfo(val playerId: Long, val address: String, val port: Int, val hostname: String) : NodeMessage
+
 /** Master -> backend: one client packet frame (varint packet id + payload; no length prefix, not compressed, not encrypted). */
 class PlayerPacketToBackend(val playerId: Long, val bytes: ByteArray) : NodeMessage
 
@@ -21,7 +28,7 @@ class PlayerPacketToClient(val playerId: Long, val bytes: ByteArray) : NodeMessa
 /** Either direction: the player's session on the backend ends ([reason] is for logs; the backend has already sent any disconnect packet). */
 data class PlayerDetach(val playerId: Long, val reason: String) : NodeMessage
 
-/** Registers player relay messages (ids 48-63). Ids are wire format: never reuse one. */
+/** Registers player relay messages (ids 48-63; 48-52 used). Ids are wire format: never reuse one. */
 fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerAttach>(48, { m, b ->
         b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeVarInt(m.protocol)
@@ -35,6 +42,8 @@ fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
         val n = b.readVarInt(); require(n in 0..64) { "too many profile properties" }
         PlayerAttach(id, hi, lo, name, List(n) { ProfilePropertyData(b.readString(64), b.readString(32767), if (b.readBoolean()) b.readString(32767) else null) }, proto)
     })
+    .register<PlayerClientInfo>(52, { m, b -> b.writeLong(m.playerId).writeString(m.address, 64).writeVarInt(m.port).writeString(m.hostname, 255) },
+        { b -> PlayerClientInfo(b.readLong(), b.readString(64), b.readVarInt(), b.readString(255)) })
     .register<PlayerPacketToBackend>(49, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToBackend(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerPacketToClient>(50, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToClient(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerDetach>(51, { m, b -> b.writeLong(m.playerId).writeString(m.reason, 256) }, { b -> PlayerDetach(b.readLong(), b.readString(256)) })

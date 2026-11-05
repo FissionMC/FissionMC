@@ -43,19 +43,7 @@ public abstract class BlockEntityMixin {
         implicitComponents.add(DataComponents.BLOCK_ENTITY_DATA);
         implicitComponents.add(DataComponents.BLOCK_STATE);
         final DataComponentMap fullView = PatchedDataComponentMap.fromPatch(prototype, patch);
-        this.applyImplicitComponents(new DataComponentGetter() {
-            @Override
-            public <T> @Nullable T get(final DataComponentType<? extends T> type) {
-                implicitComponents.add(type);
-                return fullView.get(type);
-            }
-
-            @Override
-            public <T> T getOrDefault(final DataComponentType<? extends T> type, final T defaultValue) {
-                implicitComponents.add(type);
-                return fullView.getOrDefault(type, defaultValue);
-            }
-        });
+        this.applyImplicitComponents(new net.fissionmc.backend.support.ImplicitComponentGetter(implicitComponents, fullView)); // FissionMC: was an anonymous class (not loadable inside a mixin)
         DataComponentPatch newPatch = patch.forget(implicitComponents::contains);
         this.components = newPatch.split().added();
         // CraftBukkit start

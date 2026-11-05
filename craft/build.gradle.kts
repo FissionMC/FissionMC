@@ -5,6 +5,7 @@ repositories {
 
 // Mirrors paper-server's dependency block (kept in the same order) so ported code resolves.
 dependencies {
+    api(project(":packets")) { exclude(group = "net.kyori") }
     api("io.papermc.paper:paper-api:26.3.build.240-stable")
     api(platform("ca.spottedleaf.leafpile:bom:1.3.2"))
     api("ca.spottedleaf.leafpile:common")
