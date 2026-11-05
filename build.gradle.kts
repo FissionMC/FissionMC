@@ -51,7 +51,9 @@ configure(listOf(project(":craft"), project(":backend"))) {
         }
         tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
             dependsOn(generateSurface)
-            libraries.setFrom(files(surfaceJar), libraries.files)
+            // keep the original (lazy) sources: calling .files here would freeze project jars before they are built
+            val original = libraries.from.toList()
+            libraries.setFrom(files(surfaceJar), original)
         }
     }
 }
