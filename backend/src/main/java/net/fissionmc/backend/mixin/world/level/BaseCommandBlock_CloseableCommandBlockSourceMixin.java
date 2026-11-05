@@ -13,7 +13,7 @@ public abstract class BaseCommandBlock_CloseableCommandBlockSourceMixin {
 
     // CraftBukkit start
     public org.bukkit.command.CommandSender getBukkitSender(CommandSourceStack wrapper) {
-        return ((BaseCommandBlockMixin) (Object) this.this$0).fission$getBukkitSender(wrapper); // BaseCommandBlock.this.getBukkitSender(wrapper)
+        return this.this$0.fission$getBukkitSender(wrapper); // BaseCommandBlock.this.getBukkitSender(wrapper)
     }
     // CraftBukkit end
 }

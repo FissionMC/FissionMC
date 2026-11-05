@@ -22,7 +22,21 @@ public abstract class ChunkAccessMixin {
     private static final org.bukkit.craftbukkit.persistence.CraftPersistentDataTypeRegistry DATA_TYPE_REGISTRY = new org.bukkit.craftbukkit.persistence.CraftPersistentDataTypeRegistry();
     private org.bukkit.craftbukkit.persistence.DirtyCraftPersistentDataContainer persistentDataContainer = new org.bukkit.craftbukkit.persistence.DirtyCraftPersistentDataContainer(DATA_TYPE_REGISTRY);
     // CraftBukkit end
-    // TODO(behaviour): tryMarkSaved/isUnsaved hunks (pdc dirty state), coordinateKey/locX/locZ fields
+    // TODO(behaviour): coordinateKey/locX/locZ cached fields (Paper - cache coordinate key; perf only, not declared)
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "tryMarkSaved", at = @org.spongepowered.asm.mixin.injection.At(value = "FIELD", target = "Lnet/minecraft/world/level/chunk/ChunkAccess;unsaved:Z", opcode = org.objectweb.asm.Opcodes.PUTFIELD))
+    private void paper$pdcSaved(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        this.persistentDataContainer.dirty(false); // CraftBukkit - SPIGOT-6814: chunk was saved, pdc is no longer dirty
+    }
+
+    @com.llamalad7.mixinextras.injector.ModifyReturnValue(method = "isUnsaved", at = @org.spongepowered.asm.mixin.injection.At("RETURN"))
+    private boolean paper$pdcUnsaved(final boolean unsaved) {
+        // FissionMC: LevelChunk's override (isUnsaved() && !mustNotSave) is folded in here, LevelChunk does not override isUnsaved
+        if ((Object) this instanceof net.minecraft.world.level.chunk.LevelChunk levelChunk && levelChunk.mustNotSave) {
+            return false; // CraftBukkit
+        }
+        return unsaved || this.persistentDataContainer.dirty(); // CraftBukkit - SPIGOT-6814: chunk is unsaved if pdc was mutated
+    }
 
     // CraftBukkit start
     public void setNoiseBiome(int quartX, int quartY, int quartZ, Holder<Biome> biome) {
