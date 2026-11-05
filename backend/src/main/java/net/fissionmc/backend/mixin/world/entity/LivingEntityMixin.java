@@ -80,6 +80,8 @@ public abstract class LivingEntityMixin extends Entity implements net.fissionmc.
     @Shadow public abstract ItemStack getItemBlockingWith();
     @Shadow protected abstract void blockUsingItem(ServerLevel level, LivingEntity attacker, DamageSource source, float damage, boolean fullyBlocked);
     @Shadow public abstract InteractionHand getUsedItemHand();
+    @Shadow protected abstract void completeUsingItem();
+    @Shadow public abstract int getTicksUsingItem();
     @Shadow public abstract boolean isUsingItem();
     @Shadow public abstract float getYHeadRot();
     @Shadow public abstract boolean wasExperienceConsumed();
@@ -1629,7 +1631,108 @@ public abstract class LivingEntityMixin extends Entity implements net.fissionmc.
         this.onAttack(null); // Paper
     }
 
-    // TODO(behaviour): lag compensate eating in updateUsingItem/updatingUsingItem/stopUsingItem, PlayerItemConsumeEvent in completeUsingItem,
-    // PlayerStopUsingItemEvent in releaseUsingItem, EntityEquipmentChangedEvent/PlayerArmorChangeEvent in collectEquipmentChanges,
-    // spin attack event, onItemPickup global player lookup, randomTeleport cause API/EntityTeleportEvent, rotation range checks
+    // Paper start - lag compensate eating
+    @Inject(method = "updateUsingItem", at = @At("RETURN"))
+    private void fission$lagCompensateEating(ItemStack useItem, CallbackInfo ci) {
+        // Paper: (--useItemRemaining == 0 || shouldLagCompensate) -- vanilla handled the first half, here the second
+        if (this.useItemRemaining > 0 && !this.level().isClientSide() && !useItem.useOnRelease()) {
+            // we add 1 to the expected time to avoid lag compensating when we should not
+            final boolean shouldLagCompensate = this.useItem.has(DataComponents.FOOD) && this.eatStartTime != -1 && (System.nanoTime() - this.eatStartTime) > ((1L + this.totalEatTimeTicks) * 50L * (1000L * 1000L));
+            if (shouldLagCompensate) {
+                this.useItemRemaining = 0;
+                this.completeUsingItem();
+            }
+        }
+    }
+
+    @Inject(method = "onSyncedDataUpdated", at = @At(value = "FIELD", target = "Lnet/minecraft/world/entity/LivingEntity;useItemRemaining:I", opcode = org.objectweb.asm.Opcodes.PUTFIELD, ordinal = 1))
+    private void fission$resetEatInUpdating(EntityDataAccessor<?> accessor, CallbackInfo ci) {
+        this.totalEatTimeTicks = 0;
+        this.eatStartTime = -1L;
+    }
+
+    @Inject(method = "stopUsingItem", at = @At("RETURN"))
+    private void fission$resetEatInStop(CallbackInfo ci) {
+        this.totalEatTimeTicks = 0;
+        this.eatStartTime = -1L;
+    }
+    // Paper end - lag compensate eating
+
+    @Unique private InteractionHand fission$consumeHand;
+    @Unique private boolean fission$consumeForceHeld;
+
+    // CraftBukkit start - fire PlayerItemConsumeEvent
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "completeUsingItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ItemStack;finishUsingItem(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/LivingEntity;)Lnet/minecraft/world/item/ItemStack;"))
+    private ItemStack fission$consumeEvent(ItemStack stack, Level level, LivingEntity self, com.llamalad7.mixinextras.injector.wrapoperation.Operation<ItemStack> original) {
+        InteractionHand hand = this.getUsedItemHand();
+        this.startUsingItem(hand, true); // Paper - Prevent consuming the wrong itemstack
+        ItemStack result;
+        org.bukkit.event.player.PlayerItemConsumeEvent event = null; // Paper
+        if ((Object) this instanceof ServerPlayer serverPlayer) {
+            org.bukkit.inventory.ItemStack craftItem = org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(this.useItem);
+            org.bukkit.inventory.EquipmentSlot handSlot = org.bukkit.craftbukkit.CraftEquipmentSlot.getHand(hand);
+            event = new org.bukkit.event.player.PlayerItemConsumeEvent((org.bukkit.entity.Player) this.getBukkitEntity(), craftItem, handSlot); // Paper
+            this.level().getCraftServer().getPluginManager().callEvent(event);
+
+            if (event.isCancelled()) {
+                // TODO(behaviour): Paper's Consumable#cancelUsingItem (resend of listener effects/active effects) is not ported
+                serverPlayer.containerMenu.forceHeldSlot(hand);
+                serverPlayer.getBukkitEntity().updateScaledHealth();
+                return this.useItem; // vanilla then calls stopUsingItem(), as Paper does before returning - event is using an item, clear active item to reset its use
+            }
+
+            result = (craftItem.equals(event.getItem())) ? original.call(this.useItem, level, self) : original.call(org.bukkit.craftbukkit.inventory.CraftItemStack.asNMSCopy(event.getItem()), level, self);
+        } else {
+            result = original.call(this.useItem, level, self);
+        }
+        // Paper start - save the default replacement item and change it if necessary
+        if (event != null && event.getReplacement() != null) {
+            result = org.bukkit.craftbukkit.inventory.CraftItemStack.asNMSCopy(event.getReplacement());
+            this.fission$consumeForceHeld = true;
+            this.fission$consumeHand = hand;
+        }
+        // Paper end
+        return result;
+    }
+
+    @Inject(method = "completeUsingItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;stopUsingItem()V"))
+    private void fission$consumeForceHeld(CallbackInfo ci) {
+        if (this.fission$consumeForceHeld) {
+            this.fission$consumeForceHeld = false;
+            if ((Object) this instanceof ServerPlayer player) player.containerMenu.forceHeldSlot(this.fission$consumeHand); // Paper - Fix inventory desync; Paper#13253
+        }
+    }
+    // CraftBukkit end
+
+    @Inject(method = "releaseUsingItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ItemStack;releaseUsing(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/LivingEntity;I)V"))
+    private void fission$stopUsingEvent(CallbackInfo ci) {
+        if ((Object) this instanceof ServerPlayer) new io.papermc.paper.event.player.PlayerStopUsingItemEvent((org.bukkit.entity.Player) this.getBukkitEntity(), org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitMirror(this.useItem), this.getTicksUsingItem()).callEvent(); // Paper - Add PlayerStopUsingItemEvent
+    }
+
+    // Paper start - EntityEquipmentChangedEvent, PlayerArmorChangeEvent
+    // FissionMC: Paper fires the events inside the loop; here the previous items are snapshotted and the events fired from the result
+    @com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod(method = "collectEquipmentChanges")
+    private @Nullable Map<EquipmentSlot, ItemStack> fission$equipmentChanged(Map<EquipmentSlot, ItemStack> lastEquipmentItems, com.llamalad7.mixinextras.injector.wrapoperation.Operation<Map<EquipmentSlot, ItemStack>> original) {
+        Map<EquipmentSlot, ItemStack> before = new java.util.EnumMap<>(EquipmentSlot.class);
+        before.putAll(lastEquipmentItems);
+        Map<EquipmentSlot, ItemStack> changed = original.call(lastEquipmentItems);
+        if (changed != null) {
+            Map<org.bukkit.inventory.EquipmentSlot, io.papermc.paper.event.entity.EntityEquipmentChangedEvent.EquipmentChange> equipmentChanges = new java.util.EnumMap<>(org.bukkit.inventory.EquipmentSlot.class);
+            for (Map.Entry<EquipmentSlot, ItemStack> entry : changed.entrySet()) {
+                EquipmentSlot slot = entry.getKey();
+                ItemStack previous = before.getOrDefault(slot, ItemStack.EMPTY);
+                final org.bukkit.inventory.ItemStack oldItem = org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(previous);
+                final org.bukkit.inventory.ItemStack newItem = org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(entry.getValue());
+                if ((Object) this instanceof ServerPlayer && slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR) {
+                    new com.destroystokyo.paper.event.player.PlayerArmorChangeEvent((org.bukkit.entity.Player) this.getBukkitEntity(), com.destroystokyo.paper.event.player.PlayerArmorChangeEvent.SlotType.valueOf(slot.name()), oldItem, newItem).callEvent();
+                }
+                equipmentChanges.put(org.bukkit.craftbukkit.CraftEquipmentSlot.getSlot(slot), new net.fissionmc.backend.world.entity.EquipmentChangeImpl(oldItem, newItem));
+            }
+            new io.papermc.paper.event.entity.EntityEquipmentChangedEvent(this.getBukkitEntity(), equipmentChanges).callEvent(); // Paper - EntityEquipmentChangedEvent
+        }
+        return changed;
+    }
+    // Paper end
+
+    // TODO(behaviour): spin attack event, onItemPickup global player lookup, randomTeleport cause API/EntityTeleportEvent, rotation range checks
 }
