@@ -6,6 +6,12 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.network.ServerCommonPacketListenerImpl;
 import net.minecraft.server.network.ServerConfigurationPacketListenerImpl;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import net.minecraft.server.network.config.PrepareSpawnTask;
+import net.minecraft.server.players.NameAndId;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -24,6 +30,16 @@ public abstract class ServerConfigurationPacketListenerImplMixin extends ServerC
     @Inject(method = "<init>", at = @At("RETURN"))
     private void fission$init(final MinecraftServer server, final Connection connection, final CommonListenerCookie cookie, final CallbackInfo ci) {
         this.paperConnection = new io.papermc.paper.connection.PaperPlayerConfigurationConnection((ServerConfigurationPacketListenerImpl) (Object) this); // Paper
+    }
+
+    @Shadow @Final private com.mojang.authlib.GameProfile gameProfile;
+
+    // Paper - pass full GameProfile & listener for events (Paper changes the PrepareSpawnTask constructor; here the extra args are set right after construction)
+    @WrapOperation(method = "returnToWorld", at = @At(value = "NEW", target = "(Lnet/minecraft/server/MinecraftServer;Lnet/minecraft/server/players/NameAndId;)Lnet/minecraft/server/network/config/PrepareSpawnTask;"))
+    private PrepareSpawnTask paper$passProfileAndListener(final MinecraftServer server, final NameAndId nameAndId, final Operation<PrepareSpawnTask> original) {
+        final PrepareSpawnTask task = original.call(server, nameAndId);
+        task.fission$init(this.gameProfile, (ServerConfigurationPacketListenerImpl) (Object) this);
+        return task;
     }
 
     // TODO(behaviour): configuration events (PlayerConnectionInitialConfigureEvent, PlayerLinksSendEvent, code of conduct, login result)

@@ -39,6 +39,8 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
 
     @Shadow public abstract void teleport(PositionMoveRotation destination, Set<Relative> relatives);
     @Shadow private void performUnsignedChatCommand(final String command) { throw new AssertionError(); }
+    @Shadow @Final private net.minecraft.util.FutureChain chatMessageChain;
+    @Shadow private boolean waitingForSwitchToConfig;
 
     protected ServerGamePacketListenerImplMixin(final MinecraftServer server, final Connection connection, final CommonListenerCookie cookie) {
         super(server, connection, cookie);
@@ -257,4 +259,44 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
         return this.playerGameConnection;
     }
     // Paper end
+
+    // Paper: onDisconnect / removePlayerFromWorld (quit message from PlayerQuitEvent / kick event)
+    @Inject(method = "onDisconnect", at = @At("HEAD"), cancellable = true)
+    private void paper$onDisconnect(final DisconnectionDetails details, final CallbackInfo ci) {
+        ci.cancel();
+        LOGGER.info("{} lost connection: {}", this.player.getPlainTextName(), details.reason().getString());
+        // Paper start - Fix kick event leave message not being sent
+        final net.kyori.adventure.text.Component quitMessage = details.quitMessage().map(io.papermc.paper.adventure.PaperAdventure::asAdventure).orElse(null);
+        if (!this.waitingForSwitchToConfig) this.removePlayerFromWorld(quitMessage); // Paper - Don't remove player twice when disconnected during config switch
+        // Paper end - Fix kick event leave message not being sent
+        super.onDisconnect(details);
+    }
+
+    @Inject(method = "removePlayerFromWorld()V", at = @At("HEAD"), cancellable = true)
+    private void paper$removePlayerFromWorld(final CallbackInfo ci) {
+        ci.cancel();
+        // Paper start - Fix kick event leave message not being sent
+        this.removePlayerFromWorld(null);
+    }
+
+    private void removePlayerFromWorld(net.kyori.adventure.text.@org.jspecify.annotations.Nullable Component quitMessage) {
+        // Paper end - Fix kick event leave message not being sent
+        this.chatMessageChain.close();
+        // CraftBukkit start - Replace vanilla quit message handling with our own.
+        /*
+        this.server.invalidateStatus();
+        this.server
+            .getPlayerList()
+            .broadcastSystemMessage(Component.translatable("multiplayer.player.left", this.player.getDisplayName()).withStyle(ChatFormatting.YELLOW), false);
+         */
+        this.player.disconnect();
+        // Paper start - Adventure
+        quitMessage = quitMessage == null ? this.server.getPlayerList().fission$remove(this.player) : this.server.getPlayerList().fission$remove(this.player, quitMessage); // Paper - pass in quitMessage to fix kick message not being used
+        if ((quitMessage != null) && !quitMessage.equals(net.kyori.adventure.text.Component.empty())) {
+            this.server.getPlayerList().broadcastSystemMessage(io.papermc.paper.adventure.PaperAdventure.asVanilla(quitMessage), false);
+            // Paper end - Adventure
+        }
+        // CraftBukkit end
+        this.player.getTextFilter().leave();
+    }
 }
