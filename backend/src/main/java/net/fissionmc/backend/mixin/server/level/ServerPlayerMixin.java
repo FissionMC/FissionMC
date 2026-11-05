@@ -40,6 +40,18 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.Redirect;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
+import java.util.Optional;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.level.block.AbstractBedBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.portal.TeleportTransition;
 
 /** Paper: sources/net/minecraft/server/level/ServerPlayer.java.patch */
 @Mixin(ServerPlayer.class)
@@ -52,6 +64,7 @@ public abstract class ServerPlayerMixin extends Player {
     @Shadow private ServerPlayer.@Nullable RespawnConfig respawnConfig;
     @Shadow private boolean postEffectsDirty;
     @Shadow private int containerCounter;
+    @Shadow private int lastSentExp;
 
     @Shadow protected abstract void setShoulderEntityLeft(CompoundTag tag);
     @Shadow protected abstract void setShoulderEntityRight(CompoundTag tag);
@@ -432,6 +445,194 @@ public abstract class ServerPlayerMixin extends Player {
     @Override
     public org.bukkit.craftbukkit.entity.CraftPlayer getBukkitEntity() {
         return (org.bukkit.craftbukkit.entity.CraftPlayer) super.getBukkitEntity();
+    }
+    // CraftBukkit end
+
+    // Paper start - respawn event (findRespawnPositionAndUseSpawnBlock fires PlayerRespawnEvent)
+    public @Nullable TeleportTransition findRespawnPositionAndUseSpawnBlock(
+        final boolean consumeSpawnBlock, final TeleportTransition.PostTeleportTransition postTeleportTransition,
+        final org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason
+    ) {
+        net.fissionmc.craft.compat.RespawnResult result = this.findRespawnPositionAndUseSpawnBlock0(consumeSpawnBlock, postTeleportTransition, respawnReason);
+        return result == null ? null : result.transition();
+    }
+
+    public net.fissionmc.craft.compat.@Nullable RespawnResult findRespawnPositionAndUseSpawnBlock0(
+        final boolean consumeSpawnBlock, final TeleportTransition.PostTeleportTransition postTeleportTransition,
+        final org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason
+    ) {
+        TeleportTransition teleportTransition;
+        boolean isBedSpawn = false;
+        boolean isAnchorSpawn = false;
+        Runnable consumeAnchorCharge = null;
+        // Paper end
+        ServerPlayer.RespawnConfig respawnConfig = this.fission$self().getRespawnConfig();
+        ServerLevel respawnLevel = this.server.getLevel(respawnConfig != null ? respawnConfig.respawnData().dimension() : Level.OVERWORLD); // FissionMC: RespawnConfig.getDimensionOrDefault is private
+        if (respawnLevel != null && respawnConfig != null) {
+            Optional<net.fissionmc.backend.level.RespawnPosAngle> respawn = fission$findRespawnAndUseSpawnBlock(respawnLevel, respawnConfig, consumeSpawnBlock);
+            if (respawn.isPresent()) {
+                net.fissionmc.backend.level.RespawnPosAngle respawnPosAngle = respawn.get();
+                // CraftBukkit start
+                isBedSpawn = respawnPosAngle.isBedSpawn();
+                isAnchorSpawn = respawnPosAngle.isAnchorSpawn();
+                consumeAnchorCharge = respawnPosAngle.consumeAnchorCharge();
+                teleportTransition = new TeleportTransition(
+                    respawnLevel, respawnPosAngle.position(), Vec3.ZERO, respawnPosAngle.yaw(), respawnPosAngle.pitch(), postTeleportTransition
+                );
+                // CraftBukkit end
+            } else {
+                teleportTransition = TeleportTransition.missingRespawnBlock(this.fission$self(), postTeleportTransition); // CraftBukkit
+            }
+        } else {
+            // CraftBukkit start
+            teleportTransition = TeleportTransition.createDefault(this.fission$self(), postTeleportTransition);
+        }
+
+        org.bukkit.entity.Player respawnPlayer = this.getBukkitEntity();
+        org.bukkit.Location location = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(
+            teleportTransition.position(),
+            teleportTransition.newLevel(),
+            teleportTransition.yRot(),
+            teleportTransition.xRot()
+        );
+
+        // Paper start - respawn flags
+        org.bukkit.event.player.PlayerRespawnEvent respawnEvent = new org.bukkit.event.player.PlayerRespawnEvent(
+            respawnPlayer,
+            location,
+            isBedSpawn,
+            isAnchorSpawn,
+            teleportTransition.missingRespawnBlock(),
+            respawnReason
+        );
+        // Paper end - respawn flags
+        this.level().getCraftServer().getPluginManager().callEvent(respawnEvent);
+        // Spigot start
+        if (this.connection.isDisconnected()) {
+            return null;
+        }
+        // Spigot end
+
+        // Paper start - consume anchor charge if location hasn't changed
+        if (location.equals(respawnEvent.getRespawnLocation()) && consumeAnchorCharge != null) {
+            consumeAnchorCharge.run();
+        }
+        // Paper end - consume anchor charge if location hasn't changed
+        location = respawnEvent.getRespawnLocation();
+
+        return new net.fissionmc.craft.compat.RespawnResult(
+            teleportTransition.withChangedLocation(location),
+            isBedSpawn,
+            isAnchorSpawn
+        );
+        // CraftBukkit end
+    }
+
+    // Paper: vanilla findRespawnAndUseSpawnBlock with the anchor charge deferred until after the respawn event (Fix SPIGOT-5989)
+    private static Optional<net.fissionmc.backend.level.RespawnPosAngle> fission$findRespawnAndUseSpawnBlock(
+        final ServerLevel level, final ServerPlayer.RespawnConfig respawnConfig, final boolean consumeSpawnBlock
+    ) {
+        LevelData.RespawnData respawnData = respawnConfig.respawnData();
+        BlockPos pos = respawnData.pos();
+        float yaw = respawnData.yaw();
+        float pitch = respawnData.pitch();
+        boolean forced = respawnConfig.forced();
+        BlockState blockState = level.getBlockState(pos);
+        Block block = blockState.getBlock();
+        if (block instanceof RespawnAnchorBlock && (forced || blockState.getValue(RespawnAnchorBlock.CHARGE) > 0) && RespawnAnchorBlock.canSetSpawn(level, pos)) {
+            Runnable consumeAnchorCharge = null; // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+            Optional<Vec3> standUpPosition = RespawnAnchorBlock.findStandUpPosition(EntityTypes.PLAYER, level, pos);
+            if (!forced && consumeSpawnBlock && standUpPosition.isPresent()) {
+                consumeAnchorCharge = () -> level.setBlockAndUpdate(pos, blockState.setValue(RespawnAnchorBlock.CHARGE, blockState.getValue(RespawnAnchorBlock.CHARGE) - 1)); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+            }
+            final Runnable finalConsumeAnchorCharge = consumeAnchorCharge; // Paper - Fix SPIGOT-5989
+
+            return standUpPosition.map(p -> net.fissionmc.backend.level.RespawnPosAngle.of(p, pos, 0.0F, false, true, finalConsumeAnchorCharge)); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+        } else if (block instanceof AbstractBedBlock abstractBedBlock && abstractBedBlock.getBedRule(level, pos).canSetSpawn(level)) {
+            return AbstractBedBlock.findStandUpPosition(EntityTypes.PLAYER, level, pos, blockState.getValue(AbstractBedBlock.FACING), yaw)
+                .map(p -> net.fissionmc.backend.level.RespawnPosAngle.of(p, pos, 0.0F, true, false, null)); // Paper - Fix SPIGOT-5989
+        } else {
+            if (!forced) {
+                return Optional.empty();
+            }
+
+            boolean freeBottom = block.isPossibleToRespawnInThis(blockState);
+            BlockState topState = level.getBlockState(pos.above());
+            boolean freeTop = topState.getBlock().isPossibleToRespawnInThis(topState);
+            return freeBottom && freeTop
+                ? Optional.of(new net.fissionmc.backend.level.RespawnPosAngle(new Vec3(pos.getX() + 0.5, pos.getY() + 0.1, pos.getZ() + 0.5), yaw, pitch, false, false, null)) // Paper - Fix SPIGOT-5989
+                : Optional.empty();
+        }
+    }
+
+    // Paper: the vanilla 2-argument variant (no respawn reason) is removed in Paper; route it through the event with DEATH
+    @Inject(method = "findRespawnPositionAndUseSpawnBlock(ZLnet/minecraft/world/level/portal/TeleportTransition$PostTeleportTransition;)Lnet/minecraft/world/level/portal/TeleportTransition;", at = @At("HEAD"), cancellable = true)
+    private void paper$findRespawnPosition(final boolean consumeSpawnBlock, final TeleportTransition.PostTeleportTransition postTeleportTransition, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<TeleportTransition> cir) {
+        TeleportTransition transition = this.findRespawnPositionAndUseSpawnBlock(consumeSpawnBlock, postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason.DEATH);
+        if (transition != null) cir.setReturnValue(transition);
+    }
+
+    // Paper start - restoreFrom: the instance is reused on respawn (PlayerList.respawn), so don't duplicate effects/modifiers/recipes
+    @Redirect(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/ai/attributes/AttributeMap;assignPermanentModifiers(Lnet/minecraft/world/entity/ai/attributes/AttributeMap;)V"))
+    private void craftbukkit$noAssignPermanentModifiers(final net.minecraft.world.entity.ai.attributes.AttributeMap self, final net.minecraft.world.entity.ai.attributes.AttributeMap other) {
+        // this.getAttributes().assignPermanentModifiers(oldPlayer.getAttributes()); // CraftBukkit
+    }
+
+    @Redirect(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;addEffect(Lnet/minecraft/world/effect/MobEffectInstance;)Z"))
+    private boolean craftbukkit$noCopyEffects(final ServerPlayer self, final net.minecraft.world.effect.MobEffectInstance effect) {
+        return false; // this.addEffect(new MobEffectInstance(effect)); // CraftBukkit
+    }
+
+    @WrapWithCondition(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;setHealth(F)V", ordinal = 1))
+    private boolean craftbukkit$noResetHealth(final ServerPlayer self, final float health) {
+        return false; // this.setHealth(this.getMaxHealth()); // CraftBukkit
+    }
+
+    @WrapWithCondition(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/stats/ServerRecipeBook;copyOverData(Lnet/minecraft/stats/ServerRecipeBook;)V"))
+    private boolean craftbukkit$noCopyRecipeBook(final net.minecraft.stats.ServerRecipeBook self, final net.minecraft.stats.ServerRecipeBook other) {
+        return false; // this.recipeBook.copyOverData(oldPlayer.recipeBook); // CraftBukkit
+    }
+    // Paper end
+
+    // CraftBukkit start - reset the reused player on respawn
+    public void reset() {
+        float exp = 0;
+
+        if (this.keepLevel) { // CraftBukkit - SPIGOT-6687: Only use keepLevel (was pre-set with RULE_KEEPINVENTORY value in PlayerDeathEvent)
+            exp = this.experienceProgress;
+            this.newTotalExp = this.totalExperience;
+            this.newLevel = this.experienceLevel;
+        }
+
+        this.setHealth(this.getMaxHealth());
+        this.stopUsingItem(); // CraftBukkit - SPIGOT-6682: Clear active item on reset
+        this.setAirSupply(this.getMaxAirSupply()); // Paper - Reset players airTicks on respawn
+        this.setRemainingFireTicks(0);
+        this.fallDistance = 0;
+        this.foodData = new net.minecraft.world.food.FoodData();
+        this.experienceLevel = this.newLevel;
+        this.totalExperience = this.newTotalExp;
+        this.experienceProgress = 0;
+        this.deathTime = 0;
+        this.setStingerCount(0);
+        this.removeStingerTime = 0;
+        this.setArrowCount(0, true); // CraftBukkit - ArrowBodyCountChangeEvent
+        this.removeArrowTime = 0;
+        this.removeAllEffects(org.bukkit.event.entity.EntityPotionEffectEvent.Cause.DEATH);
+        this.effectsDirty = true;
+        this.containerMenu = this.inventoryMenu;
+        this.lastHurtByPlayer = null;
+        this.lastHurtByMob = null;
+        this.combatTracker = new net.minecraft.world.damagesource.CombatTracker(this);
+        this.lastSentExp = -1;
+        if (this.keepLevel) { // CraftBukkit - SPIGOT-6687: Only use keepLevel (was pre-set with RULE_KEEPINVENTORY value in PlayerDeathEvent)
+            this.experienceProgress = exp;
+        } else {
+            this.giveExperiencePoints(this.newExp);
+        }
+        this.keepLevel = false;
+        this.setDeltaMovement(0, 0, 0); // CraftBukkit - SPIGOT-6948: Reset velocity on death
+        this.skipDropExperience = false; // CraftBukkit - SPIGOT-7462: Reset experience drop skip, so that further deaths drop xp
     }
     // CraftBukkit end
 }
