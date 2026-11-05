@@ -2,6 +2,7 @@ package net.fissionmc.backend.mixin.world.level.material;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.LevelAccessor;
@@ -22,7 +23,7 @@ public abstract class LavaFluidMixin {
     private boolean fission$formed = true;
 
     @WrapOperation(method = "randomTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;setBlockAndUpdate(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)Z"))
-    private boolean fission$ignite(final ServerLevel level, final BlockPos target, final BlockState state, final Operation<Boolean> original, final ServerLevel level2, final BlockPos pos, final net.minecraft.world.level.material.FluidState fluidState, final net.minecraft.util.RandomSource random) {
+    private boolean fission$ignite(final ServerLevel level, final BlockPos target, final BlockState state, final Operation<Boolean> original, @Local(name = "pos") final BlockPos pos) {
         if (!level.getBlockState(target).is(Blocks.FIRE)) {
             if (org.bukkit.craftbukkit.event.CraftEventFactory.callBlockIgniteEvent(level, target, pos).isCancelled()) {
                 return false;
