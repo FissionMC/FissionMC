@@ -3,6 +3,7 @@
 
 # Paper: sources/net/minecraft/world/entity/Entity.java.patch
 net.minecraft.world.entity.Entity: static boolean isLevelAtLeast(net.minecraft.world.level.storage.ValueInput input, int level)
+net.minecraft.world.entity.Entity: public static net.minecraft.util.RandomSource SHARED_RANDOM
 net.minecraft.world.entity.Entity: public org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason spawnReason
 net.minecraft.world.entity.Entity: public org.bukkit.craftbukkit.entity.CraftEntity getBukkitEntity()
 net.minecraft.world.entity.Entity: public org.bukkit.craftbukkit.entity.CraftEntity getBukkitEntityRaw()
@@ -196,3 +197,11 @@ net.minecraft.world.entity.ItemBasedSteering: public void boost(int boostTime)
 
 # Paper: sources/net/minecraft/network/syncher/SynchedEntityData.java.patch
 net.minecraft.network.syncher.SynchedEntityData: public java.util.List<net.minecraft.network.syncher.SynchedEntityData$DataValue<?>> packAll()
+
+# Paper: sources/net/minecraft/world/entity/NeutralMob.java.patch
+net.minecraft.world.entity.NeutralMob: public void tickInitialPersistentAnger(net.minecraft.world.level.Level level)
+
+# Paper: net/minecraft/world/entity/EntityType.java.patch
+net.minecraft.world.entity.EntityType: public T spawn(net.minecraft.server.level.ServerLevel level, net.minecraft.world.item.ItemStack itemStack, net.minecraft.world.entity.LivingEntity user, net.minecraft.core.BlockPos spawnPos, net.minecraft.world.entity.EntitySpawnReason spawnReason, boolean tryMoveDown, boolean movedUp, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason createSpawnReason)
+net.minecraft.world.entity.EntityType: public T spawn(net.minecraft.server.level.ServerLevel level, net.minecraft.core.BlockPos spawnPos, net.minecraft.world.entity.EntitySpawnReason spawnReason, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)
+net.minecraft.world.entity.EntityType: public T spawn(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.PostSpawnProcessor<T> postSpawnConfig, net.minecraft.core.BlockPos spawnPos, net.minecraft.world.entity.EntitySpawnReason spawnReason, boolean tryMoveDown, boolean movedUp, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)

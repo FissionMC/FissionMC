@@ -296,4 +296,14 @@ public abstract class DedicatedServerMixin extends MinecraftServer {
         return this.console;
     }
     // CraftBukkit end
+
+    // CraftBukkit start - ServerCommand for preprocessing
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "handleConsoleInputs", at = @At(value = "INVOKE", target = "Lnet/minecraft/commands/Commands;performPrefixedCommand(Lnet/minecraft/commands/CommandSourceStack;Ljava/lang/String;)V"))
+    private void paper$serverCommandEvent(final net.minecraft.commands.Commands commands, final net.minecraft.commands.CommandSourceStack source, final String msg, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        org.bukkit.event.server.ServerCommandEvent event = new org.bukkit.event.server.ServerCommandEvent(((MinecraftServer) (Object) this).console, msg);
+        ((MinecraftServer) (Object) this).server.getPluginManager().callEvent(event);
+        if (event.isCancelled()) return;
+        original.call(commands, source, event.getCommand());
+    }
+    // CraftBukkit end
 }

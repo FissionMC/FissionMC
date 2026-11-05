@@ -158,7 +158,7 @@ public abstract class LevelMixin {
     // Paper end
 
     // Paper start - if loaded
-    // TODO(behaviour): getChunk(int, int)/getBlockState/setBlock/setBlockEntity/getBlockEntity/destroyBlock capture + fast-path hunks
+    // TODO(behaviour): getChunk(int, int)/getBlockState fast paths (perf only)
     public final @Nullable ChunkAccess getChunkIfLoadedImmediately(int x, int z) {
         return ((ServerLevel) (Object) this).getChunkSource().getChunkAtIfLoadedImmediately(x, z);
     }
@@ -257,4 +257,187 @@ public abstract class LevelMixin {
         return ret;
     }
     // Paper end - allow patching this logic
+
+    // ---- wave 2: behaviour hunks (Paper: sources/net/minecraft/world/level/Level.java.patch) ----
+    @Shadow public abstract boolean isInValidBounds(BlockPos pos);
+    @Shadow public abstract LevelChunk getChunkAt(BlockPos pos);
+
+    // FissionMC: replaced body (Paper rewrites most of setBlock: tree capture, block-state capture, notifyAndUpdatePhysics split)
+    @Inject(method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$setBlock(final BlockPos pos, final BlockState blockState, final @Block.UpdateFlags int updateFlags, final int updateLimit, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        final Level self = (Level) (Object) this;
+        // CraftBukkit start - tree generation
+        if (this.captureTreeGeneration) {
+            // Paper start - Protect Bedrock and End Portal/Frames from being destroyed
+            BlockState type = self.getBlockState(pos);
+            if (!net.fissionmc.backend.server.PaperDestroyable.isDestroyable(type)) {
+                cir.setReturnValue(false);
+                return;
+            }
+            // Paper end - Protect Bedrock and End Portal/Frames from being destroyed
+            CraftBlockState blockstate = this.capturedBlockStates.get(pos);
+            if (blockstate == null) {
+                blockstate = org.bukkit.craftbukkit.block.CapturedBlockState.getTreeBlockState(self, pos, updateFlags);
+                this.capturedBlockStates.put(pos.immutable(), blockstate);
+            }
+            blockstate.setBlock(blockState);
+            blockstate.setFlags(updateFlags);
+            cir.setReturnValue(true);
+            return;
+        }
+        // CraftBukkit end
+        if (!this.isInValidBounds(pos)) {
+            cir.setReturnValue(false);
+            return;
+        }
+
+        if (!self.isClientSide() && self.isDebug()) {
+            cir.setReturnValue(false);
+            return;
+        }
+
+        LevelChunk chunk = this.getChunkAt(pos);
+        Block block = blockState.getBlock();
+        // CraftBukkit start - capture blockstates
+        boolean captured = false;
+        if (this.captureBlockStates) {
+            final CraftBlockState snapshot;
+            if (!this.capturedBlockStates.containsKey(pos)) {
+                snapshot = (CraftBlockState) org.bukkit.craftbukkit.block.CraftBlock.at(self, pos).getState(); // Paper - use CB getState to get a suitable snapshot
+                this.capturedBlockStates.put(pos.immutable(), snapshot);
+                captured = true;
+            } else {
+                snapshot = this.capturedBlockStates.get(pos);
+            }
+            snapshot.setFlags(updateFlags); // Paper - always set the flag of the most recent call to mitigate issues with multiple update at the same pos with different flags
+        }
+        // CraftBukkit end - capture blockstates
+        BlockState oldState = chunk.setBlockState(pos, blockState, updateFlags);
+        if (oldState == null) {
+            // CraftBukkit start - remove blockstate if failed (or the same)
+            if (this.captureBlockStates && captured) {
+                this.capturedBlockStates.remove(pos);
+            }
+            // CraftBukkit end
+            cir.setReturnValue(false);
+            return;
+        }
+
+        BlockState newState = self.getBlockState(pos);
+
+        // CraftBukkit start
+        if (!this.captureBlockStates) { // Don't notify clients or update physics while capturing blockstates
+            // Modularize client and physic updates
+            // Spigot start
+            try {
+                this.notifyAndUpdatePhysics(pos, chunk, oldState, blockState, newState, updateFlags, updateLimit);
+            } catch (StackOverflowError ex) {
+                lastPhysicsProblem = pos.immutable();
+            }
+            // Spigot end
+        }
+        // CraftBukkit end
+
+        cir.setReturnValue(true);
+    }
+
+    @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true)
+    private void paper$treeCaptureGetBlockState(final BlockPos pos, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<BlockState> cir) {
+        // CraftBukkit start - tree generation
+        if (this.captureTreeGeneration) {
+            CraftBlockState previous = this.capturedBlockStates.get(pos); // Paper
+            if (previous != null) {
+                cir.setReturnValue(previous.getHandle());
+            }
+        }
+        // CraftBukkit end
+    }
+
+    @Inject(method = "getBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void paper$capturedGetBlockEntity(final BlockPos pos, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<BlockEntity> cir) {
+        // Paper start - Perf: Optimize capturedTileEntities lookup
+        BlockEntity blockEntity;
+        if (!this.capturedBlockEntities.isEmpty() && (blockEntity = this.capturedBlockEntities.get(pos)) != null) {
+            cir.setReturnValue(blockEntity);
+        }
+        // Paper end - Perf: Optimize capturedTileEntities lookup
+    }
+
+    @Inject(method = "setBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void paper$capturedSetBlockEntity(final BlockEntity blockEntity, final CallbackInfo ci) {
+        BlockPos pos = blockEntity.getBlockPos();
+        // CraftBukkit start
+        if (this.isInValidBounds(pos) && this.captureBlockStates) {
+            this.capturedBlockEntities.put(pos.immutable(), blockEntity);
+            ci.cancel();
+        }
+        // CraftBukkit end
+    }
+
+    // FissionMC: replaced body (Paper - BlockDestroyEvent; Paper - Properly handle xp dropping)
+    @Inject(method = "destroyBlock(Lnet/minecraft/core/BlockPos;ZLnet/minecraft/world/entity/Entity;I)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$destroyBlock(final BlockPos pos, boolean dropResources, final @Nullable Entity breaker, final int updateLimit, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        final Level self = (Level) (Object) this;
+        if (!(self instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        BlockState blockState = self.getBlockState(pos);
+        if (blockState.isAir()) {
+            cir.setReturnValue(false);
+            return;
+        }
+        // Paper start - BlockDestroyEvent; while the above removeBlock method looks very similar
+        // they are NOT used with same intent and the above should not fire this event. The above method is more of a BlockSetToAirEvent,
+        // it doesn't imply destruction of a block that plays a sound effect / drops an item.
+        FluidState fluidState = self.getFluidState(pos);
+        boolean playEffect = true;
+        BlockState effectType = blockState;
+        int xp = blockState.getBlock().getExpDrop(blockState, serverLevel, pos, net.minecraft.world.item.ItemStack.EMPTY, true);
+        if (com.destroystokyo.paper.event.block.BlockDestroyEvent.getHandlerList().getRegisteredListeners().length > 0) {
+            com.destroystokyo.paper.event.block.BlockDestroyEvent event = new com.destroystokyo.paper.event.block.BlockDestroyEvent(org.bukkit.craftbukkit.block.CraftBlock.at(self, pos), fluidState.createLegacyBlock().asBlockData(), effectType.asBlockData(), xp, dropResources);
+            if (!event.callEvent()) {
+                cir.setReturnValue(false);
+                return;
+            }
+            effectType = ((org.bukkit.craftbukkit.block.data.CraftBlockData) event.getEffectBlock()).getState();
+            playEffect = event.playEffect();
+            dropResources = event.willDrop();
+            xp = event.getExpToDrop();
+        }
+        // Paper end - BlockDestroyEvent
+        if (playEffect) { // Paper - BlockDestroyEvent
+            effectType.getBlock().spawnDestroyParticles(self, pos, effectType); // Paper - BlockDestroyEvent
+        }
+
+        if (dropResources) {
+            BlockEntity blockEntity = blockState.hasBlockEntity() ? self.getBlockEntity(pos) : null;
+            Block.dropResources(blockState, self, pos, blockEntity, breaker, net.minecraft.world.item.ItemStack.EMPTY, false); // Paper - Properly handle xp dropping
+            // Paper - Properly handle xp dropping; custom amount (FissionMC: body of Paper's Block.popExperience(level, pos, xp, breaker))
+            if (serverLevel.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.BLOCK_DROPS)) {
+                net.minecraft.world.entity.ExperienceOrb.awardWithDirection(serverLevel, Vec3.atCenterOf(pos), Vec3.ZERO, xp, org.bukkit.entity.ExperienceOrb.SpawnReason.BLOCK_BREAK, breaker, null); // Paper
+            }
+        }
+
+        boolean destroyed = self.setBlock(pos, fluidState.createLegacyBlock(), Block.UPDATE_ALL, updateLimit);
+        if (destroyed) {
+            self.gameEvent(net.minecraft.world.level.gameevent.GameEvent.BLOCK_DESTROY, pos, net.minecraft.world.level.gameevent.GameEvent.Context.of(breaker, blockState));
+        }
+
+        cir.setReturnValue(destroyed);
+    }
+
+    // Paper start - Prevent block entity and entity crashes
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "guardEntityTick", at = @At(value = "INVOKE", target = "Ljava/util/function/Consumer;accept(Ljava/lang/Object;)V"))
+    private void paper$guardEntityTick(final java.util.function.Consumer<Object> tick, final Object object, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        try {
+            original.call(tick, object);
+        } catch (Throwable t) {
+            final Entity entity = (Entity) object;
+            final String msg = String.format("Entity threw exception at %s:%s,%s,%s", io.papermc.paper.util.MCUtil.getLevelName(entity.level()), entity.getX(), entity.getY(), entity.getZ());
+            net.minecraft.server.MinecraftServer.LOGGER.error(msg, t);
+            this.getCraftServer().getPluginManager().callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerInternalException(msg, t))); // Paper - ServerExceptionEvent
+            entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DISCARD);
+        }
+    }
+    // Paper end - Prevent block entity and entity crashes
 }

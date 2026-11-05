@@ -8,6 +8,48 @@ import org.spongepowered.asm.mixin.Shadow;
 @Mixin(BlockableEventLoop.class)
 public abstract class BlockableEventLoopMixin<R extends Runnable> {
     @Shadow public abstract void schedule(R r);
+    @Shadow @org.spongepowered.asm.mixin.Final private java.util.Queue<R> pendingRunnables;
+    @Shadow protected abstract void doRunTask(R task);
+    @Shadow public abstract boolean isSameThread();
+
+    // Paper start
+    public final boolean executeAllRecentInternalTasks() {
+        final int pending = this.pendingRunnables.size();
+
+        // note: due to possible recursive execution, we may execute more tasks than we want to
+
+        int ran = 0;
+
+        for (int i = 0; i < pending; ++i) {
+            final R run = this.pendingRunnables.poll();
+            if (run == null) {
+                // recursion
+                break;
+            }
+            this.doRunTask(run);
+            ++ran;
+        }
+
+        return ran > 0;
+    }
+
+    public boolean runTaskIf(final java.util.function.Predicate<? super R> predicate) {
+        if (!this.isSameThread()) {
+            throw new IllegalStateException();
+        }
+
+        final R run = this.pendingRunnables.peek();
+        if (run == null || (predicate != null && !predicate.test(run))) {
+            return false;
+        }
+
+        this.pendingRunnables.remove();
+
+        this.doRunTask(run);
+
+        return true;
+    }
+    // Paper end
 
     // Paper start
     public void scheduleOnMain(Runnable runnable) {

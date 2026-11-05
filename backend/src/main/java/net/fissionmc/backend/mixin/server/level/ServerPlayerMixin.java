@@ -39,7 +39,20 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.Redirect;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
+import java.util.Optional;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.level.block.AbstractBedBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.portal.TeleportTransition;
 
 /** Paper: sources/net/minecraft/server/level/ServerPlayer.java.patch */
 @Mixin(ServerPlayer.class)
@@ -52,6 +65,7 @@ public abstract class ServerPlayerMixin extends Player {
     @Shadow private ServerPlayer.@Nullable RespawnConfig respawnConfig;
     @Shadow private boolean postEffectsDirty;
     @Shadow private int containerCounter;
+    @Shadow private int lastSentExp;
 
     @Shadow protected abstract void setShoulderEntityLeft(CompoundTag tag);
     @Shadow protected abstract void setShoulderEntityRight(CompoundTag tag);
@@ -68,7 +82,7 @@ public abstract class ServerPlayerMixin extends Player {
     // Surface: public fields (see surface/members/player.txt). Mixin requires private fields; the loader widens them.
     // TODO(behaviour): Paper changes `language` to default to null
     private java.util.Locale adventure$locale = java.util.Locale.US; // Paper
-    private int containerUpdateDelay; // Paper - Configurable container update tick rate // TODO(behaviour): used in tick()
+    private int containerUpdateDelay; // Paper - Configurable container update tick rate
     private long loginTime; // Paper - Replace OfflinePlayer#getLastPlayed
     private int patrolSpawnDelay; // Paper - Pillager patrol spawn settings and per player options
     // Paper start - cancellable death event
@@ -79,15 +93,15 @@ public abstract class ServerPlayerMixin extends Player {
     private @Nullable String lastKnownName; // Better rename detection
     private String displayName;
     private net.kyori.adventure.text.Component adventure$displayName; // Paper
-    private @Nullable Component listName; // TODO(behaviour): getTabListDisplayName() returns listName
-    private int listOrder = 0; // TODO(behaviour): getTabListOrder() returns listOrder
+    private @Nullable Component listName;
+    private int listOrder = 0;
     private org.bukkit.Location compassTarget;
     private int newExp = 0;
     private int newLevel = 0;
     private int newTotalExp = 0;
     private boolean keepLevel = false;
     private double maxHealthCache;
-    private boolean joining = true; // TODO(behaviour): reset in tick()
+    private boolean joining = true;
     private boolean sentListPacket = false;
     private boolean suppressTrackerForLogin = false; // Paper - Fire PlayerJoinEvent when Player is actually ready
     // CraftBukkit end
@@ -97,7 +111,6 @@ public abstract class ServerPlayerMixin extends Player {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void fission$init(final MinecraftServer server, final ServerLevel level, final GameProfile gameProfile, final ClientInformation clientInformation, final CallbackInfo ci) {
-        // TODO(behaviour): Paper calls updateOptionsNoEvents instead of updateOptions here (don't call options events on login)
         // CraftBukkit start
         this.displayName = this.getScoreboardName();
         this.adventure$displayName = net.kyori.adventure.text.Component.text(this.getScoreboardName()); // Paper
@@ -124,7 +137,7 @@ public abstract class ServerPlayerMixin extends Player {
     }
     // Paper end - release entity api
 
-    // TODO(behaviour): Paper makes removeEntitiesOnShoulder/respawnEntityOnShoulder use this (void -> boolean)
+    // TODO(behaviour): Paper makes removeEntitiesOnShoulder only clear the shoulder tag when this returns non-null (void -> boolean)
     private @Nullable Entity respawnEntityOnShoulder0(final CompoundTag tag) { // CraftBukkit void->boolean
         ServerLevel serverLevel = this.fission$self().level();
         if (!tag.isEmpty()) {
@@ -140,8 +153,7 @@ public abstract class ServerPlayerMixin extends Player {
                         }
 
                         entity.setPos(this.getX(), this.getY() + 0.7F, this.getZ());
-                        // TODO(behaviour): Paper passes CreatureSpawnEvent.SpawnReason.SHOULDER_ENTITY to addWithUUID
-                        return serverLevel.addWithUUID(entity) ? entity : null; // Paper - spawn reason
+                        return serverLevel.addWithUUID(entity, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.SHOULDER_ENTITY) ? entity : null; // Paper - spawn reason
                     }).orElse(null); // Paper - release entity api - return entity
             }
         }
@@ -162,7 +174,6 @@ public abstract class ServerPlayerMixin extends Player {
     // Paper end - Post effects API
 
     // Paper start - Inventory close reason
-    // TODO(behaviour): vanilla closeContainer() should delegate here with Reason.UNKNOWN
     public void closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason reason) {
         org.bukkit.craftbukkit.event.CraftEventFactory.handleInventoryCloseEvent(this, reason); // CraftBukkit
         // Paper end - Inventory close reason
@@ -182,13 +193,13 @@ public abstract class ServerPlayerMixin extends Player {
     }
     // Paper end - special close for unloaded inventory
 
-    // TODO(behaviour): vanilla teleportTo(double, double, double) should delegate here with TeleportCause.UNKNOWN; dismountTo uses DISMOUNT
+    // vanilla teleportTo(double, double, double) goes through connection.teleport(PMR, Set) which delegates with TeleportCause.UNKNOWN
+    // TODO(behaviour): dismountTo should use TeleportCause.DISMOUNT
     public void teleportTo(final double x, final double y, final double z, final org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) {
         this.connection.teleport(new PositionMoveRotation(new Vec3(x, y, z), Vec3.ZERO, 0.0F, 0.0F), Relative.union(Relative.DELTA, Relative.ROTATION), cause);
         // Paper end - pass cause
     }
 
-    // TODO(behaviour): vanilla setGameMode(GameType) should delegate here with Cause.UNKNOWN
     public org.bukkit.event.player.@Nullable PlayerGameModeChangeEvent setGameMode(final GameType mode, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause cause, net.kyori.adventure.text.@Nullable Component message) {
         boolean wasSpectator = this.isSpectator();
         org.bukkit.event.player.PlayerGameModeChangeEvent event = this.gameMode.changeGameModeForPlayer(mode, cause, message);
@@ -223,16 +234,20 @@ public abstract class ServerPlayerMixin extends Player {
     // TODO(behaviour): vanilla sendChatMessage(3) should delegate here with unsigned = null
 
     // Paper start - don't call options events on login
-    // TODO(behaviour): Paper's updateOptions fires PlayerClientOptionsChangeEvent/PlayerChangedMainHandEvent/PlayerLocaleChangeEvent,
-    // then calls this. Here the (event-free) vanilla body is reused; once updateOptions fires events this must not route through it.
+    private boolean fission$noOptionEvents;
+
     public void updateOptionsNoEvents(final ClientInformation information) {
         // Paper end
-        this.fission$self().updateOptions(information);
+        this.fission$noOptionEvents = true;
+        try {
+            this.fission$self().updateOptions(information); // vanilla body; the event hook below is skipped
+        } finally {
+            this.fission$noOptionEvents = false;
+        }
         this.adventure$locale = java.util.Objects.requireNonNullElse(net.kyori.adventure.translation.Translator.parseLocale(this.fission$self().language), java.util.Locale.US); // Paper
     }
 
     // Paper start - Add PlayerSetSpawnEvent
-    // TODO(behaviour): vanilla setRespawnPosition(2) should delegate here with Cause.UNKNOWN
     public boolean setRespawnPosition(ServerPlayer.@Nullable RespawnConfig respawnConfig, final boolean showMessage, com.destroystokyo.paper.event.player.PlayerSetSpawnEvent.Cause cause) {
         org.bukkit.Location spawnLoc = null;
         boolean actuallyDisplayInChat = false;
@@ -434,4 +449,301 @@ public abstract class ServerPlayerMixin extends Player {
         return (org.bukkit.craftbukkit.entity.CraftPlayer) super.getBukkitEntity();
     }
     // CraftBukkit end
+
+    // Paper start - respawn event (findRespawnPositionAndUseSpawnBlock fires PlayerRespawnEvent)
+    public @Nullable TeleportTransition findRespawnPositionAndUseSpawnBlock(
+        final boolean consumeSpawnBlock, final TeleportTransition.PostTeleportTransition postTeleportTransition,
+        final org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason
+    ) {
+        net.fissionmc.craft.compat.RespawnResult result = this.findRespawnPositionAndUseSpawnBlock0(consumeSpawnBlock, postTeleportTransition, respawnReason);
+        return result == null ? null : result.transition();
+    }
+
+    public net.fissionmc.craft.compat.@Nullable RespawnResult findRespawnPositionAndUseSpawnBlock0(
+        final boolean consumeSpawnBlock, final TeleportTransition.PostTeleportTransition postTeleportTransition,
+        final org.bukkit.event.player.PlayerRespawnEvent.RespawnReason respawnReason
+    ) {
+        TeleportTransition teleportTransition;
+        boolean isBedSpawn = false;
+        boolean isAnchorSpawn = false;
+        Runnable consumeAnchorCharge = null;
+        // Paper end
+        ServerPlayer.RespawnConfig respawnConfig = this.fission$self().getRespawnConfig();
+        ServerLevel respawnLevel = this.server.getLevel(respawnConfig != null ? respawnConfig.respawnData().dimension() : Level.OVERWORLD); // FissionMC: RespawnConfig.getDimensionOrDefault is private
+        if (respawnLevel != null && respawnConfig != null) {
+            Optional<net.fissionmc.backend.level.RespawnPosAngle> respawn = fission$findRespawnAndUseSpawnBlock(respawnLevel, respawnConfig, consumeSpawnBlock);
+            if (respawn.isPresent()) {
+                net.fissionmc.backend.level.RespawnPosAngle respawnPosAngle = respawn.get();
+                // CraftBukkit start
+                isBedSpawn = respawnPosAngle.isBedSpawn();
+                isAnchorSpawn = respawnPosAngle.isAnchorSpawn();
+                consumeAnchorCharge = respawnPosAngle.consumeAnchorCharge();
+                teleportTransition = new TeleportTransition(
+                    respawnLevel, respawnPosAngle.position(), Vec3.ZERO, respawnPosAngle.yaw(), respawnPosAngle.pitch(), postTeleportTransition
+                );
+                // CraftBukkit end
+            } else {
+                teleportTransition = TeleportTransition.missingRespawnBlock(this.fission$self(), postTeleportTransition); // CraftBukkit
+            }
+        } else {
+            // CraftBukkit start
+            teleportTransition = TeleportTransition.createDefault(this.fission$self(), postTeleportTransition);
+        }
+
+        org.bukkit.entity.Player respawnPlayer = this.getBukkitEntity();
+        org.bukkit.Location location = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(
+            teleportTransition.position(),
+            teleportTransition.newLevel(),
+            teleportTransition.yRot(),
+            teleportTransition.xRot()
+        );
+
+        // Paper start - respawn flags
+        org.bukkit.event.player.PlayerRespawnEvent respawnEvent = new org.bukkit.event.player.PlayerRespawnEvent(
+            respawnPlayer,
+            location,
+            isBedSpawn,
+            isAnchorSpawn,
+            teleportTransition.missingRespawnBlock(),
+            respawnReason
+        );
+        // Paper end - respawn flags
+        this.level().getCraftServer().getPluginManager().callEvent(respawnEvent);
+        // Spigot start
+        if (this.connection.isDisconnected()) {
+            return null;
+        }
+        // Spigot end
+
+        // Paper start - consume anchor charge if location hasn't changed
+        if (location.equals(respawnEvent.getRespawnLocation()) && consumeAnchorCharge != null) {
+            consumeAnchorCharge.run();
+        }
+        // Paper end - consume anchor charge if location hasn't changed
+        location = respawnEvent.getRespawnLocation();
+
+        return new net.fissionmc.craft.compat.RespawnResult(
+            teleportTransition.withChangedLocation(location),
+            isBedSpawn,
+            isAnchorSpawn
+        );
+        // CraftBukkit end
+    }
+
+    // Paper: vanilla findRespawnAndUseSpawnBlock with the anchor charge deferred until after the respawn event (Fix SPIGOT-5989)
+    private static Optional<net.fissionmc.backend.level.RespawnPosAngle> fission$findRespawnAndUseSpawnBlock(
+        final ServerLevel level, final ServerPlayer.RespawnConfig respawnConfig, final boolean consumeSpawnBlock
+    ) {
+        LevelData.RespawnData respawnData = respawnConfig.respawnData();
+        BlockPos pos = respawnData.pos();
+        float yaw = respawnData.yaw();
+        float pitch = respawnData.pitch();
+        boolean forced = respawnConfig.forced();
+        BlockState blockState = level.getBlockState(pos);
+        Block block = blockState.getBlock();
+        if (block instanceof RespawnAnchorBlock && (forced || blockState.getValue(RespawnAnchorBlock.CHARGE) > 0) && RespawnAnchorBlock.canSetSpawn(level, pos)) {
+            Runnable consumeAnchorCharge = null; // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+            Optional<Vec3> standUpPosition = RespawnAnchorBlock.findStandUpPosition(EntityTypes.PLAYER, level, pos);
+            if (!forced && consumeSpawnBlock && standUpPosition.isPresent()) {
+                consumeAnchorCharge = () -> level.setBlockAndUpdate(pos, blockState.setValue(RespawnAnchorBlock.CHARGE, blockState.getValue(RespawnAnchorBlock.CHARGE) - 1)); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+            }
+            final Runnable finalConsumeAnchorCharge = consumeAnchorCharge; // Paper - Fix SPIGOT-5989
+
+            return standUpPosition.map(p -> net.fissionmc.backend.level.RespawnPosAngle.of(p, pos, 0.0F, false, true, finalConsumeAnchorCharge)); // Paper - Fix SPIGOT-5989 (don't use charge until after respawn event)
+        } else if (block instanceof AbstractBedBlock abstractBedBlock && abstractBedBlock.getBedRule(level, pos).canSetSpawn(level)) {
+            return AbstractBedBlock.findStandUpPosition(EntityTypes.PLAYER, level, pos, blockState.getValue(AbstractBedBlock.FACING), yaw)
+                .map(p -> net.fissionmc.backend.level.RespawnPosAngle.of(p, pos, 0.0F, true, false, null)); // Paper - Fix SPIGOT-5989
+        } else {
+            if (!forced) {
+                return Optional.empty();
+            }
+
+            boolean freeBottom = block.isPossibleToRespawnInThis(blockState);
+            BlockState topState = level.getBlockState(pos.above());
+            boolean freeTop = topState.getBlock().isPossibleToRespawnInThis(topState);
+            return freeBottom && freeTop
+                ? Optional.of(new net.fissionmc.backend.level.RespawnPosAngle(new Vec3(pos.getX() + 0.5, pos.getY() + 0.1, pos.getZ() + 0.5), yaw, pitch, false, false, null)) // Paper - Fix SPIGOT-5989
+                : Optional.empty();
+        }
+    }
+
+    // Paper: the vanilla 2-argument variant (no respawn reason) is removed in Paper; route it through the event with DEATH
+    @Inject(method = "findRespawnPositionAndUseSpawnBlock(ZLnet/minecraft/world/level/portal/TeleportTransition$PostTeleportTransition;)Lnet/minecraft/world/level/portal/TeleportTransition;", at = @At("HEAD"), cancellable = true)
+    private void paper$findRespawnPosition(final boolean consumeSpawnBlock, final TeleportTransition.PostTeleportTransition postTeleportTransition, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<TeleportTransition> cir) {
+        TeleportTransition transition = this.findRespawnPositionAndUseSpawnBlock(consumeSpawnBlock, postTeleportTransition, org.bukkit.event.player.PlayerRespawnEvent.RespawnReason.DEATH);
+        if (transition != null) cir.setReturnValue(transition);
+    }
+
+    // Paper start - restoreFrom: the instance is reused on respawn (PlayerList.respawn), so don't duplicate effects/modifiers/recipes
+    @Redirect(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/ai/attributes/AttributeMap;assignPermanentModifiers(Lnet/minecraft/world/entity/ai/attributes/AttributeMap;)V"))
+    private void craftbukkit$noAssignPermanentModifiers(final net.minecraft.world.entity.ai.attributes.AttributeMap self, final net.minecraft.world.entity.ai.attributes.AttributeMap other) {
+        // this.getAttributes().assignPermanentModifiers(oldPlayer.getAttributes()); // CraftBukkit
+    }
+
+    @Redirect(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;addEffect(Lnet/minecraft/world/effect/MobEffectInstance;)Z"))
+    private boolean craftbukkit$noCopyEffects(final ServerPlayer self, final net.minecraft.world.effect.MobEffectInstance effect) {
+        return false; // this.addEffect(new MobEffectInstance(effect)); // CraftBukkit
+    }
+
+    @WrapWithCondition(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;setHealth(F)V", ordinal = 1))
+    private boolean craftbukkit$noResetHealth(final ServerPlayer self, final float health) {
+        return false; // this.setHealth(this.getMaxHealth()); // CraftBukkit
+    }
+
+    @WrapWithCondition(method = "restoreFrom", at = @At(value = "INVOKE", target = "Lnet/minecraft/stats/ServerRecipeBook;copyOverData(Lnet/minecraft/stats/ServerRecipeBook;)V"))
+    private boolean craftbukkit$noCopyRecipeBook(final net.minecraft.stats.ServerRecipeBook self, final net.minecraft.stats.ServerRecipeBook other) {
+        return false; // this.recipeBook.copyOverData(oldPlayer.recipeBook); // CraftBukkit
+    }
+    // Paper end
+
+    // CraftBukkit start - reset the reused player on respawn
+    public void reset() {
+        float exp = 0;
+
+        if (this.keepLevel) { // CraftBukkit - SPIGOT-6687: Only use keepLevel (was pre-set with RULE_KEEPINVENTORY value in PlayerDeathEvent)
+            exp = this.experienceProgress;
+            this.newTotalExp = this.totalExperience;
+            this.newLevel = this.experienceLevel;
+        }
+
+        this.setHealth(this.getMaxHealth());
+        this.stopUsingItem(); // CraftBukkit - SPIGOT-6682: Clear active item on reset
+        this.setAirSupply(this.getMaxAirSupply()); // Paper - Reset players airTicks on respawn
+        this.setRemainingFireTicks(0);
+        this.fallDistance = 0;
+        this.foodData = new net.minecraft.world.food.FoodData();
+        this.experienceLevel = this.newLevel;
+        this.totalExperience = this.newTotalExp;
+        this.experienceProgress = 0;
+        this.deathTime = 0;
+        this.setStingerCount(0);
+        this.removeStingerTime = 0;
+        this.setArrowCount(0, true); // CraftBukkit - ArrowBodyCountChangeEvent
+        this.removeArrowTime = 0;
+        this.removeAllEffects(org.bukkit.event.entity.EntityPotionEffectEvent.Cause.DEATH);
+        this.effectsDirty = true;
+        this.containerMenu = this.inventoryMenu;
+        this.lastHurtByPlayer = null;
+        this.lastHurtByMob = null;
+        this.combatTracker = new net.minecraft.world.damagesource.CombatTracker(this);
+        this.lastSentExp = -1;
+        if (this.keepLevel) { // CraftBukkit - SPIGOT-6687: Only use keepLevel (was pre-set with RULE_KEEPINVENTORY value in PlayerDeathEvent)
+            this.experienceProgress = exp;
+        } else {
+            this.giveExperiencePoints(this.newExp);
+        }
+        this.keepLevel = false;
+        this.setDeltaMovement(0, 0, 0); // CraftBukkit - SPIGOT-6948: Reset velocity on death
+        this.skipDropExperience = false; // CraftBukkit - SPIGOT-7462: Reset experience drop skip, so that further deaths drop xp
+    }
+    // CraftBukkit end
+
+    // ---- wave 2 hooks (ServerPlayer.java.patch) ----
+    // Paper - don't call options events on login
+    @WrapOperation(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;updateOptions(Lnet/minecraft/server/level/ClientInformation;)V"))
+    private void paper$noOptionEventsOnLogin(final ServerPlayer self, final ClientInformation information, final Operation<Void> original) {
+        this.updateOptionsNoEvents(information);
+    }
+
+    // Paper - settings event / CraftBukkit main hand + locale events
+    @Inject(method = "updateOptions", at = @At("HEAD"))
+    private void paper$updateOptionsEvents(final ClientInformation information, final CallbackInfo ci) {
+        if (this.fission$noOptionEvents) {
+            return;
+        }
+        // Paper start - settings event
+        new com.destroystokyo.paper.event.player.PlayerClientOptionsChangeEvent(this.getBukkitEntity(), net.minecraft.util.Util.make(new java.util.IdentityHashMap<>(), map -> {
+            map.put(com.destroystokyo.paper.ClientOption.LOCALE, information.language());
+            map.put(com.destroystokyo.paper.ClientOption.VIEW_DISTANCE, information.viewDistance());
+            map.put(com.destroystokyo.paper.ClientOption.CHAT_VISIBILITY, com.destroystokyo.paper.ClientOption.ChatVisibility.valueOf(information.chatVisibility().name()));
+            map.put(com.destroystokyo.paper.ClientOption.CHAT_COLORS_ENABLED, information.chatColors());
+            map.put(com.destroystokyo.paper.ClientOption.SKIN_PARTS, new com.destroystokyo.paper.PaperSkinParts(information.modelCustomisation()));
+            map.put(com.destroystokyo.paper.ClientOption.MAIN_HAND, information.mainHand() == net.minecraft.world.entity.HumanoidArm.LEFT ? org.bukkit.inventory.MainHand.LEFT : org.bukkit.inventory.MainHand.RIGHT);
+            map.put(com.destroystokyo.paper.ClientOption.TEXT_FILTERING_ENABLED, information.textFilteringEnabled());
+            map.put(com.destroystokyo.paper.ClientOption.ALLOW_SERVER_LISTINGS, information.allowsListing());
+            map.put(com.destroystokyo.paper.ClientOption.PARTICLE_VISIBILITY, com.destroystokyo.paper.ClientOption.ParticleVisibility.valueOf(information.particleStatus().name()));
+        })).callEvent();
+        // Paper end - settings event
+        // CraftBukkit start
+        if (this.fission$self().getMainArm() != information.mainHand()) {
+            org.bukkit.event.player.PlayerChangedMainHandEvent event = new org.bukkit.event.player.PlayerChangedMainHandEvent(
+                this.getBukkitEntity(),
+                information.mainHand() == net.minecraft.world.entity.HumanoidArm.LEFT ? org.bukkit.inventory.MainHand.LEFT : org.bukkit.inventory.MainHand.RIGHT
+            );
+            event.callEvent();
+        }
+        if (this.fission$self().language == null || !this.fission$self().language.equals(information.language())) { // Paper
+            org.bukkit.event.player.PlayerLocaleChangeEvent event = new org.bukkit.event.player.PlayerLocaleChangeEvent(
+                this.getBukkitEntity(),
+                information.language()
+            );
+            event.callEvent();
+        }
+        // CraftBukkit end
+    }
+
+    // CraftBukkit - joining flag
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void paper$tickJoining(final CallbackInfo ci) {
+        if (this.joining) {
+            this.joining = false;
+        }
+    }
+
+    // Paper - Configurable container update tick rate
+    @WrapWithCondition(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;broadcastChanges()V"))
+    private boolean paper$containerUpdateRate(final net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        if (--this.containerUpdateDelay <= 0) {
+            this.containerUpdateDelay = this.fission$self().level().paperConfig().tickRates.containerUpdate;
+            return true;
+        }
+        return false;
+    }
+
+    // Paper - Prevent opening inventories when frozen
+    @ModifyExpressionValue(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;stillValid(Lnet/minecraft/world/entity/player/Player;)Z"))
+    private boolean paper$containerImmobile(final boolean stillValid) {
+        return stillValid && !this.isImmobile();
+    }
+
+    // Paper - Inventory close reason
+    @WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;closeContainer()V"))
+    private void paper$closeCantUse(final ServerPlayer self, final Operation<Void> original) {
+        this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.CANT_USE);
+    }
+
+    @Inject(method = "closeContainer()V", at = @At("HEAD"), cancellable = true)
+    private void paper$closeContainerUnknown(final CallbackInfo ci) {
+        ci.cancel();
+        this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.UNKNOWN);
+    }
+
+    @Inject(method = "setGameMode(Lnet/minecraft/world/level/GameType;)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$setGameModeUnknown(final GameType mode, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        org.bukkit.event.player.PlayerGameModeChangeEvent event = this.setGameMode(mode, org.bukkit.event.player.PlayerGameModeChangeEvent.Cause.UNKNOWN, null); // Paper - Expand PlayerGameModeChangeEvent
+        cir.setReturnValue(event != null && !event.isCancelled());
+    }
+
+    @Inject(method = "setRespawnPosition(Lnet/minecraft/server/level/ServerPlayer$RespawnConfig;Z)V", at = @At("HEAD"), cancellable = true)
+    private void paper$setRespawnPositionUnknown(final ServerPlayer.RespawnConfig respawnConfig, final boolean showMessage, final CallbackInfo ci) {
+        ci.cancel();
+        this.setRespawnPosition(respawnConfig, showMessage, com.destroystokyo.paper.event.player.PlayerSetSpawnEvent.Cause.UNKNOWN);
+    }
+
+    @Inject(method = "getTabListDisplayName", at = @At("HEAD"), cancellable = true)
+    private void craftbukkit$tabListName(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Component> cir) {
+        cir.setReturnValue(this.listName); // CraftBukkit
+    }
+
+    @Inject(method = "getTabListOrder", at = @At("HEAD"), cancellable = true)
+    private void craftbukkit$tabListOrder(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Integer> cir) {
+        cir.setReturnValue(this.listOrder); // CraftBukkit
+    }
+
+    // Paper - spawn reason for shoulder entities respawned by removeEntitiesOnShoulder
+    @Inject(method = "respawnEntityOnShoulder", at = @At("HEAD"), cancellable = true)
+    private void paper$shoulderReason(final CompoundTag tag, final CallbackInfo ci) {
+        ci.cancel();
+        this.respawnEntityOnShoulder0(tag);
+    }
 }
