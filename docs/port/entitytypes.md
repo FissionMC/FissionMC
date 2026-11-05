@@ -115,19 +115,19 @@ to the overload (so `Entity.remove(reason, cause)` must keep calling `setRemoved
 - [x] sources/net/minecraft/world/entity/projectile/arrow/AbstractArrow.java.patch (all hunks (owner-first constructor via ThreadLocal; tryPickup(player, item) via field read by vanilla tryPickup))
 - [x] sources/net/minecraft/world/entity/projectile/arrow/Arrow.java.patch (all hunks)
 - [x] sources/net/minecraft/world/entity/projectile/arrow/SpectralArrow.java.patch (all hunks)
-- [ ] sources/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/arrow/ThrownTrident.java.patch (all hunks)
 - [x] sources/net/minecraft/world/entity/projectile/EvokerFangs.java.patch (all hunks)
 - [x] sources/net/minecraft/world/entity/projectile/EyeOfEnder.java.patch (all hunks)
-- [ ] sources/net/minecraft/world/entity/projectile/FireworkRocketEntity.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/FireworkRocketEntity.java.patch (all hunks)
 - [x] sources/net/minecraft/world/entity/projectile/FishingHook.java.patch (all hunks (catchingFish and retrieve replaced bodies; retrieve(rod) delegates with MAIN_HAND))
 - [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/AbstractHurtingProjectile.java.patch (all hunks (bukkitYield/isIncendiary consumed by subclasses))
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/DragonFireball.java.patch
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/LargeFireball.java.patch
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java.patch
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/AbstractWindCharge.java.patch
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/BreezeWindCharge.java.patch
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/WindCharge.java.patch
-- [ ] sources/net/minecraft/world/entity/projectile/hurtingprojectile/WitherSkull.java.patch
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/DragonFireball.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/LargeFireball.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/SmallFireball.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/AbstractWindCharge.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/BreezeWindCharge.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/windcharge/WindCharge.java.patch (all hunks)
+- [x] sources/net/minecraft/world/entity/projectile/hurtingprojectile/WitherSkull.java.patch (all hunks)
 - [x] sources/net/minecraft/world/entity/projectile/LlamaSpit.java.patch (all hunks)
 - [~] sources/net/minecraft/world/entity/projectile/Projectile.java.patch (done: hitCancelled/onHitBlock, preHitTargetOrDeflectSelf, pearl owner reset, relative velocity + finite check, vanished-entity hit cancel, lerpRotation; left: Projectile.Delayed / spawnProjectile*Delayed (nested record, needs compat class; callers are in the items area))
 - [x] sources/net/minecraft/world/entity/projectile/ShulkerBullet.java.patch (all hunks)
