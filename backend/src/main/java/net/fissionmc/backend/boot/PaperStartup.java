@@ -43,6 +43,23 @@ public final class PaperStartup {
         throw (T) t;
     }
 
+    /** The level name vanilla will use: --world, else server.properties level-name, else "world". */
+    private static String levelName(final OptionSet paperOptions) {
+        if (paperOptions.has("world")) {
+            return (String) paperOptions.valueOf("world");
+        }
+        final java.io.File props = new File("server.properties");
+        if (props.isFile()) {
+            try (java.io.Reader r = java.nio.file.Files.newBufferedReader(props.toPath())) {
+                final java.util.Properties p = new java.util.Properties();
+                p.load(r);
+                return p.getProperty("level-name", "world").trim();
+            } catch (final java.io.IOException ignored) {
+            }
+        }
+        return "world";
+    }
+
     /** Stores Paper's options and returns the vanilla command line with the same meaning. */
     public static String[] begin(final OptionSet paperOptions) {
         options = paperOptions;
@@ -63,6 +80,8 @@ public final class PaperStartup {
         }
         args.add("--universe");
         args.add(universe.getPath());
+        // FissionMC: node networking (master link + world pull) must finish before vanilla starts loading the world.
+        net.fissionmc.backend.node.NodeBootstrap.start(universe.toPath(), levelName(paperOptions));
         if (paperOptions.has("world")) {
             args.add("--world");
             args.add((String) paperOptions.valueOf("world"));
