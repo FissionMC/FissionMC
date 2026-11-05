@@ -46,7 +46,21 @@ tasks.register<JavaExec>("run") {
     dependsOn(":loader:classes", "classes", ":testplugin:installTestPlugin")
     classpath = loaderCp
     mainClass = "net.fissionmc.loader.Bootstrap"
-    workingDir = rootProject.file("run").also { it.mkdirs() }
+    // -PrunDir=run-a -Pport=25566 lets several backends run side by side (eula/server.properties are seeded from run/)
+    val runDirName = (project.findProperty("runDir") as String?) ?: "run"
+    workingDir = rootProject.file(runDirName).also { it.mkdirs() }
+    doFirst {
+        val dir = workingDir
+        val base = rootProject.file("run")
+        if (dir != base) listOf("eula.txt", "server.properties").forEach { n ->
+            if (!dir.resolve(n).exists() && base.resolve(n).exists()) base.resolve(n).copyTo(dir.resolve(n))
+        }
+        (project.findProperty("port") as String?)?.let { port ->
+            val f = dir.resolve("server.properties")
+            val lines = if (f.exists()) f.readLines().filterNot { it.startsWith("server-port=") } else emptyList()
+            f.writeText((lines + "server-port=$port").joinToString("\n") + "\n")
+        }
+    }
     jvmArgs(
         "-Dfission.mixins=fission.mixins.json",
         "-Dfission.surface=" + rootProject.file("surface").path,

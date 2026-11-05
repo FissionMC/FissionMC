@@ -15,3 +15,16 @@ tasks.register<JavaExec>("run") {
     workingDir = rootProject.file("run-master").also { it.mkdirs() }
     args("fission.properties")
 }
+
+// ./gradlew :master:nodeKeys -Pkeyfile=run-a/fission-node.key -Pnode=backend-a [-Pauthorized=run-master/fission-authorized.keys]
+tasks.register<JavaExec>("nodeKeys") {
+    group = "fission"
+    description = "Creates a node Ed25519 key file and prints its public key (optionally adds it to an authorized-keys file)"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass = "net.fissionmc.net.NodeKeysMainKt"
+    doFirst {
+        val a = mutableListOf(rootProject.file(project.property("keyfile") as String).path, project.property("node") as String)
+        (project.findProperty("authorized") as String?)?.let { a += rootProject.file(it).path }
+        args(a)
+    }
+}
