@@ -63,7 +63,28 @@ class FissionMixinService : MixinServiceAbstract(), IClassProvider, IClassByteco
         val bytes = game!!.rawBytes(name) ?: throw ClassNotFoundException(name)
         val node = ClassNode()
         ClassReader(bytes).accept(node, readerFlags)
+        if (name.startsWith("net.fissionmc.backend.mixin.")) normaliseImplicitConstructor(node)
         return node
+    }
+
+    /**
+     * Mixin merges a mixin's field initialisers into the target constructors, but it finds them through line numbers
+     * (org.spongepowered.asm.mixin.injection.struct.Constructor.getRange): everything outside [line of super(), line of return] is an initialiser.
+     * For an implicit constructor javac gives the final `return` the line of the LAST FIELD declared in the class (not the class line), so
+     * the range swallowed every initialiser and Mixin silently merged none ("this.visualFire is null" in Entity, ~hundreds of fields in the
+     * port). Pin that return to the line of the super() call, the shape Mixin expects.
+     */
+    private fun normaliseImplicitConstructor(node: ClassNode) {
+        val ctor = node.methods.firstOrNull { it.name == "<init>" } ?: return
+        var start = 0
+        for (insn in ctor.instructions) if (insn is org.objectweb.asm.tree.LineNumberNode) { start = insn.line; break }
+        if (start == 0) return
+        for (insn in ctor.instructions) {
+            if (insn.opcode != org.objectweb.asm.Opcodes.RETURN) continue
+            var prev = insn.previous
+            while (prev != null && (prev is org.objectweb.asm.tree.LabelNode || prev is org.objectweb.asm.tree.FrameNode)) prev = prev.previous
+            if (prev is org.objectweb.asm.tree.LineNumberNode && prev.line > start) prev.line = start
+        }
     }
 
     // ITransformerProvider

@@ -108,3 +108,17 @@ class CipherEncoder(private val cipher: Cipher) : ChannelOutboundHandlerAdapter(
         ctx.write(Unpooled.wrappedBuffer(cipher.update(inBytes)), promise)
     }
 }
+
+/**
+ * Debug (`debug.dump-client-stream=<dir>` in fission.properties): writes every byte exchanged with each client to
+ * `<dir>/client-<n>-s2c.bin` (server to client) and `-c2s.bin`. Offline mode only (online mode sees encrypted bytes).
+ * A backend replays an s2c file through vanilla's client decoders: `gradlew :backend:run -PcheckStream=<file>`.
+ */
+class StreamDump(dir: java.nio.file.Path, n: Int) : io.netty.channel.ChannelDuplexHandler() {
+    private val s2c = java.nio.file.Files.newOutputStream(dir.resolve("client-$n-s2c.bin"))
+    private val c2s = java.nio.file.Files.newOutputStream(dir.resolve("client-$n-c2s.bin"))
+    private fun copy(msg: Any, out: java.io.OutputStream) { val b = msg as? ByteBuf ?: return; val a = ByteArray(b.readableBytes()); b.getBytes(b.readerIndex(), a); out.write(a); out.flush() }
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) { copy(msg, c2s); ctx.fireChannelRead(msg) }
+    override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) { copy(msg, s2c); ctx.write(msg, promise) }
+    override fun channelInactive(ctx: ChannelHandlerContext) { s2c.close(); c2s.close(); ctx.fireChannelInactive() }
+}

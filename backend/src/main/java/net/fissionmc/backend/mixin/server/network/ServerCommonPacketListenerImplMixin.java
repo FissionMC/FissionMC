@@ -67,7 +67,7 @@ public abstract class ServerCommonPacketListenerImplMixin {
     }
 
     // Paper: createCookie passes clientBrand and pluginMessagerChannels to the new cookie (record components; see CommonListenerCookieMixin)
-    @Inject(method = "createCookie", at = @At("RETURN"))
+    @Inject(method = "createCookie", at = @At("RETURN"), cancellable = true) // FissionMC: cancellable is needed for setReturnValue on RETURN
     private void fission$createCookie(final ClientInformation clientInformation, final CallbackInfoReturnable<CommonListenerCookie> cir) {
         CommonListenerCookie cookie = cir.getReturnValue();
         cir.setReturnValue(CommonListenerCookie.create(cookie.gameProfile(), cookie.latency(), cookie.clientInformation(), cookie.transferred(), this.clientBrand, this.pluginMessagerChannels)); // Paper

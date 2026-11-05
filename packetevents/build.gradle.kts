@@ -26,6 +26,23 @@ the<SourceSetContainer>()["main"].java.srcDirs(
     "api/src/main/java", "netty-common/src/main/java", genDir,
     "patch/adventure-text-serializer-gson/src/main/java", "patch/adventure-text-serializer-legacy/src/main/java")
 the<SourceSetContainer>()["main"].resources.srcDir("resources")   // generated mapping resources, see upstream/packetevents-resources.md
+// Upstream's patched adventure serializers (packetevents/patch) have the SAME class names as adventure's own and were compiled against
+// adventure 4.x; PacketEvents needs them to compile (e.g. showAchievementToComponent). On the backend they must NOT be on the class
+// path: they would shadow paper-api's adventure 5.x classes and break every Component serialization (NoClassDefFoundError
+// net/kyori/adventure/util/Buildable$Builder as soon as a relayed player joins). So the normal jar leaves them out and `patchJar`
+// carries them; only the master (run, tests, clientProbe) adds `patchJar` to its class path.
+val mainOutput = the<SourceSetContainer>()["main"].output
+val shadowing = listOf(
+    "net/kyori/adventure/text/serializer/gson/GsonComponentSerializer*.class", "net/kyori/adventure/text/serializer/gson/SerializerFactory*.class",
+    "net/kyori/adventure/text/serializer/gson/ShowItemSerializer*.class", "net/kyori/adventure/text/serializer/gson/ShowEntitySerializer*.class",
+    "net/kyori/adventure/text/serializer/gson/StyleSerializer*.class", "net/kyori/adventure/text/serializer/gson/ComponentSerializerImpl*.class",
+    "net/kyori/adventure/text/serializer/legacy/**", "net/kyori/adventure/text/serializer/json/legacyimpl/NBTLegacyHoverEventSerializerImpl*.class")
+tasks.named<Jar>("jar") { exclude(shadowing) }
+tasks.register<Jar>("patchJar") {
+    archiveClassifier = "adventure-patch"
+    from(mainOutput)
+    include(shadowing)
+}
 tasks.withType<JavaCompile>().configureEach {
     dependsOn(generatePeVersion)
     options.compilerArgs.add("-Xlint:none")

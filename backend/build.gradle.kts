@@ -70,7 +70,14 @@ tasks.register<JavaExec>("run") {
         systemProperty("fission.classpath", gameCp.asPath)
         // ./gradlew :backend:run -PcheckLimbo=/abs/path/limbo-play.bin : decode the master limbo frames with vanilla codecs (LimboCheck)
         (project.findProperty("checkLimbo") as String?)?.let { systemProperty("fission.check-limbo", it) }
+        (project.findProperty("checkIds") as String?)?.let { systemProperty("fission.check-ids", it) }
+        (project.findProperty("checkPipeline") as String?)?.let { systemProperty("fission.check-pipeline", it) }
+        (project.findProperty("checkChunk") as String?)?.let { systemProperty("fission.check-chunk", it) }
+        (project.findProperty("recordChunk") as String?)?.let { systemProperty("fission.record-chunk", it) }
+        (project.findProperty("checkStream") as String?)?.let { systemProperty("fission.check-stream", it) }
     }
+    // ./gradlew :backend:run -PmixinExport=1 : Mixin writes the transformed classes to run/.mixin.out (javap them to see what really got merged)
+    if (project.hasProperty("mixinExport")) jvmArgs("-Dmixin.debug.export=true")
     args("--nogui")
     standardInput = System.`in`
 }

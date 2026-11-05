@@ -32,6 +32,7 @@ class ClientServer(
     val relay: net.fissionmc.master.PlayerRelay? = null,
     val log: (String) -> Unit = { println(it) },
 ) : Closeable {
+    private val dumpCounter = java.util.concurrent.atomic.AtomicInteger()
     val keyPair: KeyPair = LoginCrypto.newKeyPair()
     private val sessions = ConcurrentHashMap<UUID, ClientSession>()
     private val group = MultiThreadIoEventLoopGroup(0, NioIoHandler.newFactory())
@@ -45,6 +46,7 @@ class ClientServer(
             .childOption(ChannelOption.TCP_NODELAY, true)
             .childHandler(object : ChannelInitializer<Channel>() {
                 override fun initChannel(ch: Channel) {
+                    System.getProperty("fission.dump-client-stream")?.let { d -> ch.pipeline().addLast("dump", StreamDump(java.nio.file.Files.createDirectories(java.nio.file.Path.of(d)), dumpCounter.incrementAndGet())) }
                     ch.pipeline().addLast("splitter", FrameDecoder()).addLast("prepender", FramePrepender())
                         .addLast("session", ClientSession(this@ClientServer))
                 }

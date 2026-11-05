@@ -59,11 +59,6 @@ object PlayerRelayBackend {
 
     private class Virtual(val id: Long, val name: String) { lateinit var conn: Connection; lateinit var channel: EmbeddedChannel; var blocked = 0; var tap: net.fissionmc.packets.PacketTap? = null }
 
-    /** The channel reports the client's real address forwarded by the master (loopback if unknown); EmbeddedChannel's default address type is not an InetSocketAddress. */
-    private class VirtualChannel(private val remote: InetSocketAddress, init: ChannelInitializer<Channel>) : EmbeddedChannel(init) {
-        override fun remoteAddress0(): SocketAddress = remote
-    }
-
     /** First handler in the pipeline: everything the server writes towards the client ends here and is sent to the master. */
     private class Out(val v: Virtual) : ChannelOutboundHandlerAdapter() {
         override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
@@ -154,7 +149,7 @@ object PlayerRelayBackend {
         v.conn = conn
         conn.hostname = info?.hostname ?: ""
         val remote = InetSocketAddress(info?.let { runCatching { InetAddress.getByName(it.address) }.getOrNull() } ?: InetAddress.getLoopbackAddress(), info?.port ?: 0)
-        v.channel = VirtualChannel(remote, object : ChannelInitializer<Channel>() {
+        v.channel = net.fissionmc.net.VirtualChannel.create(remote, object : ChannelInitializer<Channel>() {
             override fun initChannel(ch: Channel) {
                 val p = ch.pipeline()
                 Connection.configureSerialization(p, PacketFlow.SERVERBOUND, true, null)

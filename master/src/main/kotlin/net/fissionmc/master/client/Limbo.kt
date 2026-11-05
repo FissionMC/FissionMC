@@ -111,18 +111,21 @@ object Limbo {
     fun startLoadingChunks(): PacketWrapper<*> = WrapperPlayServerChangeGameState(WrapperPlayServerChangeGameState.Reason.START_LOADING_CHUNKS, 0f)
     fun viewPosition(): PacketWrapper<*> = WrapperPlayServerUpdateViewPosition(0, 0)
 
-    /** One empty chunk column (24 empty sections of an overworld-height world) at 0,0. */
-    fun emptyChunk(): PacketWrapper<*> {
-        val sections = Array<BaseChunk>(24) { Chunk_v1_18(V) }
-        val light = LightData(true, BitSet(), BitSet(), BitSet(), BitSet(), 0, 0, arrayOf(), arrayOf())
-        return WrapperPlayServerChunkData(Column(0, 0, true, sections, null), light)
+    /**
+     * The empty chunk at 0,0 is a RECORDING of what vanilla builds (`limbo-chunk.bin`, `gradlew :backend:run -PrecordChunk=<file>`:
+     * LevelChunk + ClientboundLevelChunkWithLightPacket). The hand-built PacketEvents chunk was wrong where decoding the packet cannot
+     * notice: PalettedContainer.write is `bits byte, palette, fixed-size long array` (no length prefix since 1.21.5), and the client crashed
+     * on the first biome lookup ("Missing Palette entry for index 0").
+     */
+    val chunkFrame: ByteArray by lazy {
+        Limbo::class.java.getResourceAsStream("/limbo-chunk.bin")?.readAllBytes() ?: error("limbo-chunk.bin is missing: record it with -PrecordChunk")
     }
 
     fun chat(text: String): PacketWrapper<*> = WrapperPlayServerSystemChatMessage(false, Component.text(text))
 
-    /** The whole play-phase entry sequence. */
-    fun playPackets(maxPlayers: Int, overworldId: Int): List<PacketWrapper<*>> = listOf(
-        joinGame(maxPlayers, overworldId), position(), startLoadingChunks(), viewPosition(), emptyChunk(),
-        chat("You are connected to the FissionMC master. Waiting for a backend..."),
+    /** The whole play-phase entry sequence as raw frames (wrappers encoded, the chunk replayed from the vanilla recording). */
+    fun playFrames(maxPlayers: Int, overworldId: Int): List<ByteArray> = listOf(
+        encode(joinGame(maxPlayers, overworldId)), encode(position()), encode(startLoadingChunks()), encode(viewPosition()), chunkFrame,
+        encode(chat("You are connected to the FissionMC master. Waiting for a backend...")),
     )
 }

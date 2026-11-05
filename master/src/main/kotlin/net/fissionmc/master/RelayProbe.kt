@@ -56,7 +56,7 @@ class RelayProbe(private val relay: PlayerRelay, private val recordDir: Path? = 
         Files.createDirectories(dir)
         Files.write(dir.resolve("limbo-config.bin"), Limbo.writeFrames(recorded))
         val cfg = Limbo.parse(recorded)
-        val play = Limbo.playPackets(100, cfg.overworldDimensionId).map { Limbo.encode(it) }
+        val play = Limbo.playFrames(100, cfg.overworldDimensionId)
         Files.write(dir.resolve("limbo-play.bin"), Limbo.writeFrames(play))
         println("[probe] recorded ${recorded.size} configuration frames (overworld dimension id ${cfg.overworldDimensionId}) and ${play.size} play frames into $dir")
     }

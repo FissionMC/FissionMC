@@ -20,6 +20,8 @@ import com.github.retrooper.packetevents.wrapper.login.server.WrapperLoginServer
 import com.github.retrooper.packetevents.wrapper.login.server.WrapperLoginServerLoginSuccess
 import com.github.retrooper.packetevents.wrapper.login.server.WrapperLoginServerSetCompression
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientConfigurationAck
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerLoaded
 import com.github.retrooper.packetevents.wrapper.status.client.WrapperStatusClientPing
 import com.github.retrooper.packetevents.wrapper.status.client.WrapperStatusClientRequest
 import com.github.retrooper.packetevents.wrapper.status.server.WrapperStatusServerPong
@@ -42,7 +44,14 @@ import kotlin.test.assertTrue
 /** Blocking test client. Encoding/decoding uses PacketEvents wrappers only (single source of truth, not hand-written). */
 class TestClient(port: Int) : AutoCloseable {
     private val sock = Socket("127.0.0.1", port).also { it.soTimeout = 10_000 }
-    private var input = sock.getInputStream(); private var output = sock.getOutputStream()
+    /** Every byte the server wrote to this connection (plain text connections only): the exact stream a real client would decode. */
+    val received = java.io.ByteArrayOutputStream()
+    private var input: java.io.InputStream = object : java.io.InputStream() {
+        private val s = sock.getInputStream()
+        override fun read(): Int { val b = s.read(); if (b >= 0) received.write(b); return b }
+        override fun read(b: ByteArray, off: Int, len: Int): Int { val n = s.read(b, off, len); if (n > 0) received.write(b, off, n); return n }
+    }
+    private var output = sock.getOutputStream()
     private val channel = EmbeddedChannel()
     val user = User(channel, ConnectionState.HANDSHAKING, ClientVersion.V_26_3, UserProfile(null, null))
     private var threshold = -1
@@ -99,6 +108,15 @@ class TestClient(port: Int) : AutoCloseable {
     }
     /** Reads frames until one of [type] arrives (the recorded configuration contains frames the test does not care about). */
     fun skipUntil(type: PacketTypeCommon): Int { var n = 0; while (true) { val ev = readEvent(); n++; if (ev.packetType == type) return n } }
+    /** Reads one frame with PacketEvents; returns its type (null if PacketEvents cannot map the id) and id. */
+    fun readAny(): Pair<PacketTypeCommon?, Int> {
+        val body = readBody(); val id = VarInts.tryRead(Unpooled.wrappedBuffer(body))!!
+        return try { EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(body), false).packetType to id } catch (t: Throwable) { null to id }
+    }
+    /** True if the server sends nothing for [ms] milliseconds. */
+    fun silentFor(ms: Int): Boolean { sock.soTimeout = ms; return try { readVarInt(); false } catch (_: java.net.SocketTimeoutException) { true } finally { sock.soTimeout = 10_000 } }
+    /** Reads one frame and returns its packet id (no decoding). */
+    fun readFrameForTest(): Int = VarInts.tryRead(Unpooled.wrappedBuffer(readBody()))!!
     fun skip(type: PacketTypeCommon) { val ev = readEvent(); assertEquals(type, ev.packetType, "unexpected packet ${ev.packetType}") }
     override fun close() { sock.close(); channel.finishAndReleaseAll() }
 }
@@ -146,6 +164,8 @@ class ClientServerTest {
         server(false).use { s ->
             TestClient(s.port).use { c ->
                 val id = joinLimbo(c, s.port, "Steve")
+                // keep the exact server->client stream: the backend's vanilla client-side decoders replay it (LimboCheck, see worklog)
+                java.nio.file.Files.write(java.nio.file.Path.of("build/limbo-stream.bin"), c.received.toByteArray())
                 assertEquals(LoginCrypto.offlineUuid("Steve"), id)
                 assertEquals(1, s.onlinePlayers)
             }
@@ -194,6 +214,54 @@ class ClientServerTest {
                 c.send(WrapperHandshakingClientHandshake(700, "localhost", s.port, ConnectionIntention.LOGIN)); c.setState(ConnectionState.LOGIN)
                 c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, "Old", null, UUID(0, 1)))
                 c.skip(PacketType.Login.Server.DISCONNECT)
+            }
+        }
+    }
+
+    /** A fake node link that records what the master sends to the backend. */
+    private class FakeBackendLink : net.fissionmc.net.NodeLink {
+        val sent = java.util.concurrent.LinkedBlockingQueue<net.fissionmc.protocol.NodeMessage>()
+        override val ready = CompletableFuture<net.fissionmc.net.PeerInfo>()
+        override val closed = CompletableFuture<String>()
+        override val latencyNanos = -1L
+        @Volatile override var isOpen = true
+        override val isWritable = true
+        override var handler: (net.fissionmc.protocol.NodeMessage) -> Unit = {}
+        override fun send(msg: net.fissionmc.protocol.NodeMessage) { sent.add(msg) }
+        override fun close(reason: String) { isOpen = false; closed.complete(reason) }
+    }
+
+    @Test fun `limbo to backend handoff sends start configuration, then the backend configuration in order`() {
+        val registry = net.fissionmc.master.NodeRegistry()
+        val link = FakeBackendLink()
+        val node = net.fissionmc.master.RegisteredNode(net.fissionmc.net.PeerInfo("b1", net.fissionmc.protocol.NodeRole.BACKEND, 1, MC_VERSION), link)
+        registry.register(node.info, link)
+        val relay = net.fissionmc.master.PlayerRelay(registry)
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, compressionThreshold = 256), relay = relay, log = {}).start().use { s ->
+            TestClient(s.port).use { c ->
+                joinLimbo(c, s.port, "Handoff")
+                // vanilla's client reconfigures only a loaded level: nothing may follow the limbo burst until it says so (PlayerLoaded)
+                assertTrue(c.silentFor(700), "no StartConfiguration before the client reported its level loaded")
+                c.send(WrapperPlayClientPlayerLoaded())
+                // the master asks the (fake) backend to take the player ...
+                val attach = generateSequence { link.sent.poll(10, java.util.concurrent.TimeUnit.SECONDS) }.first { it is net.fissionmc.protocol.PlayerAttach } as net.fissionmc.protocol.PlayerAttach
+                // ... which immediately starts its configuration (recorded from the real backend), BEFORE the client acknowledged anything
+                val real = Limbo.config.let { it.beforeKnownPacks + it.afterKnownPacks }
+                // plus one stray PLAY-state custom_payload (id 24, what the real client choked on) in the middle of the configuration
+                val stray = Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage("minecraft:register", "x".toByteArray()))
+                assertEquals(24, Limbo.idOf(stray), "play custom_payload id")
+                real.forEachIndexed { i, f ->
+                    if (i == 3) relay.handle(registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, stray))
+                    relay.handle(registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, f))
+                }
+                // the client must first be told to reconfigure, and only after its ack may it see backend frames
+                c.skip(PacketType.Play.Server.CONFIGURATION_START)
+                c.send(WrapperPlayClientConfigurationAck()); c.setState(ConnectionState.CONFIGURATION)
+                for (f in real) {
+                    val ev = c.readFrameForTest()
+                    assertEquals(Limbo.idOf(f), ev, "backend frame order/identity")
+                }
+                java.nio.file.Files.write(java.nio.file.Path.of("build/handoff-stream.bin"), c.received.toByteArray())
             }
         }
     }

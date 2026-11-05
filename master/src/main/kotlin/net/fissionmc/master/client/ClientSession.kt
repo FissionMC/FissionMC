@@ -43,6 +43,9 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private enum class Mode { LIMBO, AWAIT_ACK, RELAY, REJOIN }
     private var mode = Mode.LIMBO
     private var configSent = false
+    /** The client reported ServerboundPlayerLoaded (ClientPacketListener.notifyPlayerLoaded): its level is up, reconfiguring is safe. */
+    private var clientLoaded = false
+    private var graceOver = false
     private var relayId: Long? = null
     private var hostName = ""
     private var tap: net.fissionmc.packets.PacketTap? = null
@@ -96,6 +99,15 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     override fun deliver(rawFrame: ByteArray) { channel.eventLoop().execute {
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) return@execute
+        // A frame whose id does not exist in the phase the client is in would make the vanilla client drop the connection
+        // ("Received unknown packet id N" in IdDispatchCodec). Vanilla's server cannot produce one (its outbound protocol is switched
+        // together with the client's: ServerGamePacketListenerImpl.switchToConfig / handleConfigurationFinished); a backend that does
+        // is out of step, so say so loudly and keep it away from the client.
+        val state = tracker.serverState; val id = tracker.packetId(rawFrame)
+        if (PacketType.getById(com.github.retrooper.packetevents.protocol.PacketSide.SERVER, state, ClientVersion.V_26_3, id) == null) {
+            server.log("[client $playerName] DROPPED backend frame id $id: not a clientbound $state packet (client phase=$state)")
+            return@execute
+        }
         val frame = toClient(rawFrame) ?: return@execute
         when (mode) {
             Mode.RELAY -> {
@@ -132,7 +144,11 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     /** Moves a limbo player to a backend (if one is alive): play -> configuration, then the backend's configuration/play is relayed. */
     fun tryAttach() { channel.eventLoop().execute {
+        // Vanilla's client only reconfigures a running level (ClientPacketListener.handleConfigurationStart clears the level it is still
+        // loading otherwise: the real-client failure happened when StartConfiguration followed the Login burst immediately). So wait for
+        // ServerboundPlayerLoaded; a client that never sends it (no level ready) is attached after a grace period anyway.
         if (mode != Mode.LIMBO || user.decoderState != ConnectionState.PLAY || !channel.isActive) return@execute
+        if (!clientLoaded && !graceOver) return@execute
         val id = server.relay?.attach(this) ?: return@execute
         relayId = id; mode = Mode.AWAIT_ACK
         tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log)
@@ -299,12 +315,14 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     // ---- limbo play ----
     private fun enterPlay() {
+        clientLoaded = false; graceOver = false   // a re-entered limbo (backend lost) loads its level again
         user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
-        sendAll(Limbo.playPackets(server.config.maxPlayers, Limbo.config.overworldDimensionId))
+        Limbo.sendRaw(channel, Limbo.playFrames(server.config.maxPlayers, Limbo.config.overworldDimensionId))
         server.log("[client] $playerName joined limbo")
-        tryAttach()
+        channel.eventLoop().schedule({ graceOver = true; tryAttach() }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
         lastKeepAliveAck = System.nanoTime()
         keepAlive = channel.eventLoop().scheduleAtFixedRate({
+            if (mode != Mode.LIMBO) return@scheduleAtFixedRate   // nothing play-state after StartConfiguration (ServerGamePacketListenerImpl.switchToConfig swaps the outbound protocol at once)
             if (System.nanoTime() - lastKeepAliveAck > TimeUnit.SECONDS.toNanos(30)) { disconnect("Timed out"); return@scheduleAtFixedRate }
             lastKeepAliveSent = System.nanoTime()
             send(WrapperPlayServerKeepAlive(lastKeepAliveSent and 0x7FFFFFFFFFFFL))
@@ -328,11 +346,12 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             }
             return
         }
+        if (e.packetType == PacketType.Play.Client.PLAYER_LOADED && !clientLoaded) { clientLoaded = true; tryAttach() }
         if (e.packetType == PacketType.Play.Client.KEEP_ALIVE) {
             WrapperPlayClientKeepAlive(e); lastKeepAliveAck = System.nanoTime()
         }
         // everything else is ignored in limbo (movement, chat, settings...)
     }
 
-    companion object { const val PROTOCOL = 777 }
+    companion object { const val PROTOCOL = 777; var LOAD_GRACE_SECONDS = 10L }
 }

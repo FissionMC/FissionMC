@@ -1,3 +1,4 @@
+evaluationDependsOn(":packetevents")
 dependencies {
     api(project(":net"))
     api(project(":packets"))
@@ -5,13 +6,16 @@ dependencies {
 }
 
 dependencies { testImplementation(kotlin("test")) }
-tasks.withType<Test>().configureEach { useJUnitPlatform(); systemProperty("fission.debug.packets", "1") }
+// PacketEvents' patched adventure serializers (see packetevents/build.gradle.kts): master-only, never on the backend class path
+val adventurePatch = project(":packetevents").tasks.named("patchJar")
+tasks.withType<Test>().configureEach { useJUnitPlatform(); systemProperty("fission.debug.packets", "1"); dependsOn(adventurePatch); classpath = files(adventurePatch) + classpath }
 
 tasks.register<JavaExec>("run") {
     group = "fission"
     description = "Runs the standalone master (reads run-master/fission.properties)"
     dependsOn("classes")
-    classpath = sourceSets["main"].runtimeClasspath
+    dependsOn(adventurePatch)
+    classpath = files(adventurePatch) + sourceSets["main"].runtimeClasspath
     mainClass = "net.fissionmc.master.MasterMainKt"
     workingDir = rootProject.file("run-master").also { it.mkdirs() }
     args("fission.properties")
@@ -28,4 +32,14 @@ tasks.register<JavaExec>("nodeKeys") {
         (project.findProperty("authorized") as String?)?.let { a += rootProject.file(it).path }
         args(a)
     }
+}
+
+// ./gradlew :master:clientProbe -Pport=25577 -Pout=/abs/stream.bin  (scripted offline client, see ClientProbeMain)
+tasks.register<JavaExec>("clientProbe") {
+    group = "fission"
+    dependsOn("testClasses")
+    dependsOn(adventurePatch)
+    classpath = files(adventurePatch) + sourceSets["test"].runtimeClasspath
+    mainClass = "net.fissionmc.master.client.ClientProbeMainKt"
+    doFirst { args(project.property("port") as String, project.property("out") as String) }
 }

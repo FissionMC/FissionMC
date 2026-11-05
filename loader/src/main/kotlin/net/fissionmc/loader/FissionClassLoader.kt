@@ -38,11 +38,22 @@ class FissionClassLoader(urls: Array<URL>, parent: ClassLoader) : URLClassLoader
 
     override fun findClass(name: String): Class<*> {
         val path = name.replace('.', '/') + ".class"
-        val url = findResource(path) ?: throw ClassNotFoundException(name)
+        val url = findResource(path) ?: return defineGenerated(name)
         var bytes = url.openStream().use { it.readBytes() }
         transformer?.let { bytes = it.transformClassBytes(name, name, bytes) }
         surface?.let { s -> if (s.touches(name.replace('.', '/'))) s.applyAccess(bytes)?.let { bytes = it } }
         return defineClass(name, bytes, 0, bytes.size, CodeSource(url, null as Array<java.security.cert.Certificate>?))
+    }
+
+    /**
+     * Classes Mixin synthesizes at runtime have no .class file: the inner/anonymous classes of a mixin (javac's `$SwitchMap$` helpers for enum
+     * switches, anonymous classes) are re-parented to their target as `Target$Anonymous$hash`, and Mixin hands out their bytes through
+     * `IMixinTransformer.generateClass` (this is what every other Mixin loader does in findClass). Without it the first use fails with
+     * NoClassDefFoundError `...$Anonymous$...` (seen for PrepareSpawnTask and PlayerList).
+     */
+    private fun defineGenerated(name: String): Class<*> {
+        val bytes = transformer?.generateClass(org.spongepowered.asm.mixin.MixinEnvironment.getCurrentEnvironment(), name) ?: throw ClassNotFoundException(name)
+        return defineClass(name, bytes, 0, bytes.size)
     }
 
     /** Original, untransformed bytes — what Mixin asks for when it inspects a class. */
