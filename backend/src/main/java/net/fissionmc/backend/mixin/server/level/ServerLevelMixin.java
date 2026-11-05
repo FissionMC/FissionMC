@@ -79,9 +79,9 @@ public abstract class ServerLevelMixin extends Level {
     private String bukkitName;
     private UUID uuid;
     private net.minecraft.server.level.progress.LevelLoadListener levelLoadListener;
-    private GameRules gameRules; // TODO(behaviour): getGameRules() returns this (per-level GameRules)
-    private WeatherData weatherData; // TODO(behaviour): getWeatherData()/prepareWeather use this (per-level WeatherData)
-    private TimerQueue<MinecraftServer> scheduledEvents; // TODO(behaviour): tickTime uses this (per-level scheduledEvents)
+    private GameRules gameRules; // Paper - per-level GameRules
+    private WeatherData weatherData; // Paper - per-level WeatherData
+    private TimerQueue<MinecraftServer> scheduledEvents; // Paper - per-level scheduledEvents
     private WorldGenSettings worldGenSettings;
     private boolean hasPhysicsEvent = true; // Paper - BlockPhysicsEvent
     private boolean hasEntityMoveEvent; // Paper - Add EntityMoveEvent
@@ -254,7 +254,6 @@ public abstract class ServerLevelMixin extends Level {
     // Paper end
 
     // Paper start - Add methods to find targets for lightning strikes
-    // TODO(behaviour): vanilla findLightningTargetAround(BlockPos) -> this(pos, false); MC-262422 spectator fix applies only here
     public @Nullable BlockPos findLightningTargetAround(final BlockPos pos, boolean returnNullWhenNoTarget) {
         // Paper end - Add methods to find targets for lightning strikes
         BlockPos center = this.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos);
@@ -278,7 +277,6 @@ public abstract class ServerLevelMixin extends Level {
     }
 
     // CraftBukkit start
-    // TODO(behaviour): vanilla addFreshEntity/addWithUUID/addDuringTeleport/tryAddFreshEntityWithPassengers delegate with SpawnReason.DEFAULT (null for teleport)
     public boolean addFreshEntity(final Entity entity, final org.bukkit.event.entity.CreatureSpawnEvent.@Nullable SpawnReason reason) {
         return this.addEntity(entity, reason);
         // CraftBukkit end
@@ -356,7 +354,6 @@ public abstract class ServerLevelMixin extends Level {
     }
     // CraftBukkit end
 
-    // TODO(behaviour): vanilla explode(...) delegates to explode0
     public ServerExplosion explode0(
         final @Nullable Entity source,
         final @Nullable DamageSource damageSource,
@@ -635,4 +632,351 @@ public abstract class ServerLevelMixin extends Level {
         }
     }
     // Paper end - notify observers even if grow failed
+
+    // ---- wave 2: behaviour hunks (Paper: sources/net/minecraft/server/level/ServerLevel.java.patch) ----
+
+    // CraftBukkit start - vanilla add methods delegate with a spawn reason
+    @org.spongepowered.asm.mixin.injection.Inject(method = "addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$addFreshEntityDefault(final Entity entity, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        cir.setReturnValue(this.addFreshEntity(entity, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DEFAULT));
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "addWithUUID(Lnet/minecraft/world/entity/Entity;)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$addWithUUIDDefault(final Entity entity, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        cir.setReturnValue(this.addWithUUID(entity, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DEFAULT));
+    }
+
+    // SPIGOT-6415: Don't call spawn event for entities which travel trough worlds,
+    // since it is only an implementation detail, that a new entity is created when
+    // they are traveling between worlds.
+    @org.spongepowered.asm.mixin.injection.Inject(method = "addDuringTeleport(Lnet/minecraft/world/entity/Entity;)V", at = @At("HEAD"), cancellable = true)
+    private void paper$addDuringTeleportNoReason(final Entity entity, final CallbackInfo ci) {
+        this.addDuringTeleport(entity, null);
+        ci.cancel();
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "tryAddFreshEntityWithPassengers(Lnet/minecraft/world/entity/Entity;)Z", at = @At("HEAD"), cancellable = true)
+    private void paper$tryAddFreshEntityWithPassengersDefault(final Entity entity, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        cir.setReturnValue(this.tryAddFreshEntityWithPassengers(entity, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DEFAULT));
+    }
+    // CraftBukkit end
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "removePlayerImmediately", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;remove(Lnet/minecraft/world/entity/Entity$RemovalReason;)V"))
+    private void paper$removePlayerCause(final ServerPlayer player, final Entity.RemovalReason reason) {
+        player.remove(reason, null); // CraftBukkit - add Bukkit remove cause
+    }
+
+    // Spigot start - close inventories of unloading containers
+    @org.spongepowered.asm.mixin.injection.Inject(method = "unload", at = @At("HEAD"))
+    private void paper$unloadCloseInventories(final LevelChunk levelChunk, final CallbackInfo ci) {
+        for (net.minecraft.world.level.block.entity.BlockEntity blockEntity : levelChunk.getBlockEntities().values()) {
+            if (blockEntity instanceof net.minecraft.world.Container) {
+                // Paper start - this area looks like it can load chunks, change the behavior
+                // chests for example can apply physics to the world
+                // so instead we just change the active container and call the event
+                for (org.bukkit.entity.HumanEntity human : com.google.common.collect.Lists.newArrayList(((net.minecraft.world.Container) blockEntity).getViewers())) {
+                    ((org.bukkit.craftbukkit.entity.CraftHumanEntity) human).getHandle().closeUnloadedInventory(org.bukkit.event.inventory.InventoryCloseEvent.Reason.UNLOADED); // Paper - Inventory close reason
+                }
+                // Paper end - this area looks like it can load chunks, change the behavior
+            }
+        }
+    }
+    // Spigot end
+
+    // Paper start - per-level GameRules / WeatherData / scheduledEvents / WorldGenSettings
+    // FissionMC: during construction (before paper$init) the values come from ServerLevelInit
+    @org.spongepowered.asm.mixin.injection.Inject(method = "getGameRules", at = @At("HEAD"), cancellable = true)
+    private void paper$perLevelGameRules(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<GameRules> cir) {
+        if (this.gameRules != null) {
+            cir.setReturnValue(this.gameRules); // Paper - per-level GameRules
+        } else if (ServerLevelInit.peek() != null) {
+            cir.setReturnValue(ServerLevelInit.peek().gameRules());
+        }
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "getWeatherData", at = @At("HEAD"), cancellable = true)
+    private void paper$perLevelWeatherData(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<WeatherData> cir) {
+        if (this.weatherData != null) {
+            cir.setReturnValue(this.weatherData); // Paper - per-level WeatherData
+        }
+    }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "<init>", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;getWeatherData()Lnet/minecraft/world/level/saveddata/WeatherData;"))
+    private WeatherData paper$prepareLevelWeather(final MinecraftServer server) {
+        final ServerLevelInit init = ServerLevelInit.peek();
+        if (init == null) {
+            return server.getWeatherData();
+        }
+        final WeatherData weatherData = init.savedDataStorage().computeIfAbsent(WeatherData.TYPE);
+        weatherData.setLevel((ServerLevel) (Object) this);
+        return weatherData; // Paper - per-level WeatherData
+    }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "tickTime", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/MinecraftServer;getScheduledEvents()Lnet/minecraft/world/level/timers/TimerQueue;"))
+    private TimerQueue<MinecraftServer> paper$perLevelScheduledEvents(final MinecraftServer server) {
+        return this.scheduledEvents != null ? this.scheduledEvents : server.getScheduledEvents(); // Paper - per-level scheduledEvents
+    }
+
+    private @Nullable WorldGenSettings fission$worldGenSettings() {
+        if (this.worldGenSettings != null) {
+            return this.worldGenSettings;
+        }
+        final ServerLevelInit init = ServerLevelInit.peek();
+        return init != null ? init.worldGenSettings() : null;
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "isFlat", at = @At("HEAD"), cancellable = true)
+    private void paper$isFlat(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        final WorldGenSettings settings = this.fission$worldGenSettings();
+        if (settings != null && this.typeKey != null) {
+            cir.setReturnValue(settings.dimensions().get(this.getTypeKey()).map(levelStem -> levelStem.generator() instanceof net.minecraft.world.level.levelgen.FlatLevelSource).orElse(false)); // Paper
+        }
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "getSeed", at = @At("HEAD"), cancellable = true)
+    private void paper$getSeed(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Long> cir) {
+        final WorldGenSettings settings = this.fission$worldGenSettings();
+        if (settings != null) {
+            cir.setReturnValue(settings.options().seed()); // CraftBukkit
+        }
+    }
+    // Paper end
+
+    // Spigot / Paper - thunder chance, disable thunder
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "tickThunder", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/RandomSource;nextInt(I)I", ordinal = 0))
+    private int paper$thunderChance(final net.minecraft.util.RandomSource random, final int bound, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Integer> original) {
+        if (this.paperConfig().environment.disableThunder || this.spigotConfig.thunderChance <= 0) { // Paper - Option to disable thunder
+            return 1;
+        }
+        return original.call(random, this.spigotConfig.thunderChance); // Spigot
+    }
+
+    @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "tickThunder", at = @At(value = "CONSTANT", args = "doubleValue=0.01"))
+    private double paper$skeletonHorseChance(final double chance) {
+        return this.paperConfig().entities.spawning.skeletonHorseThunderSpawnChance.or(chance); // Paper - Configurable spawn chances for skeleton horses
+    }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "tickThunder", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z", ordinal = 0))
+    private boolean paper$trapHorseReason(final ServerLevel level, final Entity horse) {
+        return this.addFreshEntity(horse, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.LIGHTNING); // CraftBukkit
+    }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "tickThunder", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z", ordinal = 1))
+    private boolean paper$weatherLightning(final ServerLevel level, final Entity bolt) {
+        return this.strikeLightning(bolt, org.bukkit.event.weather.LightningStrikeEvent.Cause.WEATHER); // CraftBukkit
+    }
+
+    // CraftBukkit - BlockFormEvent for ice and snow
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "tickPrecipitation", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;setBlockAndUpdate(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;)Z"))
+    private boolean paper$precipitationFormEvent(final ServerLevel level, final BlockPos pos, final net.minecraft.world.level.block.state.BlockState state) {
+        return org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockFormEvent(level, pos, state, net.minecraft.world.level.block.Block.UPDATE_ALL, null); // CraftBukkit
+    }
+
+    // Paper - Add methods to find targets for lightning strikes
+    @org.spongepowered.asm.mixin.injection.Inject(method = "findLightningTargetAround(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/core/BlockPos;", at = @At("HEAD"), cancellable = true)
+    private void paper$findLightningTarget(final BlockPos pos, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<BlockPos> cir) {
+        cir.setReturnValue(this.findLightningTargetAround(pos, false));
+    }
+
+    // Paper start - Add cause to Weather/ThunderChangeEvents
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "advanceWeatherCycle", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/saveddata/WeatherData;setThundering(Z)V"))
+    private void paper$naturalThunder(final WeatherData weatherData, final boolean thundering) {
+        weatherData.setThundering(thundering, org.bukkit.event.weather.ThunderChangeEvent.Cause.NATURAL);
+    }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(method = "advanceWeatherCycle", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/saveddata/WeatherData;setRaining(Z)V"))
+    private void paper$naturalRain(final WeatherData weatherData, final boolean raining) {
+        weatherData.setRaining(raining, org.bukkit.event.weather.WeatherChangeEvent.Cause.NATURAL);
+    }
+    // Paper end - Add cause to Weather/ThunderChangeEvents
+
+    // CraftBukkit start - weather packets are sent per player (player weather API)
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "advanceWeatherCycle", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/players/PlayerList;broadcastAll(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/resources/ResourceKey;)V"))
+    private boolean paper$noDimensionWeatherBroadcast(final net.minecraft.server.players.PlayerList playerList, final net.minecraft.network.protocol.Packet<?> packet, final ResourceKey<Level> dimension) {
+        return false;
+    }
+
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "advanceWeatherCycle", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/players/PlayerList;broadcastAll(Lnet/minecraft/network/protocol/Packet;)V"))
+    private boolean paper$noGlobalWeatherBroadcast(final net.minecraft.server.players.PlayerList playerList, final net.minecraft.network.protocol.Packet<?> packet) {
+        return false;
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "advanceWeatherCycle", at = @At("TAIL"))
+    private void paper$playerWeather(final CallbackInfo ci, @com.llamalad7.mixinextras.sugar.Local(ordinal = 0) final boolean wasRaining) {
+        for (ServerPlayer player : this.players) {
+            if (player.level() == (Object) this) {
+                player.tickWeather();
+            }
+        }
+
+        if (wasRaining != this.isRaining()) {
+            // Only send weather packets to those affected
+            for (ServerPlayer player : this.players) {
+                if (player.level() == (Object) this) {
+                    player.setPlayerWeather((!wasRaining ? org.bukkit.WeatherType.DOWNFALL : org.bukkit.WeatherType.CLEAR), false);
+                }
+            }
+        }
+        for (ServerPlayer player : this.players) {
+            if (player.level() == (Object) this) {
+                player.updateWeather(this.oRainLevel, this.rainLevel, this.oThunderLevel, this.thunderLevel);
+            }
+        }
+    }
+    // CraftBukkit end
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "resetWeatherCycle", at = @At("HEAD"), cancellable = true)
+    private void paper$resetWeatherCycle(final CallbackInfo ci) {
+        WeatherData weatherData = ((ServerLevel) (Object) this).getWeatherData();
+        // CraftBukkit start
+        weatherData.setRaining(false, org.bukkit.event.weather.WeatherChangeEvent.Cause.SLEEP); // Paper - Add cause to Weather/ThunderChangeEvents
+        // If we stop due to everyone sleeping we should reset the weather duration to some other random value.
+        // Not that everyone ever manages to get the whole server to sleep at the same time....
+        if (!weatherData.isRaining()) {
+            weatherData.setRainTime(0);
+        }
+        // CraftBukkit end
+        weatherData.setThundering(false, org.bukkit.event.weather.ThunderChangeEvent.Cause.SLEEP); // Paper - Add cause to Weather/ThunderChangeEvents
+        // CraftBukkit start
+        if (!weatherData.isThundering()) {
+            weatherData.setThunderTime(0);
+        }
+        // CraftBukkit end
+        ci.cancel();
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "tickNonPassenger", at = @At("HEAD"))
+    private void paper$tickNonPassengerThread(final Entity entity, final CallbackInfo ci) {
+        ca.spottedleaf.moonrise.common.util.TickThread.ensureTickThread("Cannot tick an entity off-main"); // Paper - log detailed entity tick information
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "tickNonPassenger", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;tick()V", shift = At.Shift.AFTER))
+    private void paper$postTick(final Entity entity, final CallbackInfo ci) {
+        entity.postTick(); // CraftBukkit
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "tickPassenger", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;rideTick()V", shift = At.Shift.AFTER))
+    private void paper$postRideTick(final Entity vehicle, final Entity entity, final CallbackInfo ci) {
+        entity.postTick(); // CraftBukkit
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "save", at = @At("HEAD"))
+    private void paper$worldSaveEvent(final net.minecraft.util.ProgressListener progressListener, final boolean flush, final boolean noSave, final CallbackInfo ci) {
+        if (!noSave) {
+            new org.bukkit.event.world.WorldSaveEvent(this.getWorld()).callEvent(); // CraftBukkit
+        }
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "saveLevelData", at = @At("HEAD"))
+    private void paper$savePdc(final boolean sync, final CallbackInfo ci) {
+        this.getChunkSource().getDataStorage().computeIfAbsent(io.papermc.paper.world.saveddata.PaperWorldPDC.TYPE).setFrom(this.persistentDataContainer); // Paper
+    }
+
+    // Paper start - Add BlockBreakProgressUpdateEvent
+    @org.spongepowered.asm.mixin.injection.Inject(method = "destroyBlockProgress", at = @At("HEAD"))
+    private void paper$blockBreakProgressEvent(final int id, final BlockPos blockPos, final int progress, final CallbackInfo ci) {
+        Entity entity = this.getEntity(id);
+        // If a plugin is using this method to send destroy packets for a client-side only entity id, no block progress occurred on the server.
+        // Hence, do not call the event.
+        if (entity != null) {
+            float progressFloat = Mth.clamp(progress, 0, 10) / 10.0f;
+            org.bukkit.craftbukkit.block.CraftBlock bukkitBlock = org.bukkit.craftbukkit.block.CraftBlock.at((ServerLevel) (Object) this, blockPos);
+            new io.papermc.paper.event.block.BlockBreakProgressUpdateEvent(bukkitBlock, progressFloat, entity.getBukkitEntity())
+                .callEvent();
+        }
+    }
+    // Paper end - Add BlockBreakProgressUpdateEvent
+
+    // CraftBukkit - don't show the progress of hidden players
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "destroyBlockProgress", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;send(Lnet/minecraft/network/protocol/Packet;)V"))
+    private boolean paper$destroyProgressCanSee(final net.minecraft.server.network.ServerGamePacketListenerImpl connection, final net.minecraft.network.protocol.Packet<?> packet, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true, ordinal = 0) final int id) {
+        final Entity entity = this.getEntity(id);
+        return !(entity instanceof net.minecraft.world.entity.player.Player breakerPlayer) || connection.player.getBukkitEntity().canSee(breakerPlayer.getBukkitEntity());
+    }
+
+    // Paper start - Prevent GameEvents being fired from unloaded chunks
+    @org.spongepowered.asm.mixin.injection.Inject(method = "gameEvent", at = @At("HEAD"), cancellable = true)
+    private void paper$gameEventLoadedOnly(final Holder<net.minecraft.world.level.gameevent.GameEvent> gameEvent, final Vec3 position, final net.minecraft.world.level.gameevent.GameEvent.Context context, final CallbackInfo ci) {
+        if (this.getChunkIfLoadedImmediately((Mth.floor(position.x) >> 4), (Mth.floor(position.z) >> 4)) == null) {
+            ci.cancel();
+        }
+    }
+    // Paper end - Prevent GameEvents being fired from unloaded chunks
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "updateNeighborsAt(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/Block;)V", at = @At("HEAD"), cancellable = true)
+    private void paper$noNeighborUpdatesWhilePopulating(final BlockPos pos, final net.minecraft.world.level.block.Block sourceBlock, final CallbackInfo ci) {
+        // CraftBukkit start
+        if (this.populating) {
+            ci.cancel();
+            return;
+        }
+        // CraftBukkit end
+        if (this.captureBlockStates) { ci.cancel(); } // Paper - Cancel all physics during placement
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "updateNeighborsAt(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/Block;Lnet/minecraft/world/level/redstone/Orientation;)V", at = @At("HEAD"), cancellable = true)
+    private void paper$noNeighborUpdatesWhileCapturing(final BlockPos pos, final net.minecraft.world.level.block.Block sourceBlock, final net.minecraft.world.level.redstone.@Nullable Orientation orientation, final CallbackInfo ci) {
+        if (this.captureBlockStates) { ci.cancel(); } // Paper - Cancel all physics during placement
+    }
+
+    // CraftBukkit - vanilla explode delegates to explode0 (STANDARD interaction, wasCanceled)
+    @org.spongepowered.asm.mixin.injection.Inject(method = "explode", at = @At("HEAD"), cancellable = true)
+    private void paper$explode0(final @Nullable Entity source, final @Nullable DamageSource damageSource, final @Nullable ExplosionDamageCalculator damageCalculator, final double x, final double y, final double z, final float r, final boolean fire, final Level.ExplosionInteraction interactionType, final ParticleOptions smallExplosionParticles, final ParticleOptions largeExplosionParticles, final WeightedList<ExplosionParticleInfo> blockParticles, final Holder<SoundEvent> explosionSound, final CallbackInfo ci) {
+        this.explode0(source, damageSource, damageCalculator, x, y, z, r, fire, interactionType, smallExplosionParticles, largeExplosionParticles, blockParticles, explosionSound);
+        ci.cancel();
+    }
+
+    // Paper start - Call missing map initialize event and set id
+    @org.spongepowered.asm.mixin.injection.Inject(method = "getMapData", at = @At("HEAD"), cancellable = true)
+    private void paper$getMapData(final net.minecraft.world.level.saveddata.maps.MapId id, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<net.minecraft.world.level.saveddata.maps.MapItemSavedData> cir) {
+        final SavedDataStorage storage = this.getServer().getDataStorage();
+
+        final Optional<net.minecraft.world.level.saveddata.SavedData> cacheEntry = storage.cache.get(net.minecraft.world.level.saveddata.maps.MapItemSavedData.type(id));
+        if (cacheEntry == null) { // Cache did not contain, try to load and may init
+            final net.minecraft.world.level.saveddata.maps.MapItemSavedData mapData = storage.get(net.minecraft.world.level.saveddata.maps.MapItemSavedData.type(id)); // get populates the cache
+            if (mapData != null) { // map was read, init it and return
+                mapData.id = id;
+                new org.bukkit.event.server.MapInitializeEvent(mapData.mapView).callEvent();
+                cir.setReturnValue(mapData);
+                return;
+            }
+
+            cir.setReturnValue(null); // Map does not exist, reading failed.
+            return;
+        }
+        // Cache entry exists, update it with the id ref and return.
+        if (cacheEntry.orElse(null) instanceof final net.minecraft.world.level.saveddata.maps.MapItemSavedData mapItemSavedData) {
+            mapItemSavedData.id = id;
+            cir.setReturnValue(mapItemSavedData);
+            return;
+        }
+
+        cir.setReturnValue(null);
+    }
+    // Paper end - Call missing map initialize event and set id
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "setMapData", at = @At("HEAD"))
+    private void paper$setMapData(final net.minecraft.world.level.saveddata.maps.MapId id, final net.minecraft.world.level.saveddata.maps.MapItemSavedData data, final CallbackInfo ci) {
+        // CraftBukkit start
+        data.id = id;
+        org.bukkit.event.server.MapInitializeEvent event = new org.bukkit.event.server.MapInitializeEvent(data.mapView);
+        event.callEvent();
+        // CraftBukkit end
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "getEntities()Lnet/minecraft/world/level/entity/LevelEntityGetter;", at = @At("HEAD"))
+    private void paper$asyncGetEntities(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<?> cir) {
+        org.spigotmc.AsyncCatcher.catchOp("Chunk getEntities call"); // Spigot
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;tickBlockEntities()V", shift = At.Shift.AFTER))
+    private void paper$resetPrimedTnt(final java.util.function.BooleanSupplier haveTime, final CallbackInfo ci) {
+        this.spigotConfig.currentPrimedTnt = 0; // Spigot
+    }
+
+    // CraftBukkit - this prevents entity cleanup, other issues on servers with no players // Paper - restore this
+    @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerChunkCache;hasActiveTickets()Z"))
+    private boolean paper$tickWhenEmpty(final boolean hasActiveTickets) {
+        return !this.paperConfig().unsupportedSettings.disableWorldTickingWhenEmpty || hasActiveTickets;
+    }
 }

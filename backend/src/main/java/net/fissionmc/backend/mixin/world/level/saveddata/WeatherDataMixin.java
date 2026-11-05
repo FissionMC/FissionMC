@@ -11,7 +11,20 @@ public abstract class WeatherDataMixin extends SavedData {
     @Shadow private boolean raining;
     @Shadow private boolean thundering;
 
-    // TODO(behaviour): vanilla setThundering(boolean)/setRaining(boolean) -> Paper delegates with Cause.UNKNOWN
+    // Paper start - Add cause to Weather/ThunderChangeEvents
+    @org.spongepowered.asm.mixin.injection.Inject(method = "setThundering(Z)V", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), cancellable = true)
+    private void paper$setThunderingUnknown(final boolean thundering, final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        this.setThundering(thundering, org.bukkit.event.weather.ThunderChangeEvent.Cause.UNKNOWN);
+        ci.cancel();
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "setRaining(Z)V", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), cancellable = true)
+    private void paper$setRainingUnknown(final boolean raining, final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        this.setRaining(raining, org.bukkit.event.weather.WeatherChangeEvent.Cause.UNKNOWN);
+        ci.cancel();
+    }
+    // Paper end - Add cause to Weather/ThunderChangeEvents
+
     public void setThundering(boolean thundering, org.bukkit.event.weather.ThunderChangeEvent.Cause cause) {
         // Paper end - Add cause to Weather/ThunderChangeEvents
         // CraftBukkit start
