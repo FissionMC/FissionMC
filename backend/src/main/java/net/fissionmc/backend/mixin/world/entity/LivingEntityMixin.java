@@ -1734,5 +1734,5 @@ public abstract class LivingEntityMixin extends Entity implements net.fissionmc.
     }
     // Paper end
 
-    // TODO(behaviour): spin attack event, onItemPickup global player lookup, randomTeleport cause API/EntityTeleportEvent, rotation range checks
+    // TODO(behaviour): spin attack event (checkAutoSpinAttack), onItemPickup global player lookup, randomTeleport cause API/EntityTeleportEvent, rotation range checks
 }
