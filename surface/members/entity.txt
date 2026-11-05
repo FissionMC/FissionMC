@@ -3,6 +3,7 @@
 
 # Paper: sources/net/minecraft/world/entity/Entity.java.patch
 net.minecraft.world.entity.Entity: static boolean isLevelAtLeast(net.minecraft.world.level.storage.ValueInput input, int level)
+net.minecraft.world.entity.Entity: public static net.minecraft.util.RandomSource SHARED_RANDOM
 net.minecraft.world.entity.Entity: public org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason spawnReason
 net.minecraft.world.entity.Entity: public org.bukkit.craftbukkit.entity.CraftEntity getBukkitEntity()
 net.minecraft.world.entity.Entity: public org.bukkit.craftbukkit.entity.CraftEntity getBukkitEntityRaw()
@@ -196,3 +197,6 @@ net.minecraft.world.entity.ItemBasedSteering: public void boost(int boostTime)
 
 # Paper: sources/net/minecraft/network/syncher/SynchedEntityData.java.patch
 net.minecraft.network.syncher.SynchedEntityData: public java.util.List<net.minecraft.network.syncher.SynchedEntityData$DataValue<?>> packAll()
+
+# Paper: sources/net/minecraft/world/entity/NeutralMob.java.patch
+net.minecraft.world.entity.NeutralMob: public void tickInitialPersistentAnger(net.minecraft.world.level.Level level)
