@@ -347,6 +347,7 @@ net.minecraft.server.level.ChunkHolder: public net.minecraft.world.level.chunk.L
 net.minecraft.server.level.ChunkHolder: public net.minecraft.world.level.chunk.LevelChunk getFullChunkNowUnchecked()
 net.minecraft.commands.arguments.selector.EntitySelectorParser: public net.minecraft.commands.arguments.selector.EntitySelector parse(boolean overridePermissions) throws com.mojang.brigadier.exceptions.CommandSyntaxException
 net.minecraft.world.level.BaseCommandBlock: public abstract net.minecraft.server.level.ServerLevel getLevel()
+net.minecraft.world.level.BaseCommandBlock: public org.bukkit.command.CommandSender fission$getBukkitSender(net.minecraft.commands.CommandSourceStack wrapper)
 
 # Paper: sources/net/minecraft/util/Util.java.patch (needed by io/papermc/paper/FeatureHooks.java)
 net.minecraft.util.Util: public static final double COLLISION_EPSILON
