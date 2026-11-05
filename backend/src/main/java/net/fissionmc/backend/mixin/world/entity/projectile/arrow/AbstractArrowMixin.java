@@ -46,8 +46,6 @@ public abstract class AbstractArrowMixin extends Projectile {
 
     // CraftBukkit - the owner handed to the (mob) constructor, set before the rest of things (SPIGOT-7744)
     private static final ThreadLocal<LivingEntity> fission$ctorOwner = new ThreadLocal<>();
-    // Paper - pass custom pickup item (vanilla tryPickup(Player) reads it instead of getPickupItem())
-    private @Nullable ItemStack fission$pickupItem;
 
     protected AbstractArrowMixin(final EntityType<? extends Projectile> type, final Level level) {
         super(type, level);
@@ -190,11 +188,11 @@ public abstract class AbstractArrowMixin extends Projectile {
                 pickupItem = item.getItem();
             }
             final boolean pickedUp;
-            this.fission$pickupItem = pickupItem; // Paper - pass custom pickup item
+            net.fissionmc.backend.entitytypes.PickupItem.CURRENT.set(pickupItem); // Paper - pass custom pickup item
             try {
                 pickedUp = this.tryPickup(player);
             } finally {
-                this.fission$pickupItem = null;
+                net.fissionmc.backend.entitytypes.PickupItem.CURRENT.remove();
             }
             if (pickedUp) {
                 // CraftBukkit end
@@ -206,6 +204,6 @@ public abstract class AbstractArrowMixin extends Projectile {
 
     @Redirect(method = "tryPickup", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/projectile/arrow/AbstractArrow;getPickupItem()Lnet/minecraft/world/item/ItemStack;"))
     private ItemStack fission$customPickupItem(AbstractArrow instance) {
-        return this.fission$pickupItem != null ? this.fission$pickupItem : this.getPickupItem(); // Paper - pass custom pickup item
+        return net.fissionmc.backend.entitytypes.PickupItem.orElse(this.getPickupItem()); // Paper - pass custom pickup item
     }
 }
