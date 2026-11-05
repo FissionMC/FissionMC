@@ -261,8 +261,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             }
             PacketType.Login.Client.LOGIN_SUCCESS_ACK -> {
                 user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION
-                // announce the core pack, then registries + end (the client answers known packs; we do not wait for it)
-                send(Limbo.knownPacks())
+                // replay the recorded configuration up to the known-packs request; the rest follows when the client answers
+                Limbo.sendRaw(channel, Limbo.config.beforeKnownPacks)
             }
             else -> {}
         }
@@ -290,7 +290,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         when (e.packetType) {
             PacketType.Configuration.Client.SELECT_KNOWN_PACKS -> if (!configSent) {
                 configSent = true
-                sendAll(Limbo.registryPackets() + Limbo.configurationEnd())
+                Limbo.sendRaw(channel, Limbo.config.afterKnownPacks)
             }
             PacketType.Configuration.Client.CONFIGURATION_END_ACK -> enterPlay()
             else -> {}
@@ -300,10 +300,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     // ---- limbo play ----
     private fun enterPlay() {
         user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
-        sendAll(listOf(
-            Limbo.joinGame(server.config.maxPlayers), Limbo.position(), Limbo.startLoadingChunks(),
-            Limbo.viewPosition(), Limbo.emptyChunk(), Limbo.chat("You are connected to the FissionMC master. Waiting for a backend..."),
-        ))
+        sendAll(Limbo.playPackets(server.config.maxPlayers, Limbo.config.overworldDimensionId))
         server.log("[client] $playerName joined limbo")
         tryAttach()
         lastKeepAliveAck = System.nanoTime()
@@ -318,7 +315,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (mode == Mode.REJOIN) {
             if (e.packetType == PacketType.Play.Client.CONFIGURATION_ACK) {
                 user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION
-                mode = Mode.LIMBO; tap = null; send(Limbo.knownPacks())
+                mode = Mode.LIMBO; tap = null; Limbo.sendRaw(channel, Limbo.config.beforeKnownPacks)
             }
             return
         }

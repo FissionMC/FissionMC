@@ -1,23 +1,19 @@
 package net.fissionmc.master.client
 
-import com.github.retrooper.packetevents.manager.server.ServerVersion
-import com.github.retrooper.packetevents.protocol.chat.ChatTypes
 import com.github.retrooper.packetevents.protocol.player.ClientVersion
 import com.github.retrooper.packetevents.protocol.player.GameMode
-import com.github.retrooper.packetevents.protocol.player.User
 import com.github.retrooper.packetevents.protocol.world.Difficulty
 import com.github.retrooper.packetevents.protocol.world.chunk.BaseChunk
 import com.github.retrooper.packetevents.protocol.world.chunk.Column
 import com.github.retrooper.packetevents.protocol.world.chunk.LightData
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18
 import com.github.retrooper.packetevents.protocol.world.dimension.DimensionTypeRef
-import com.github.retrooper.packetevents.resources.ResourceLocation
 import com.github.retrooper.packetevents.util.KnownPack
 import com.github.retrooper.packetevents.util.Vector3d
 import com.github.retrooper.packetevents.wrapper.PacketWrapper
-import com.github.retrooper.packetevents.wrapper.configuration.server.WrapperConfigServerConfigurationEnd
-import com.github.retrooper.packetevents.wrapper.configuration.server.WrapperConfigServerRegistryData
-import com.github.retrooper.packetevents.wrapper.configuration.server.WrapperConfigServerSelectKnownPacks
+import com.github.retrooper.packetevents.wrapper.configuration.client.WrapperConfigClientSelectKnownPacks
+import com.github.retrooper.packetevents.protocol.packettype.PacketType
+import io.netty.buffer.Unpooled
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChangeGameState
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChunkData
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerJoinGame
@@ -29,34 +25,83 @@ import net.kyori.adventure.text.Component
 import java.util.BitSet
 
 /**
- * The packets of the limbo: an empty void world, spectator mode so nobody falls. Every packet is a PacketEvents wrapper.
- * Registry contents are NOT hand-encoded: entries are announced by name only (data comes from the client's own
- * `minecraft:core` pack, which we announce via known packs), names come from `limbo-registries.txt` generated from the vanilla jar.
+ * The packets of the limbo: an empty void world, spectator mode so nobody falls.
+ *
+ * The CONFIGURATION phase is not hand-built: registries, tags and feature flags are replayed from `limbo-config.bin`, a recording of what
+ * the real vanilla/Paper backend sends during configuration (vanilla's own codecs are the single source of truth, e.g. the numeric ids
+ * inside the tags packet). Record it again with the relay probe after every Minecraft version change: see [RelayProbe].
+ * Play-phase packets are PacketEvents wrappers; the probe also dumps them (`limbo-play.bin`) so a backend can check them against
+ * vanilla's own decoders (`-Dfission.check-limbo=<file>`).
  */
 object Limbo {
     const val ENTITY_ID = 1
     const val WORLD = "minecraft:overworld"
+    private val V = ClientVersion.V_26_3
 
-    /** registry id -> entry names, in the order we send them (dimension_type starts with overworld). */
-    val registries: List<Pair<String, List<String>>> by lazy {
-        Limbo::class.java.getResourceAsStream("/limbo-registries.txt")!!.bufferedReader().readLines().filter { it.isNotBlank() }
-            .map { l -> val (r, e) = l.split('\t'); r to e.split(',') }
+    /** The recorded configuration phase, split at the known-packs request. */
+    class Config(val beforeKnownPacks: List<ByteArray>, val afterKnownPacks: List<ByteArray>, val overworldDimensionId: Int)
+
+    /** Frame container: int count, then per frame int length + bytes. */
+    fun readFrames(bytes: ByteArray): List<ByteArray> {
+        val d = java.io.DataInputStream(bytes.inputStream()); val n = d.readInt()
+        return List(n) { ByteArray(d.readInt()).also { d.readFully(it) } }
+    }
+    fun writeFrames(frames: List<ByteArray>): ByteArray {
+        val o = java.io.ByteArrayOutputStream(); val d = java.io.DataOutputStream(o)
+        d.writeInt(frames.size); frames.forEach { d.writeInt(it.size); d.write(it) }; return o.toByteArray()
     }
 
-    fun knownPacks(): PacketWrapper<*> = WrapperConfigServerSelectKnownPacks(listOf(KnownPack("minecraft", "core", MC_VERSION)))
+    /** Packet id of a frame (first varint). */
+    fun idOf(frame: ByteArray): Int = VarInts.tryRead(Unpooled.wrappedBuffer(frame)) ?: -1
 
-    fun registryPackets(): List<PacketWrapper<*>> = registries.map { (reg, entries) ->
-        WrapperConfigServerRegistryData(
-            ResourceLocation(reg),
-            entries.map { WrapperConfigServerRegistryData.RegistryElement(ResourceLocation("minecraft", it), null) },
-        )
+    /** Splits recorded frames at the select-known-packs request and finds the overworld's index in the dimension_type registry. */
+    fun parse(frames: List<ByteArray>): Config {
+        val known = PacketType.Configuration.Server.SELECT_KNOWN_PACKS.getId(V)
+        val at = frames.indexOfFirst { idOf(it) == known }
+        require(at >= 0) { "recording has no known-packs request" }
+        return Config(frames.subList(0, at + 1), frames.subList(at + 1, frames.size), overworldIndex(frames))
     }
 
-    fun configurationEnd(): PacketWrapper<*> = WrapperConfigServerConfigurationEnd()
+    /** Reads the dimension_type registry frame: id, registry key, count, entries (identifier + has-data flag [+ data, unsupported]). */
+    fun overworldIndex(frames: List<ByteArray>): Int {
+        val reg = PacketType.Configuration.Server.REGISTRY_DATA.getId(V)
+        for (f in frames) {
+            if (idOf(f) != reg) continue
+            val b = Unpooled.wrappedBuffer(f); VarInts.tryRead(b)
+            fun str(): String { val n = VarInts.tryRead(b)!!; val a = ByteArray(n); b.readBytes(a); return String(a, Charsets.UTF_8) }
+            if (str() != "minecraft:dimension_type") continue
+            val count = VarInts.tryRead(b)!!
+            for (i in 0 until count) {
+                val id = str()
+                require(!b.readBoolean()) { "dimension_type entry $id carries data; limbo needs name-only registries (client known pack)" }
+                if (id == "minecraft:overworld") return i
+            }
+        }
+        error("recording has no minecraft:overworld in dimension_type")
+    }
 
-    fun joinGame(maxPlayers: Int): PacketWrapper<*> = WrapperPlayServerJoinGame(
+    val config: Config by lazy {
+        val bytes = Limbo::class.java.getResourceAsStream("/limbo-config.bin")?.readAllBytes()
+            ?: error("limbo-config.bin is missing: record it with debug.record-limbo (see RelayProbe)")
+        parse(readFrames(bytes))
+    }
+
+    /** Raw frames (packet id + payload), exactly as the real server produced them. */
+    fun sendRaw(ch: io.netty.channel.Channel, frames: List<ByteArray>) {
+        frames.forEach { ch.write(Unpooled.wrappedBuffer(it)) }; ch.flush()
+    }
+
+    fun encode(w: PacketWrapper<*>): ByteArray {
+        val b = Unpooled.buffer(); w.buffer = b
+        w.writeVarInt(w.nativePacketId); w.write()
+        return ByteArray(b.readableBytes()).also { b.readBytes(it) }
+    }
+
+    fun knownPacksAnswer(): PacketWrapper<*> = WrapperConfigClientSelectKnownPacks(listOf(KnownPack("minecraft", "core", MC_VERSION)))
+
+    fun joinGame(maxPlayers: Int, overworldId: Int): PacketWrapper<*> = WrapperPlayServerJoinGame(
         ENTITY_ID, false, GameMode.SPECTATOR, null, listOf(WORLD), com.github.retrooper.packetevents.protocol.nbt.NBTCompound(),
-        DimensionTypeRef.IdRef(0), Difficulty.PEACEFUL, WORLD, 0L, maxPlayers, 8, 8, false, false, false, false, false,
+        DimensionTypeRef.IdRef(overworldId), Difficulty.PEACEFUL, WORLD, 0L, maxPlayers, 8, 8, false, false, false, false, false,
         null, 0, 63, false, false,
     )
 
@@ -68,12 +113,16 @@ object Limbo {
 
     /** One empty chunk column (24 empty sections of an overworld-height world) at 0,0. */
     fun emptyChunk(): PacketWrapper<*> {
-        val v = ClientVersion.V_26_3
-        val sections = Array<BaseChunk>(24) { Chunk_v1_18(v) }
+        val sections = Array<BaseChunk>(24) { Chunk_v1_18(V) }
         val light = LightData(true, BitSet(), BitSet(), BitSet(), BitSet(), 0, 0, arrayOf(), arrayOf())
         return WrapperPlayServerChunkData(Column(0, 0, true, sections, null), light)
     }
 
     fun chat(text: String): PacketWrapper<*> = WrapperPlayServerSystemChatMessage(false, Component.text(text))
-    fun serverVersion(): ServerVersion = ServerVersion.V_26_3
+
+    /** The whole play-phase entry sequence. */
+    fun playPackets(maxPlayers: Int, overworldId: Int): List<PacketWrapper<*>> = listOf(
+        joinGame(maxPlayers, overworldId), position(), startLoadingChunks(), viewPosition(), emptyChunk(),
+        chat("You are connected to the FissionMC master. Waiting for a backend..."),
+    )
 }

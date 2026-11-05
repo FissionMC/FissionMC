@@ -66,7 +66,11 @@ tasks.register<JavaExec>("run") {
         "-Dfission.surface=" + rootProject.file("surface").path,
         "-Dfission.main=org.bukkit.craftbukkit.Main",
     )
-    doFirst { systemProperty("fission.classpath", gameCp.asPath) }
+    doFirst {
+        systemProperty("fission.classpath", gameCp.asPath)
+        // ./gradlew :backend:run -PcheckLimbo=/abs/path/limbo-play.bin : decode the master limbo frames with vanilla codecs (LimboCheck)
+        (project.findProperty("checkLimbo") as String?)?.let { systemProperty("fission.check-limbo", it) }
+    }
     args("--nogui")
     standardInput = System.`in`
 }

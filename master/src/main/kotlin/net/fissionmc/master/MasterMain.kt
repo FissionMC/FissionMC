@@ -27,8 +27,9 @@ fun main(args: Array<String>) {
     val clientCfg = ClientConfig.load(Path.of(args.firstOrNull() ?: "fission.properties"))
     val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay).start() else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
-    if (java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }.getProperty("debug.relay-probe") == "true")
-        registry.addListener(RelayProbe(relay))
+    val props = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
+    if (props.getProperty("debug.relay-probe") == "true")
+        registry.addListener(RelayProbe(relay, props.getProperty("debug.record-limbo")?.let { Path.of(it) }))
     Runtime.getRuntime().addShutdownHook(Thread { clients?.close(); master.close(); transport.close() })
     Thread.currentThread().join()
 }

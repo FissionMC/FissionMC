@@ -27,7 +27,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] Gradle integration of vendored PacketEvents (`:packetevents`; generated mapping resources committed under `packetevents/resources`, see upstream/packetevents-resources.md); own platform class `FissionPacketEventsAPI` in `:packets` replaces the spigot injector
 - [x] Built-in virtual plugin "packetevents" so depend: [packetevents] resolves (generated descriptor jar, boot-verified: loads and enables)
 - [ ] Strip PacketEvents injector; feed it from core pipeline
-- [~] Master terminates the client connection (Netty listener, status/login/encryption/compression/limbo coded, status/login/online-auth/limbo flows unit-tested end to end with PacketEvents codecs on both ends; no real client run)
+- [~] Master terminates the client connection (Netty listener, status/login/encryption/compression/limbo coded, status/login/online-auth/limbo flows unit-tested; limbo configuration is a recording of the real backend (registries + tags); limbo play frames decoded by vanilla's own codec in a backend boot; first real-client run failed on missing tags (fixed, retest pending))
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
 - [~] Listener chain: `PacketBus` + `PacketTap` over PacketEvents' EventManager, wired in master limbo phases, master relay (both directions) and backend virtual connection (both directions); `PacketTapTest` covers both directions, cancel and modify; backend boot shows the tap initialises

@@ -16,6 +16,7 @@ import net.fissionmc.backend.node.NodeBootstrap
 import net.fissionmc.protocol.*
 import net.minecraft.network.Connection
 import net.minecraft.network.HiddenByteBuf
+import net.minecraft.network.UnconfiguredPipelineHandler
 import net.minecraft.network.protocol.PacketFlow
 import net.minecraft.network.protocol.configuration.ConfigurationProtocols
 import net.minecraft.server.MinecraftServer
@@ -90,6 +91,7 @@ object PlayerRelayBackend {
     }
 
     @JvmStatic fun tick(server: MinecraftServer) {
+        LimboCheck.once(server)
         if (!enabled) return
         val link = NodeBootstrap.link
         if (link == null || !link.isOpen) { if (sessions.isNotEmpty()) closeAll("master link lost"); inbox.clear(); return }
@@ -120,7 +122,7 @@ object PlayerRelayBackend {
     private fun feed(v: Virtual, bytes: ByteArray) {
         val frame = v.tap?.let { synchronized(it) { it.fromClient(bytes) } } ?: bytes.takeIf { v.tap == null } ?: return
         // Replies to a closed channel are dropped; a decoding error is handled by vanilla's Connection.exceptionCaught.
-        if (v.channel.isOpen) { v.channel.writeInbound(HiddenByteBuf.pack(Unpooled.wrappedBuffer(frame))); v.channel.runPendingTasks() }
+        if (v.channel.isOpen) { v.channel.runPendingTasks(); v.channel.writeInbound(HiddenByteBuf.pack(Unpooled.wrappedBuffer(frame))); v.channel.runPendingTasks() }
     }
 
     /**
@@ -168,10 +170,14 @@ object PlayerRelayBackend {
         }
         synchronized(sessions) { sessions[v.id] = v }
         // like vanilla's login acknowledgement: switch both directions to configuration, register for ticking, start
+        // Vanilla swaps the decoder for an 'unconfigured' placeholder when it decodes a TERMINAL packet (handshake/login ack). We skip
+        // those phases, so do the swap by hand, otherwise the decoder stays on the initial handshake protocol and rejects every frame.
+        v.channel.pipeline().replace("decoder", "inbound_config", UnconfiguredPipelineHandler.Inbound())
         conn.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND)
         val listener = ServerConfigurationPacketListenerImpl(server, conn, CommonListenerCookie.createInitial(profile, false))
         conn.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, listener)
         server.connection.connections.add(conn)
+        v.channel.runPendingTasks()   // EmbeddedChannel runs netty tasks (the inbound protocol switch) only when asked
         listener.startConfiguration()
         log.info("[fission] relayed player ${a.name} attached (player ${a.playerId}) from ${remote.address.hostAddress}")
         return v

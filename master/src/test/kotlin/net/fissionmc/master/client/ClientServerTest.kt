@@ -97,6 +97,8 @@ class TestClient(port: Int) : AutoCloseable {
     fun <W : PacketWrapper<W>> expect(type: PacketTypeCommon, make: (com.github.retrooper.packetevents.event.PacketSendEvent) -> W): W {
         val ev = readEvent(); assertEquals(type, ev.packetType, "unexpected packet ${ev.packetType}"); return make(ev)
     }
+    /** Reads frames until one of [type] arrives (the recorded configuration contains frames the test does not care about). */
+    fun skipUntil(type: PacketTypeCommon): Int { var n = 0; while (true) { val ev = readEvent(); n++; if (ev.packetType == type) return n } }
     fun skip(type: PacketTypeCommon) { val ev = readEvent(); assertEquals(type, ev.packetType, "unexpected packet ${ev.packetType}") }
     override fun close() { sock.close(); channel.finishAndReleaseAll() }
 }
@@ -127,10 +129,10 @@ class ClientServerTest {
         val ok = c.expect(PacketType.Login.Server.LOGIN_SUCCESS) { WrapperLoginServerLoginSuccess(it) }.userProfile
         assertEquals(name, ok.name)
         c.send(WrapperLoginClientLoginSuccessAck()); c.setState(ConnectionState.CONFIGURATION)
-        c.skip(PacketType.Configuration.Server.SELECT_KNOWN_PACKS)
+        c.skipUntil(PacketType.Configuration.Server.SELECT_KNOWN_PACKS)
         c.send(WrapperConfigClientSelectKnownPacks(listOf(KnownPack("minecraft", "core", MC_VERSION))))
-        repeat(Limbo.registries.size) { c.skip(PacketType.Configuration.Server.REGISTRY_DATA) }
-        c.skip(PacketType.Configuration.Server.CONFIGURATION_END)
+        c.skipUntil(PacketType.Configuration.Server.UPDATE_TAGS)       // the tags packet must be sent before the end
+        c.skipUntil(PacketType.Configuration.Server.CONFIGURATION_END)
         c.send(WrapperConfigClientConfigurationEndAck()); c.setState(ConnectionState.PLAY)
         c.skip(PacketType.Play.Server.JOIN_GAME); c.skip(PacketType.Play.Server.PLAYER_POSITION_AND_LOOK)
         c.skip(PacketType.Play.Server.CHANGE_GAME_STATE); c.skip(PacketType.Play.Server.UPDATE_VIEW_POSITION)
