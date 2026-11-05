@@ -24,3 +24,10 @@ config option whose default is vanilla behaviour. `moonrise` = belongs to the Mo
 - [~] sources/net/minecraft/world/level/chunk/ChunkAccess.java.patch (done: PDC, setNoiseBiome, PDC dirty in tryMarkSaved/isUnsaved; left: coordinateKey/locX/locZ (perf), abstract getBlockState(int,int,int))
 
 - [x] sources/net/minecraft/world/level/BaseCommandBlock.java.patch (CloseableCommandBlockSource.getBukkitSender now calls BaseCommandBlock#fission$getBukkitSender through the surface; the former cast to BaseCommandBlockMixin failed at class load with 'unable to find corresponding type in hierarchy'. NOTE: the same broken mixin file exists unfixed in the other 5 worktrees)
+
+## net.minecraft.commands / net.minecraft.server (cleanup 2)
+- [~] sources/net/minecraft/commands/Commands.java.patch (done: finishParsing cancel hook, sendCommands via CraftBukkit command tree wrap; left: not audited hunk-by-hunk)
+- [~] sources/net/minecraft/server/dedicated/DedicatedServer.java.patch (ServerCommandEvent for console input added; see lifecycle.md for the rest)
+- [~] sources/net/minecraft/server/PlayerAdvancements.java.patch (mixin present; not audited hunk-by-hunk)
+- [~] sources/net/minecraft/server/commands/GameRuleCommand.java.patch (mixin present; not audited hunk-by-hunk)
+- [~] sources/net/minecraft/world/level/BaseSpawner.java.patch (mixin present; not audited hunk-by-hunk)
