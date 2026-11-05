@@ -7,7 +7,7 @@ to the overload (so `Entity.remove(reason, cause)` must keep calling `setRemoved
 - [ ] sources/net/minecraft/world/entity/ambient/Bat.java.patch
 - [ ] sources/net/minecraft/world/entity/animal/AgeableWaterCreature.java.patch
 - [ ] sources/net/minecraft/world/entity/animal/allay/Allay.java.patch
-- [ ] sources/net/minecraft/world/entity/animal/Animal.java.patch
+- [~] sources/net/minecraft/world/entity/animal/Animal.java.patch (done: setInLove/breeding events, spawnChildFromBreeding, BREEDING spawn reason; left: not audited hunk-by-hunk)
 - [ ] sources/net/minecraft/world/entity/animal/armadillo/Armadillo.java.patch
 - [ ] sources/net/minecraft/world/entity/animal/axolotl/Axolotl.java.patch
 - [ ] sources/net/minecraft/world/entity/animal/bee/Bee.java.patch
@@ -57,20 +57,20 @@ to the overload (so `Entity.remove(reason, cause)` must keep calling `setRemoved
 - [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/DragonTakeoffPhase.java.patch
 - [ ] sources/net/minecraft/world/entity/boss/enderdragon/phases/EnderDragonPhaseManager.java.patch
 - [ ] sources/net/minecraft/world/entity/boss/wither/WitherBoss.java.patch
-- [ ] sources/net/minecraft/world/entity/decoration/ArmorStand.java.patch
-- [ ] sources/net/minecraft/world/entity/decoration/BlockAttachedEntity.java.patch
+- [~] sources/net/minecraft/world/entity/decoration/ArmorStand.java.patch (done: manipulate/destroy events, kill(source), damage hunks; left: TODO(behaviour) canTick gate in tick() - ArmorStand inherits tick, needs LivingEntity#tick hook)
+- [~] sources/net/minecraft/world/entity/decoration/BlockAttachedEntity.java.patch (done: HangingBreakEvent hunks in tick/hurtServer/move/push; left: not audited vs patch)
 - [ ] sources/net/minecraft/world/entity/decoration/Cushion.java.patch
-- [ ] sources/net/minecraft/world/entity/decoration/ItemFrame.java.patch
-- [ ] sources/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java.patch
+- [~] sources/net/minecraft/world/entity/decoration/ItemFrame.java.patch (done: setItem, damage/drop, rotate/interact events; left: not audited vs patch)
+- [~] sources/net/minecraft/world/entity/decoration/LeashFenceKnotEntity.java.patch (done: interact leash events, remove cause; left: not audited vs patch)
 - [ ] sources/net/minecraft/world/entity/decoration/painting/Painting.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/breeze/Breeze.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/creaking/Creaking.java.patch
-- [ ] sources/net/minecraft/world/entity/monster/Creeper.java.patch
+- [~] sources/net/minecraft/world/entity/monster/Creeper.java.patch (done: ignite/explode events, lingering cloud, power; left: not audited vs patch)
 - [ ] sources/net/minecraft/world/entity/monster/cubemob/AbstractCubeMob.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/cubemob/Slime.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/cubemob/SulfurCube.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/ElderGuardian.java.patch
-- [ ] sources/net/minecraft/world/entity/monster/Enderman.java.patch
+- [~] sources/net/minecraft/world/entity/monster/Enderman.java.patch (done: target/teleport events, take/leave block goals; left: not audited vs patch)
 - [ ] sources/net/minecraft/world/entity/monster/Endermite.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/Ghast.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/Guardian.java.patch
@@ -102,7 +102,7 @@ to the overload (so `Entity.remove(reason, cause)` must keep calling `setRemoved
 - [ ] sources/net/minecraft/world/entity/monster/Witch.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/zombie/Drowned.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/zombie/Husk.java.patch
-- [ ] sources/net/minecraft/world/entity/monster/zombie/Zombie.java.patch
+- [~] sources/net/minecraft/world/entity/monster/zombie/Zombie.java.patch (done: hurt reinforcements, convert villager, ignite, sun sensitivity; left: not audited vs patch)
 - [ ] sources/net/minecraft/world/entity/monster/zombie/ZombieVillager.java.patch
 - [ ] sources/net/minecraft/world/entity/monster/zombie/ZombifiedPiglin.java.patch
 - [ ] sources/net/minecraft/world/entity/npc/CatSpawner.java.patch

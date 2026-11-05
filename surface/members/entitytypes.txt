@@ -189,3 +189,6 @@ net.minecraft.world.entity.decoration.ItemFrame: public void setItem(net.minecra
 # Paper: sources/net/minecraft/world/entity/vehicle/boat/AbstractChestBoat.java.patch, vehicle/minecart/AbstractMinecartContainer.java.patch (CraftBukkit Container viewers)
 net.minecraft.world.entity.vehicle.boat.AbstractChestBoat: public java.util.List<org.bukkit.entity.HumanEntity> transaction
 net.minecraft.world.entity.vehicle.minecart.AbstractMinecartContainer: public java.util.List<org.bukkit.entity.HumanEntity> transaction
+# Paper: sources/net/minecraft/world/entity/decoration/ArmorStand.java.patch (kill with DamageSource)
+net.minecraft.world.entity.decoration.ArmorStand: public void kill(net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource source)
+net.minecraft.world.entity.decoration.ArmorStand: public void kill(net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource source, boolean callEvent)
