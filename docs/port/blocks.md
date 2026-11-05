@@ -40,3 +40,4 @@ Shared main-thread state for signature/record changes Mixin cannot make: `backen
 - [~] world/level/block/NetherWartBlock.java.patch (done: BlockGrowEvent; config: wartModifier)
 - [~] world/level/block/CocoaBlock.java.patch (done: BlockGrowEvent; config: cocoaModifier)
 - [~] world/level/block/SweetBerryBushBlock.java.patch (done: BlockGrowEvent, EntityInsideBlockEvent, block damager, PlayerHarvestBlockEvent; config: sweetBerryModifier)
+- [~] world/inventory/*Menu.java.patch (done: Bukkit views (getBukkitView) for Anvil, Beacon, BrewingStand, Cartography, Chest, Crafter, Dispenser, Furnace, Grindstone and similar menus; EnchantmentMenu: PrepareItemEnchantEvent in slotsChanged (replaced body), EnchantItemEvent in clickMenuButton lambda (replaced body), fillEnchantmentOffers; left: TODO(behaviour) in EnchantmentMenuMixin - InventoryHolders (enchantSlots with block holder/location); remaining menus not audited hunk-by-hunk, boot only checked that mixins apply)
