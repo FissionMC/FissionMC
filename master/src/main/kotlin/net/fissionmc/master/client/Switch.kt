@@ -27,6 +27,8 @@ object PlayIds {
     val chatCommand by lazy { PacketType.Play.Client.CHAT_COMMAND_UNSIGNED.getId(V) }
     val chatCommandSigned by lazy { PacketType.Play.Client.CHAT_COMMAND.getId(V) }
     val chat by lazy { PacketType.Play.Client.CHAT_MESSAGE.getId(V) }
+    val commandSuggestion by lazy { PacketType.Play.Client.TAB_COMPLETE.getId(V) }
+    val commandSuggestions by lazy { PacketType.Play.Server.TAB_COMPLETE.getId(V) }
     val respawn by lazy { PacketType.Play.Server.RESPAWN.getId(V) }
     val playerLoaded by lazy { PacketType.Play.Client.PLAYER_LOADED.getId(V) }
 

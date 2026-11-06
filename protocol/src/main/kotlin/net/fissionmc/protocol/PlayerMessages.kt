@@ -83,7 +83,40 @@ data class GlobalChatObserved(
     val uuidHigh: Long, val uuidLow: Long, val name: String, val fromBackend: String, val text: String, val messageJson: String,
 ) : NodeMessage
 
-/** Registers player relay messages (ids 48-63; 48-56 used). Ids are wire format: never reuse one. */
+/**
+ * Master -> backend (id 57), sent right BEFORE the [PlayerAttach] of the same [playerId]: the player's data as the master stores it
+ * (vanilla player NBT, gzip compressed, exactly the bytes of a `<uuid>.dat` file). [present] false = the master has none (first join on the
+ * network): the backend then uses its own local file if there is one, otherwise the player is new. The backend's `PlayerDataStorage.load` returns
+ * this data instead of reading its own file.
+ */
+class PlayerData(val playerId: Long, val uuidHigh: Long, val uuidLow: Long, val present: Boolean, val nbt: ByteArray) : NodeMessage
+
+/**
+ * Backend -> master (id 58): the player's data after a save on the backend (autosave, disconnect, shutdown, a [PlayerDataFlush]); the bytes of the
+ * `<uuid>.dat` the backend just wrote. The master keeps it only if the sending backend is the one it last attached the player to.
+ */
+class PlayerDataSave(val uuidHigh: Long, val uuidLow: Long, val nbt: ByteArray) : NodeMessage
+
+/** Master -> backend (id 59): save the relayed player [playerId] now (before the master moves it to another backend); the answer is a [PlayerDataSave]. */
+data class PlayerDataFlush(val playerId: Long) : NodeMessage
+
+/**
+ * Master -> backend (id 60), sent right before [PlayerAttach] and again whenever the master's admin set changes: the permission level the master
+ * grants [playerId] on this backend. 4 = full operator ("admin == op level 4 on every backend"), 0 = nothing from the master (the backend's own ops
+ * list applies). The backend answers the vanilla/Paper op checks with it and resends the player's command tree.
+ */
+data class PlayerPermission(val playerId: Long, val uuidHigh: Long, val uuidLow: Long, val level: Int) : NodeMessage
+
+/**
+ * Backend -> master (id 61): the permission level (0-4) the backend computed for a relayed player, sent whenever vanilla sends the player its
+ * permission level (join, /op, /deop). The master treats level 4 on the player's CURRENT backend as admin for the master's own commands.
+ */
+data class PlayerPermissionReport(val uuidHigh: Long, val uuidLow: Long, val level: Int) : NodeMessage
+
+/** Largest player data blob accepted on the wire (a player file is a few KiB; ender chests and big inventories reach some hundred). */
+const val MAX_PLAYER_DATA = 4 * 1024 * 1024
+
+/** Registers player relay messages (ids 48-63; 48-61 used). Ids are wire format: never reuse one. */
 fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerAttach>(48, { m, b ->
         b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeVarInt(m.protocol)
@@ -113,6 +146,13 @@ fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
         { b -> GlobalChatResult(b.readLong(), b.readLong(), b.readBoolean(), b.readBoolean(), b.readString(256), b.readString(262144)) })
     .register<GlobalChatObserved>(56, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeString(m.fromBackend, 64).writeString(m.text, 1024).writeString(m.messageJson, 262144) },
         { b -> GlobalChatObserved(b.readLong(), b.readLong(), b.readString(64), b.readString(64), b.readString(1024), b.readString(262144)) })
+    .register<PlayerData>(57, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeBoolean(m.present).writeByteArray(m.nbt, MAX_PLAYER_DATA) },
+        { b -> PlayerData(b.readLong(), b.readLong(), b.readLong(), b.readBoolean(), b.readByteArray(MAX_PLAYER_DATA)) })
+    .register<PlayerDataSave>(58, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeByteArray(m.nbt, MAX_PLAYER_DATA) },
+        { b -> PlayerDataSave(b.readLong(), b.readLong(), b.readByteArray(MAX_PLAYER_DATA)) })
+    .register<PlayerDataFlush>(59, { m, b -> b.writeLong(m.playerId) }, { b -> PlayerDataFlush(b.readLong()) })
+    .register<PlayerPermission>(60, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermission(b.readLong(), b.readLong(), b.readLong(), b.readVarInt()) })
+    .register<PlayerPermissionReport>(61, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermissionReport(b.readLong(), b.readLong(), b.readVarInt()) })
     .register<PlayerPacketToBackend>(49, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToBackend(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerPacketToClient>(50, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToClient(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerDetach>(51, { m, b -> b.writeLong(m.playerId).writeString(m.reason, 256) }, { b -> PlayerDetach(b.readLong(), b.readString(256)) })

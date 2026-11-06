@@ -10,7 +10,11 @@ object MasterCommands {
         val parts = command.trim().split(Regex("\\s+"))
         return when (parts.firstOrNull()?.lowercase()) {
             "chat" -> { chat(session, parts.getOrNull(1)?.lowercase()); true }
-            "fission" -> if (parts.getOrNull(1)?.lowercase() == "send") { send(session, server, parts.drop(2)); true } else false
+            "fission" -> when (parts.getOrNull(1)?.lowercase()) {
+                "send" -> { send(session, server, parts.drop(2)); true }
+                "admin" -> { admin(session, server, parts.drop(2)); true }
+                else -> false
+            }
             else -> false
         }
     }
@@ -21,12 +25,66 @@ object MasterCommands {
         s.tell(Component.text(if (mode) "Chat mode: global (everyone on the network reads you)" else "Chat mode: local (only players on your backend)", NamedTextColor.GRAY))
     }
 
+    /**
+     * `/fission admin add|remove <player>`: edits the admin set, which is keyed by UUID (admins.txt next to fission.properties). Admin = operator level 4
+     * on every backend. `add` needs the player online (its UUID is resolved from the name); `remove` takes an online name, a name recorded in admins.txt or a uuid.
+     */
+    private fun admin(s: ClientSession, server: ClientServer, args: List<String>) {
+        if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
+        val action = args.getOrNull(0)?.lowercase(); val who = args.getOrNull(1)
+        if ((action != "add" && action != "remove") || who == null || args.size != 2) { s.tell(Component.text("Usage: /fission admin add|remove <player>", NamedTextColor.RED)); return }
+        val store = server.settings.adminStore
+        val online = server.findByName(who)
+        val uuid = online?.uuid ?: try { java.util.UUID.fromString(who) } catch (_: IllegalArgumentException) { null } ?: store.uuidByName(who)
+        if (uuid == null) { s.tell(Component.text("Unknown player: $who (it has to be online, or give a uuid)", NamedTextColor.RED)); return }
+        if (action == "add") {
+            store.add(uuid, online?.playerName ?: who)
+            s.tell(Component.text("${online?.playerName ?: who} ($uuid) is an admin now (operator level 4 on every backend).", NamedTextColor.GRAY))
+        } else if (store.remove(uuid)) {
+            s.tell(Component.text("${online?.playerName ?: who} is no admin any more.", NamedTextColor.GRAY))
+        } else {
+            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in admin.players of fission.properties: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
+        }
+        server.log("[master] ${s.playerName}: admin $action $who ($uuid)")
+        online?.pushPermission()
+    }
+
     private fun send(s: ClientSession, server: ClientServer, args: List<String>) {
-        if (!server.settings.isAdmin(s.playerName, s.uuid)) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
+        if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
         if (args.size != 2) { s.tell(Component.text("Usage: /fission send <player> <backend>", NamedTextColor.RED)); return }
         val target = server.findByName(args[0]) ?: run { s.tell(Component.text("No such player: ${args[0]}", NamedTextColor.RED)); return }
         server.log("[master] ${s.playerName} sends ${target.playerName} to ${args[1]}")
         target.startSwitch(args[1]) { why -> s.tell(Component.text("Cannot send ${target.playerName} to ${args[1]}: $why", NamedTextColor.RED)) }
         s.tell(Component.text("Sending ${target.playerName} to ${args[1]}...", NamedTextColor.GRAY))
+    }
+
+    /**
+     * Answers a ServerboundCommandSuggestion for `/fission send <player> <backend>` (nodes with `minecraft:ask_server` suggestions): online player
+     * names, then backend ids. Layout: request = varint transaction id, string command (with the leading slash); response (ClientboundCommandSuggestions) =
+     * varint id, varint start, varint length, varint count, then per entry string text + bool hasTooltip. Null = not ours, the backend answers.
+     */
+    fun suggest(frame: ByteArray, server: ClientServer): ByteArray? {
+        val b = io.netty.buffer.Unpooled.wrappedBuffer(frame)
+        VarInts.tryRead(b) ?: return null
+        val tx = VarInts.tryRead(b) ?: return null
+        val n = VarInts.tryRead(b) ?: return null
+        if (n < 0 || n > b.readableBytes()) return null
+        val text = ByteArray(n).also { b.readBytes(it) }.toString(Charsets.UTF_8)
+        val body = text.removePrefix("/"); val lead = text.length - body.length
+        val prefix = listOf("fission send ", "fission admin add ", "fission admin remove ").firstOrNull { body.lowercase().startsWith(it) } ?: return null
+        val rest = body.substring(prefix.length)
+        val parts = rest.split(' ')
+        val token = parts.last()
+        val candidates = when (parts.size) {
+            1 -> server.allSessions().map { it.playerName }
+            2 -> if (prefix == "fission send ") server.relay?.liveNodeIds() ?: emptyList() else emptyList()
+            else -> emptyList()
+        }.filter { it.startsWith(token, ignoreCase = true) }.sorted()
+        val out = io.netty.buffer.Unpooled.buffer()
+        VarInts.write(out, PlayIds.commandSuggestions); VarInts.write(out, tx)
+        VarInts.write(out, lead + prefix.length + (rest.length - token.length)); VarInts.write(out, token.length)
+        VarInts.write(out, candidates.size)
+        candidates.forEach { c -> val cb = c.toByteArray(); VarInts.write(out, cb.size); out.writeBytes(cb); out.writeBoolean(false) }
+        return ByteArray(out.readableBytes()).also { out.readBytes(it) }
     }
 }

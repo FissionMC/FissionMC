@@ -41,7 +41,7 @@ class Ev(val t: Long, val type: PacketTypeCommon?, val id: Int, val text: String
     fun entityIdOfLogin(): Int { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); return b.readInt() }
 }
 
-class Bot(val name: String, private val port: Int, private val holdLoaded: Boolean = false) {
+class Bot(val name: String, private val port: Int, private val holdLoaded: Boolean = false, private val fileTag: String = name) {
     val c = TestClient(port)
     val events = CopyOnWriteArrayList<Ev>()
     @Volatile var logins = 0; @Volatile var startConfigs = 0; @Volatile var failed: Throwable? = null
@@ -134,7 +134,7 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
 
     fun sysTexts(from: Int = 0) = events.drop(from).mapNotNull { if (it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE) it.text else null }
     fun playerChats(from: Int = 0, containing: String? = null) = events.drop(from).filter { it.type == PacketType.Play.Server.CHAT_MESSAGE && (containing == null || it.bodyHas(containing)) }
-    fun close() { stop = true; Files.write(Path.of(outDir, "$name-s2c.bin"), c.received.toByteArray()); c.close() }
+    fun close() { stop = true; Files.write(Path.of(outDir, "$fileTag-s2c.bin"), c.received.toByteArray()); c.close() }
     companion object { var outDir = "." }
 }
 
@@ -155,7 +155,7 @@ fun main(args: Array<String>) {
 }
 
 private fun scenario(port: Int, bots: MutableList<Bot>) {
-    fun newBot(n: String, hold: Boolean = false) = Bot(n, port, hold).also { bots += it }.connect()
+    fun newBot(n: String, hold: Boolean = false, tag: String = n) = Bot(n, port, hold, tag).also { bots += it }.connect()
     val a = newBot("ProbeA")
     check("A reaches a backend (limbo Login, then the backend's Login)", await(60_000) { a.logins >= 2 }, "logins=${a.logins}")
     val b = newBot("ProbeB")
@@ -164,6 +164,40 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     // --- the command tree has /chat with its three children
     val tree = a.events.lastOrNull { it.type == PacketType.Play.Server.DECLARE_COMMANDS }
     check("/chat global|local|toggle is in the relayed command tree", tree != null && listOf("chat", "global", "local", "toggle").all { w -> tree.bodyHas(String(byteArrayOf(w.length.toByte())) + w) })
+
+    val treeB = b.events.lastOrNull { it.type == PacketType.Play.Server.DECLARE_COMMANDS }
+    check("admin tree: /fission send <player> <backend> and status are in the admin's command tree", tree != null && listOf("fission", "send", "status", "player", "backend").all { w -> tree.bodyHas(String(byteArrayOf(w.length.toByte())) + w) })
+    check("non-admin tree: no master-only /fission send node", treeB != null && !treeB.bodyHas(String(byteArrayOf(4)) + "send") && treeB.bodyHas(String(byteArrayOf(4)) + "chat"))
+    // tab completion of the master's own command (ask_server suggestions): players, then backends
+    fun suggestions(bot: Bot, text: String): String? {
+        val before = bot.events.size
+        val body = Unpooled.buffer(); VarInts.write(body, 77); val t = text.toByteArray(); VarInts.write(body, t.size); body.writeBytes(t)
+        bot.c.sendRaw(PlayIds.frame(PlayIds.commandSuggestion, ByteArray(body.readableBytes()).also { body.readBytes(it) }))
+        if (!await(5000) { bot.events.drop(before).any { it.type == PacketType.Play.Server.TAB_COMPLETE } }) return null
+        return String(bot.events.drop(before).first { it.type == PacketType.Play.Server.TAB_COMPLETE }.body, Charsets.ISO_8859_1)
+    }
+    val sug1 = suggestions(a, "/fission send Pro"); val sug2 = suggestions(a, "/fission send ProbeA backend-")
+    check("tab completion: player names", sug1 != null && sug1.contains("ProbeA") && sug1.contains("ProbeB"), sug1 ?: "none")
+    check("tab completion: backend ids", sug2 != null && sug2.contains("backend-a") && sug2.contains("backend-b"), sug2 ?: "none")
+
+    // --- admin == operator level 4 on every backend (granted by the master, ops.json untouched)
+    fun timeAnswer(bot: Bot, from: Int) = bot.events.toList().drop(from).any { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE && (it.bodyHas("commands.seed.success") || it.bodyHas("Seed: ")) }
+    val gm = String(byteArrayOf(8)) + "gamemode"
+    fun treeHasOpCommands(bot: Bot) = bot.events.lastOrNull { it.type == PacketType.Play.Server.DECLARE_COMMANDS }?.bodyHas(gm) == true
+    var markA = a.events.size; var markB = b.events.size
+    a.command("seed"); b.command("seed")
+    check("admin: an operator-only command (seed) works for the admin", await(8000) { timeAnswer(a, markA) })
+    quiet(1500)
+    check("admin: the same command is refused for a non-admin on the other backend", !timeAnswer(b, markB))
+    check("admin: the admin's command tree contains operator commands, the non-admin's does not", treeHasOpCommands(a) && !treeHasOpCommands(b))
+    a.command("fission admin add ProbeB")
+    check("admin add: B (resolved to its uuid) gets operator commands in a fresh tree", await(10_000) { treeHasOpCommands(b) })
+    markB = b.events.size; b.command("seed")
+    check("admin add: and the operator-only command works for B", await(8000) { timeAnswer(b, markB) })
+    a.command("fission admin remove ProbeB")
+    check("admin remove: B loses the operator commands again", await(10_000) { !treeHasOpCommands(b) })
+    markB = b.events.size; b.command("seed"); quiet(1500)
+    check("admin remove: the command is refused again", !timeAnswer(b, markB))
 
     // --- entity ids: the client's id is the backend's Login id, and later packets use it
     fun selfIdOk(bot: Bot, k: Int): Boolean {
@@ -188,6 +222,10 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
         check("$label: the position is not corrected again (rubber banding): ${bot.positionPackets.get()} PlayerPosition packet(s) since the Login, teleport ids ${bot.teleportIds}", bot.positionPackets.get() <= 1, "position ${bot.pos?.toList()}")
     }
     settled(a, "A on its first backend"); settled(b, "B on its first backend")
+
+    fun respawnFollowsLogin(bot: Bot) = bot.loginIndexes.drop(1).all { i -> bot.events.getOrNull(i + 1)?.type == PacketType.Play.Server.RESPAWN }
+    check("A: every Login after the first is followed by a Respawn (new LocalPlayer on the new level)", respawnFollowsLogin(a))
+    check("B: every Login after the first is followed by a Respawn", respawnFollowsLogin(b))
 
     // --- LOCAL (default): stays on one backend
     var ma = a.events.size; var mb = b.events.size
@@ -258,7 +296,29 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     b.command("fission send ProbeA backend-b")      // refused for B, then A itself moves
     a.command("fission send ProbeA backend-b")
     check("send: backend to backend (A moves to the other backend)", await(40_000) { a.logins == aLogins + 1 }, "logins=${a.logins}")
+    markA = a.events.size; quiet(1500); a.command("seed")
+    check("admin: still operator level 4 after the move to the other backend", await(8000) { timeAnswer(a, markA) })
     quiet(1500)
+    // --- master-owned player data: position and inventory follow a /fission send and survive a reconnect
+    fun console(node: String, cmd: String) { println("[probe] CONSOLE $node $cmd"); System.out.flush(); readlnOrNull() }
+    fun near(p: DoubleArray?, x: Double, z: Double) = p != null && Math.abs(p[0] - x) < 0.01 && Math.abs(p[2] - z) < 0.01
+    console("a", "give ProbeB minecraft:diamond 7")                                   // B is on backend-a since the earlier send
+    console("a", "tp ProbeB 321.5 72.0 -123.5")
+    check("data: the teleport command reached the client", await(8000) { near(b.pos, 321.5, -123.5) }, "${b.pos?.toList()}")
+    quiet(1500)
+    val bLoginsData = b.logins
+    a.command("fission send ProbeB backend-b")
+    check("data: B moved to backend-b", await(40_000) { b.logins == bLoginsData + 1 }, "logins=${b.logins}")
+    check("data: B arrives at the same coordinates (not at spawn)", await(10_000) { near(b.pos, 321.5, -123.5) }, "${b.pos?.toList()}")
+    console("b", "data get entity ProbeB Pos"); console("b", "data get entity ProbeB Inventory")
+    quiet(1000)
+    b.close()                                                                         // disconnect: the backend saves, the master keeps the data
+    quiet(2500)
+    val b2 = newBot("ProbeB", tag = "ProbeB2")
+    check("data: after a reconnect B is back where it left", await(60_000) { b2.logins >= 2 && near(b2.pos, 321.5, -123.5) }, "logins=${b2.logins} ${b2.pos?.toList()}")
+    check("data: the reconnect has the right Login flow (limbo, backend, Respawn)", b2.startConfigs == 0)
+    worldOk(b2, "reconnected B", 30)
+
     val before = a.logins; val mk = a.events.size
     println("[probe] PHASE1-DONE")
     System.out.flush()
@@ -267,5 +327,6 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     check("backend death: the limbo position follows, no StartConfiguration", await(10_000) { a.events.drop(mk).any { it.type == PacketType.Play.Server.PLAYER_POSITION_AND_LOOK } })
     check("backend death: the player moves on to the surviving backend", await(60_000) { a.logins >= before + 2 }, "logins=${a.logins}")
     check("backend death: the new Login follows the limbo Login (no StartConfiguration anywhere)", a.startConfigs == 0)
+    check("backend death: the limbo Login and the next backend Login are each followed by a Respawn", respawnFollowsLogin(a))
     quiet(1500)
 }

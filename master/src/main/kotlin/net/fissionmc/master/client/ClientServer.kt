@@ -34,6 +34,8 @@ class ClientServer(
     val settings: MasterSettings = MasterSettings(),
 ) : Closeable {
     /** Global chat (needs the relay). */
+    init { relay?.grantedLevel = { p -> if (settings.isAdmin(p.uuid)) 4 else 0 } }
+    /** Global chat (needs the relay). */
     val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
     private val dumpCounter = java.util.concurrent.atomic.AtomicInteger()
     val keyPair: KeyPair = LoginCrypto.newKeyPair()

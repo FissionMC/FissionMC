@@ -14,6 +14,8 @@ interface RelayClient {
     val virtualHost: String get() = ""
     /** A packet frame (id + payload) from the backend for this client. Called on the node link's thread. */
     fun deliver(frame: ByteArray)
+    /** The permission level (0-4) the player's current backend reports for it (join, /op, /deop). */
+    fun backendPermission(level: Int) {}
     /** Like [deliver], but says which binding (player id of an [PlayerRelay.attach]) the frame came from; a client with two bindings (backend switch) overrides this. */
     fun deliverFrom(bindingId: Long, frame: ByteArray) = deliver(frame)
     /** Like [detached], for a client that may hold two bindings at once. */
@@ -44,6 +46,28 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** Relayed players per backend node id. */
     fun playersByNode(): Map<String, Int> = bindings.values.groupingBy { it.node.info.nodeId }.eachCount()
 
+    /** The permission level the master grants a player on every backend (4 for admins); set by the client server, which owns the admin set. */
+    @Volatile var grantedLevel: (net.fissionmc.master.client.PlayerProfile) -> Int = { 0 }
+
+    /** The canonical player data (null = no player data handling: tests, or disabled). */
+    @Volatile var playerData: PlayerDataStore? = null
+
+    fun setDataOwner(uuid: java.util.UUID, nodeId: String?) { playerData?.setOwner(uuid, nodeId) }
+
+    /**
+     * Asks the backend of binding [id] to save the player now and calls [done] when the data arrived (or after [timeoutMs]); without a store or a
+     * live binding [done] runs at once. Used before the player moves to another backend.
+     */
+    fun flushPlayerData(id: Long, uuid: java.util.UUID, timeoutMs: Long, done: () -> Unit) {
+        val store = playerData; val b = bindings[id]
+        if (store == null || b == null || !b.node.link.isOpen) { done(); return }
+        store.awaitSave(uuid, timeoutMs, done)
+        b.node.link.send(PlayerDataFlush(id))
+    }
+
+    /** Ids of the backends that are connected now. */
+    fun liveNodeIds(): List<String> = registry.all.filter { it.link.isOpen }.map { it.info.nodeId }.sorted()
+
     /** Node id a binding talks to (null once detached). */
     fun nodeIdOf(id: Long): String? = bindings[id]?.node?.info?.nodeId
 
@@ -61,6 +85,12 @@ class PlayerRelay(private val registry: NodeRegistry) {
         val id = ids.getAndIncrement()
         val p = client.profile
         bindings[id] = Binding(id, node, client)
+        node.link.send(PlayerPermission(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, grantedLevel(p)))   // before the attach: the join already sees the operator level
+        playerData?.let { store ->   // the stored data goes first, the backend loads it when it creates the player
+            val data = store.read(p.uuid)
+            node.link.send(PlayerData(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, data != null, data ?: ByteArray(0)))
+            store.setOwner(p.uuid, node.info.nodeId)
+        }
         client.remoteAddress?.let { a -> node.link.send(PlayerClientInfo(id, a.address?.hostAddress ?: a.hostString, a.port, client.virtualHost)) }
         node.link.send(PlayerAttach(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, p.name,
             p.properties.map { ProfilePropertyData(it.name, it.value, it.signature) }, client.protocol))
@@ -96,6 +126,8 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerPacketToClient -> { framesOut.incrementAndGet(); bytesOut.addAndGet(msg.bytes.size.toLong()); bindings[msg.playerId]?.takeIf { it.node === node }?.let { it.client.deliverFrom(it.id, msg.bytes) } }
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
             is GlobalChatResult -> chatResultHandler?.invoke(msg)
+            is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
+            is PlayerDataSave -> playerData?.onSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.nbt)
             else -> return false
         }
         return true

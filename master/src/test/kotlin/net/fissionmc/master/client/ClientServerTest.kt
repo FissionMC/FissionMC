@@ -281,7 +281,8 @@ class ClientServerTest {
                 assertTrue(types.none { it.first == PacketType.Play.Server.CONFIGURATION_START }, "no StartConfiguration: $types")
                 assertTrue(types.any { it.first == PacketType.Play.Server.JOIN_GAME }, "the backend's Login reaches the client: $types")
                 val login = types.indexOfFirst { it.first == PacketType.Play.Server.JOIN_GAME }
-                assertEquals(PacketType.Play.Server.KEEP_ALIVE, types[login + 1].first, "backend frames follow the Login")
+                assertEquals(PacketType.Play.Server.RESPAWN, types[login + 1].first, "the Respawn right after the second Login makes the client build a new LocalPlayer")
+                assertEquals(PacketType.Play.Server.KEEP_ALIVE, types[login + 2].first, "backend frames follow")
                 // keepalive answers: a stale id (previous backend) must not reach the backend, the current one must
                 c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientKeepAlive(999L))
                 c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientKeepAlive(4242L))
@@ -325,6 +326,7 @@ class ClientServerTest {
                 val seen = ArrayList<com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon?>()
                 while (PacketType.Play.Server.JOIN_GAME !in seen) seen += c.readAny().first
                 assertTrue(PacketType.Play.Server.CONFIGURATION_START !in seen, seen.toString())
+                c.skip(PacketType.Play.Server.RESPAWN)   // the limbo's Login is followed by a Respawn too (new LocalPlayer)
                 c.skip(PacketType.Play.Server.PLAYER_POSITION_AND_LOOK)
             }
         }

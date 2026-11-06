@@ -67,7 +67,9 @@ object LimboCheck {
         }
         val root = p.getRoot(ctx, builder)
         val chat = root.getChild("chat")
-        return "commands tree OK: ${root.children.size} root children, chat=${chat?.children?.map { it.name }}"
+        val fission = root.getChild("fission")
+        val send = fission?.getChild("send")
+        return "commands tree OK: ${root.children.size} root children, chat=${chat?.children?.map { it.name }}, fission=${fission?.children?.map { it.name }}, send->${send?.children?.map { c -> c.name + "->" + c.children.map { it.name } }}"
     }
 
     /**

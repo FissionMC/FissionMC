@@ -10,9 +10,15 @@ import io.netty.buffer.Unpooled
  */
 object ChatCommandTree {
     /** The patched frame, or null when the frame is not in the expected shape (it is then relayed unchanged). */
-    fun patch(frame: ByteArray, log: (String) -> Unit = {}): ByteArray? = try { patchOrThrow(frame) } catch (t: Throwable) { log("commands tree not patched: $t"); null }
+    fun patch(frame: ByteArray, admin: Boolean = false, log: (String) -> Unit = {}): ByteArray? =
+        try { patchOrThrow(frame, admin) } catch (t: Throwable) { log("commands tree not patched: $t"); null }
 
-    private fun patchOrThrow(frame: ByteArray): ByteArray {
+    /** `minecraft:ask_server` suggestions: the client sends a ServerboundCommandSuggestion, the master answers it (see [MasterCommands.suggest]). */
+    private const val ASK_SERVER = "minecraft:ask_server"
+    /** Registry id of `brigadier:string` in COMMAND_ARGUMENT_TYPE (26.3, read from the vanilla jar; the vanilla Brigadier replay in the scripted test checks it). */
+    private const val STRING_PARSER = 5
+
+    private fun patchOrThrow(frame: ByteArray, admin: Boolean): ByteArray {
         require(frame.isNotEmpty() && frame.last() == 0.toByte()) { "root index is not 0" }
         val b = Unpooled.wrappedBuffer(frame)
         VarInts.tryRead(b)!!                                  // packet id
@@ -27,9 +33,10 @@ object ChatCommandTree {
         require(count in 1..100_000)
         val out = Unpooled.buffer(frame.size + 64)
         out.writeBytes(frame, 0, node0Start - VarInts.size(count))      // packet id
-        VarInts.write(out, count + 4)
+        VarInts.write(out, count + (if (admin) 14 else 4))
         // root with one more child: the new `chat` literal (index = old count)
-        out.writeByte(flags); VarInts.write(out, n + 1); children.forEach { VarInts.write(out, it) }; VarInts.write(out, count)
+        out.writeByte(flags); VarInts.write(out, n + (if (admin) 2 else 1)); children.forEach { VarInts.write(out, it) }; VarInts.write(out, count)
+        if (admin) VarInts.write(out, count + 4)       // `fission` (admins only)
         out.writeBytes(frame, node0End, frame.size - 1 - node0End)       // the old nodes 1..count-1 verbatim, without the trailing root index
         fun literal(name: String, executable: Boolean, kids: IntArray) {
             out.writeByte(1 or (if (executable) 4 else 0)); VarInts.write(out, kids.size); kids.forEach { VarInts.write(out, it) }
@@ -37,6 +44,20 @@ object ChatCommandTree {
         }
         literal("chat", true, intArrayOf(count + 1, count + 2, count + 3))
         literal("global", true, IntArray(0)); literal("local", true, IntArray(0)); literal("toggle", true, IntArray(0))
+        if (admin) {
+            // fission (+4) -> send (+5) -> <player> (+7) -> <backend> (+8) ; status (+6) ; admin (+9) -> add (+10) -> <player> (+12) , remove (+11) -> <player> (+13)
+            literal("fission", true, intArrayOf(count + 5, count + 6, count + 9))
+            literal("send", false, intArrayOf(count + 7)); literal("status", true, IntArray(0))
+            fun argument(name: String, executable: Boolean, kids: IntArray) {
+                out.writeByte(2 or 16 or (if (executable) 4 else 0)); VarInts.write(out, kids.size); kids.forEach { VarInts.write(out, it) }
+                val nb = name.toByteArray(); VarInts.write(out, nb.size); out.writeBytes(nb)
+                VarInts.write(out, STRING_PARSER); VarInts.write(out, 0)                 // brigadier:string, StringType.SINGLE_WORD
+                val sb = ASK_SERVER.toByteArray(); VarInts.write(out, sb.size); out.writeBytes(sb)
+            }
+            argument("player", false, intArrayOf(count + 8)); argument("backend", true, IntArray(0))
+            literal("admin", false, intArrayOf(count + 10, count + 11)); literal("add", false, intArrayOf(count + 12)); literal("remove", false, intArrayOf(count + 13))
+            argument("player", true, IntArray(0)); argument("player", true, IntArray(0))
+        }
         out.writeByte(0)                                                  // root index
         return ByteArray(out.readableBytes()).also { out.readBytes(it) }
     }

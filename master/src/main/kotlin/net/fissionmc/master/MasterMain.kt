@@ -16,6 +16,8 @@ fun main(args: Array<String>) {
     val hub = ReplicationHub()
     registry.addListener(hub.listener)
     val relay = PlayerRelay(registry)
+    val propsEarly = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
+    relay.playerData = PlayerDataStore(Path.of(propsEarly.getProperty("playerdata.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "playerdata"), { println(it) })
     registry.addListener(relay.listener)
     val master = MasterServer(transport, listen, cfg.worldRoot, registry) { n, m -> if (!relay.handle(n, m)) hub.handle(n, m) }.start()
     master.registry.addListener(object : NodeRegistry.Listener {
@@ -25,7 +27,10 @@ fun main(args: Array<String>) {
     println("[master] event log epoch ${hub.epoch}")
     println("[master] listening on ${listen.host}:${listen.port}, worlds in ${cfg.worldRoot}")
     val clientCfg = ClientConfig.load(Path.of(args.firstOrNull() ?: "fission.properties"))
-    val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = net.fissionmc.master.client.MasterSettings.load(Path.of(args.firstOrNull() ?: "fission.properties"))).start() else null
+    val settings = net.fissionmc.master.client.MasterSettings.load(Path.of(args.firstOrNull() ?: "fission.properties")) { println("[master] $it") }
+    if (settings.adminStore.any && !clientCfg.onlineMode)
+        println("[master] WARN admins exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as an admin's name (and is then bound to it first if the admin has not logged in yet). Use online mode outside development.")
+    val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = settings).start() else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })
     val props = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }

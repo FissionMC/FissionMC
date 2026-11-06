@@ -57,4 +57,24 @@ class WorldSyncTest {
         for (bad in listOf("", "/etc/passwd", "../x", "a/../../x", "a//b", "a\\b", "C:/x")) assertFalse(WorldFiles.safeRelative(bad), bad)
         assertTrue(WorldFiles.safeRelative("region/r.0.0.mca"))
     }
+
+    @Test fun `player files are local only at any depth, other world files are not`() {
+        for (local in listOf("players/data/1234.dat", "players/stats/1234.json", "players/advancements/1234.json", "players/data/x/y.dat", "playerdata/1.dat", "stats/1.json", "advancements/1.json", "session.lock", "a/b/session.lock"))
+            assertTrue(WorldFiles.isLocalOnly(local), local)
+        for (shared in listOf("level.dat", "data/minecraft/scoreboard.dat", "dimensions/minecraft/overworld/region/r.0.0.mca", "datapacks/x/pack.mcmeta", "playersX/data.dat", "my/players/data/1.dat"))
+            assertFalse(WorldFiles.isLocalOnly(shared), shared)
+    }
+
+    @Test fun `a pull keeps the backend's own player files and the master never lists or serves them`() {
+        val tmp = Files.createTempDirectory("wsync-local")
+        val master = tmp.resolve("master"); val dest = tmp.resolve("dest")
+        Files.createDirectories(master.resolve("players/data")); Files.writeString(master.resolve("players/data/m.dat"), "master copy")
+        Files.writeString(master.resolve("level.dat"), "lvl")
+        Files.createDirectories(dest.resolve("players/data")); Files.createDirectories(dest.resolve("players/stats"))
+        Files.writeString(dest.resolve("players/data/local.dat"), "local player"); Files.writeString(dest.resolve("players/stats/local.json"), "{}")
+        Files.writeString(dest.resolve("stale.txt"), "gone after the pull")
+        assertEquals(listOf("level.dat"), WorldFiles.list(master), "the master manifest has no player files")
+        assertEquals(listOf("stale.txt"), WorldFiles.list(dest))
+        assertTrue(Files.exists(dest.resolve("players/data/local.dat")))
+    }
 }

@@ -60,6 +60,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private class Switch(val id: Long, val nodeId: String) { val cfg = ConfigVirtualClient(); var inPlay = false; val startedNanos = System.nanoTime() }
     private var switching: Switch? = null
     private var graceTask: ScheduledFuture<*>? = null
+    /** Waiting for the old backend to save the player before the new one is attached. */
+    private var switchPending = false
     private val cleanup = SwitchCleanup({ f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }, { server.log("[client $playerName] $it") })
     /** Keepalive ids the CURRENT backend sent and the client has not answered yet (a stale answer for a previous backend must not reach this one). */
     private val backendKeepAlives = java.util.ArrayDeque<Long>()
@@ -68,6 +70,20 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** Backend this client is currently relayed to (null in limbo). */
     @Volatile var currentNodeId: String? = null; private set
     @Volatile var chatGlobal = server.settings.chat.defaultGlobal
+    /** Permission level the current backend reports for this player (see [net.fissionmc.protocol.PlayerPermissionReport]). */
+    @Volatile var backendLevel = 0; private set
+    override fun backendPermission(level: Int) { backendLevel = level }
+    /**
+     * Admin for the master's own commands and command tree: in the master's admin set (which is also operator level 4 on every backend), or
+     * operator level 4 on the backend the player is on right now (`/op` on that backend).
+     */
+    val isAdmin: Boolean get() = server.settings.isAdmin(uuid) || backendLevel >= 4
+
+    /** The master's admin set changed: tell the player's backend (it resends the command tree, which the master patches again). */
+    fun pushPermission() { channel.eventLoop().execute {
+        val id = relayId ?: return@execute; val u = uuid ?: return@execute
+        server.relay?.sendTo(id, net.fissionmc.protocol.PlayerPermission(id, u.mostSignificantBits, u.leastSignificantBits, if (server.settings.isAdmin(u)) 4 else 0))
+    } }
     private var hostName = ""
     private var tap: net.fissionmc.packets.PacketTap? = null
     private var tracker = net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
@@ -147,7 +163,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (state == ConnectionState.PLAY) {
             cleanup.observe(frame)
             if (id == PlayIds.keepAliveS2C && frame.size >= 9) { backendKeepAlives.add(java.nio.ByteBuffer.wrap(PlayIds.payload(frame)).long); while (backendKeepAlives.size > 8) backendKeepAlives.poll() }
-            if (id == PlayIds.commands) { val patched = ChatCommandTree.patch(frame, server.log); if (patched != null) { writeRelay(patched); return } }
+            if (id == PlayIds.commands) { val patched = ChatCommandTree.patch(frame, isAdmin, server.log); if (patched != null) { writeRelay(patched); return } }
         }
         when (mode) {
             Mode.RELAY -> writeRelay(frame)
@@ -168,13 +184,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     override fun detachedFrom(bindingId: Long, reason: String, backendLost: Boolean) { channel.eventLoop().execute {
         val sw = switching
         if (sw != null && sw.id == bindingId) {   // the backend we were switching to refused or died: the player stays where it is
-            switching = null
+            switching = null; restoreDataOwner()
             server.log("[client $playerName] switch to ${sw.nodeId} failed: $reason")
             tell("Could not move to ${sw.nodeId}: ${reason.removePrefix("kick:")}")
             return@execute
         }
         if (bindingId != relayId) return@execute
-        relayId = null; currentNodeId = null
+        relayId = null; currentNodeId = null; backendLevel = 0
         server.log("[client $playerName] backend session ended: $reason")
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) { channel.close(); return@execute }
         // the client's real phase is what the tracker saw, not what we last set by hand
@@ -218,21 +234,36 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     fun startSwitch(nodeId: String?, report: (String) -> Unit = {}) { channel.eventLoop().execute {
         if (!channel.isActive) return@execute
         if (mode == Mode.LIMBO && user.decoderState != ConnectionState.PLAY) return@execute
-        if (switching != null) { report("a switch is already running"); return@execute }
+        if (switching != null || switchPending) { report("a switch is already running"); return@execute }
         if (mode == Mode.LIMBO) {
             // Vanilla's client only accepts the second Login once it finished loading the first level it got (the real-client failure
             // happened when StartConfiguration followed the limbo burst immediately); a client that never says so is moved after a grace period.
             if (!clientLoaded && !graceOver) { report("the player is still loading the limbo"); return@execute }
         } else if (mode != Mode.RELAY || tracker.clientState != ConnectionState.PLAY || tracker.serverState != ConnectionState.PLAY) { report("the player is busy"); return@execute }
         if (nodeId != null && nodeId == currentNodeId) { report("already on $nodeId"); return@execute }
+        // leaving a backend: it saves the player first, so the next backend starts from the player's latest state (position, inventory, ...)
+        val from = relayId; val id = uuid
+        if (mode == Mode.RELAY && from != null && id != null && server.relay?.playerData != null) {
+            switchPending = true
+            server.relay!!.flushPlayerData(from, id, 3000) { channel.eventLoop().execute {
+                switchPending = false
+                if (channel.isActive && mode == Mode.RELAY && relayId == from) attachSwitch(nodeId, report)
+            } }
+        } else attachSwitch(nodeId, report)
+    } }
+
+    private fun attachSwitch(nodeId: String?, report: (String) -> Unit) {
         val id = server.relay?.attach(this, nodeId)
-        if (id == null) { report(if (nodeId == null) "no backend is alive" else "backend $nodeId is not connected"); return@execute }
+        if (id == null) { report(if (nodeId == null) "no backend is alive" else "backend $nodeId is not connected"); return }
         val node = server.relay!!.nodeIdOf(id) ?: "?"
         switching = Switch(id, node)
         // the client's real options go first, like in the first configuration of a fresh vanilla connection
         clientInfoPayload?.let { p -> server.relay?.toBackend(id, PlayIds.frame(0, p)) }
         server.log("[client] $playerName -> backend $node (player $id), seamless")
-    } }
+    }
+
+    /** A failed switch leaves the player where it is: the data owner goes back to that backend. */
+    private fun restoreDataOwner() { uuid?.let { server.relay?.setDataOwner(it, currentNodeId) } }
 
     private fun onSwitchFrame(sw: Switch, frame: ByteArray) {
         if (!sw.inPlay) {
@@ -240,7 +271,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             r.replies.forEach { server.relay?.toBackend(sw.id, it) }
             if (r.abort != null) {
                 server.log("[client $playerName] switch to ${sw.nodeId}: ${r.abort}")
-                switching = null; server.relay?.detach(sw.id, "switch aborted")
+                switching = null; server.relay?.detach(sw.id, "switch aborted"); restoreDataOwner()
                 if (r.mismatch) { server.log("[client $playerName] falling back to StartConfiguration for ${sw.nodeId}"); classicAttach(sw.nodeId) }
                 else tell("Could not move to ${sw.nodeId}: ${r.abort}")
                 return
@@ -336,6 +367,11 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             PlayIds.chatCommand, PlayIds.chatCommandSigned -> {
                 val cmd = Strings.readFirst(bytes) ?: return false
                 return MasterCommands.handle(this, server, cmd)
+            }
+            PlayIds.commandSuggestion -> {   // tab completion of the master's own `/fission send <player> <backend>` (admins only)
+                if (!isAdmin) return false
+                val reply = MasterCommands.suggest(bytes, server) ?: return false
+                writeRelay(reply); return true
             }
             PlayIds.chat -> {
                 val msg = Strings.readFirst(bytes) ?: return false
@@ -452,6 +488,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         prof = p
         if (!server.register(this, p)) { disconnect("You are already connected"); return }
         registered = true
+        server.settings.adminStore.bindOnLogin(p.name, p.uuid)   // bootstrap: a name entry in the admin list becomes this uuid
         val t = server.config.compressionThreshold
         if (t >= 0) {
             send(WrapperLoginServerSetCompression(t))

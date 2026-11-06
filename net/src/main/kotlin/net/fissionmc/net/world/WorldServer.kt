@@ -43,7 +43,7 @@ class WorldServer(private val root: Path, threads: Int = 2) : Closeable {
 
     private fun stream(link: NodeLink, req: FileRequest) {
         val dir = worldDir(req.world) ?: return link.send(WorldError("no such world: ${req.world}"))
-        val file = WorldFiles.resolve(dir, req.path)?.takeIf { Files.isRegularFile(it) && !Files.isSymbolicLink(it) }
+        val file = WorldFiles.resolve(dir, req.path)?.takeIf { !WorldFiles.isLocalOnly(req.path) && Files.isRegularFile(it) && !Files.isSymbolicLink(it) }
             ?: return link.send(WorldError("no such file: ${req.path}"))
         Files.newByteChannel(file).use { ch ->
             val buf = java.nio.ByteBuffer.allocate(FILE_CHUNK_SIZE)
