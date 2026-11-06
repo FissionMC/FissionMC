@@ -49,6 +49,11 @@ messages:
   switch: { enabled: false, format: "{name} moved to {backend}" }
   local: { enabled: false }                # true = the backends announce themselves (vanilla per backend)
 
+# Switching between backends (/fission send, region borders)
+switch:
+  mode: seamless               # seamless = the client keeps its level and player when the new backend's level is the same (no Login/Respawn, no "Loading terrain" screen);
+                               # login = always Login + Respawn. A different dimension/seed/flags falls back to the login path automatically (logged with the reason).
+
 # Pets and riders travel with a player who switches backend
 travel:
   pet-radius: 24               # blocks, 0 = pets stay

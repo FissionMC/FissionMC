@@ -6,6 +6,7 @@ import net.fissionmc.packets.Side
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
+import io.netty.buffer.Unpooled
 import kotlin.system.exitProcess
 
 /**
@@ -41,6 +42,8 @@ object RegionProbe {
     private fun passes(out: String) = out.contains("Test passed")
     private fun count(out: String): Int = Regex("Count: (\\d+)").find(out)?.groupValues?.get(1)?.toInt() ?: 0
     private fun near(p: DoubleArray?, x: Double, z: Double) = p != null && Math.abs(p[0] - x) < 0.6 && Math.abs(p[2] - z) < 0.6
+    /** Completed backend switches of ProbeA so far (master log): seamless switches send no Login, so the Login count cannot tell. */
+    private fun switches() = Regex("\\[client\\] ProbeA now on ").findAll(masterLog()).count()
     private fun masterLog() = String(Files.readAllBytes(Path.of(root, "run-master/master.log")), Charsets.ISO_8859_1)
 
     private fun scenario(port: Int, bots: MutableList<Bot>) {
@@ -80,20 +83,25 @@ object RegionProbe {
         fun chunkCount(pred: (Int) -> Boolean) = (a.chunkSets.lastOrNull()?.count { pred((it shr 32).toInt()) } ?: 0)
 
         // ---- walk across x=0 in steps: no switch before the hysteresis margin (8 blocks), exactly one at the border
-        val baseLogins = a.logins
+        val baseLogins = a.logins; val baseSw = switches(); val baseRespawns = a.respawns.get()
         fun moves(from: String, to: String) = Regex("\\[regions\\] ProbeA at \\S+ -?\\d+,-?\\d+ leaves $from for $to").findAll(masterLog()).count()
         val abBefore = moves("backend-a", "backend-b"); val baBefore = moves("backend-b", "backend-a")
         val steps = listOf(-24.5, -16.5, -8.5, -4.5, -0.5, 0.5, 3.5, 6.5)
         for (x in steps) { tp(x, 4.5); quiet(900) }
-        check("walk: no switch while the player is less than the margin (8) inside b's region (steps up to x=6.5)", a.logins == baseLogins, "logins=${a.logins} (was $baseLogins)")
+        check("walk: no switch while the player is less than the margin (8) inside b's region (steps up to x=6.5)", switches() == baseSw && a.logins == baseLogins, "switches=${switches()} (was $baseSw)")
         check("border view: chunks of the other side (cx >= 0) were received while the player was on backend-a at x<=6.5", chunkCount { it >= 0 } > 20, "chunks with cx>=0: ${chunkCount { it >= 0 }}")
         val ghostPlayerChunks = chunkCount { it >= 0 }
         mk = a.events.size
         tp(9.5, 4.5)
-        check("border: crossing x=9.5 produces exactly one new Login (the seamless switch)", await(60_000) { a.logins == baseLogins + 1 }, "logins=${a.logins}")
+        val entBefore = a.entities.size; val bundlesBefore = a.bundleDelimiters.get(); val removesBefore = a.removePackets.get(); val forgottenBefore = a.forgotten.get()
+        val selfBefore = a.selfId
+        check("border: crossing x=9.5 completes exactly one switch", await(60_000) { switches() == baseSw + 1 }, "switches=${switches()}")
+        check("seamless: NO new Login and NO Respawn for the same-level switch (the client keeps its level and player, no loading screen)", a.logins == baseLogins && a.respawns.get() == baseRespawns, "logins=${a.logins} (was $baseLogins), respawns=${a.respawns.get()} (was $baseRespawns)")
+        check("seamless: the old backend's entities were removed in the cut-over (RemoveEntities) inside a bundle", await(10_000) { a.removePackets.get() > removesBefore && a.bundleDelimiters.get() >= bundlesBefore + 2 }, "removes ${a.removePackets.get() - removesBefore}, bundle delimiters ${a.bundleDelimiters.get() - bundlesBefore}")
+        check("seamless: the client's own entity id is unchanged", a.selfId == selfBefore, "${a.selfId} (was $selfBefore)")
         check("border: the player arrives at the same coordinates (9.5, 4.5), no spawn teleport", await(15_000) { near(a.pos, 9.5, 4.5) }, "${a.pos?.toList()}")
         quiet(2500)
-        check("border: still exactly one switch after settling (no flapping)", a.logins == baseLogins + 1, "logins=${a.logins}")
+        check("border: still exactly one switch after settling (no flapping)", switches() == baseSw + 1, "switches=${switches()}")
         check("border: no StartConfiguration", a.startConfigs == 0)
         check("master log: exactly one new 'leaves backend-a for backend-b' line for the crossing", moves("backend-a", "backend-b") == abBefore + 1, "${moves("backend-a", "backend-b")} (was $abBefore)")
         mk = a.events.size
@@ -104,15 +112,33 @@ object RegionProbe {
         check("pet: ... and is gone from backend-a (no duplicate)", await(20_000) { !passes(run("a", "execute if entity @e[type=minecraft:wolf,tag=rwolf]")) })
         check("border view: after the switch the client received chunks of a's side (cx < 0) as ghost chunks from backend-b", chunkCount { it < 0 } > 10, "chunks with cx<0: ${chunkCount { it < 0 }}")
 
+        // ---- the transplant kept the client's world right: pet entity, ids, chunks, interaction
+        val wolfType = RegionProbe::class.java.getResourceAsStream("/vanilla-scan/entities.txt")!!.bufferedReader().readLines().first { it.startsWith("ENTITY_TYPE ") && it.split(' ')[2] == "wolf" }.split(' ')[1].toInt()
+        check("seamless: the client holds exactly one wolf after the transplant (the pet arrived as a normal AddEntity)", await(20_000) { a.entities.values.count { it == wolfType } == 1 }, "entities ${a.entities.size}, wolves ${a.entities.values.count { it == wolfType }}")
+        val wolfId = a.entities.entries.firstOrNull { it.value == wolfType }?.key ?: -1
+        check("seamless: the wolf has a master-assigned client id (>= 1000000), not the backend's own", wolfId >= 1_000_000, "id $wolfId")
+        quiet(1500)
+        check("seamless: the wolf keeps the same client id (no re-adds) while the player stays", a.entities.entries.firstOrNull { it.value == wolfType }?.key == wolfId)
+        run("b", "data modify entity @e[type=minecraft:wolf,tag=rwolf,limit=1] Sitting set value 0b")
+        run("b", "execute at ProbeA run tp @e[type=minecraft:wolf,tag=rwolf,limit=1] ~1 ~ ~")
+        quiet(500)
+        val ib = Unpooled.buffer(); VarInts.write(ib, wolfId); VarInts.write(ib, 0); ib.writeByte(0); ib.writeBoolean(false)
+        a.c.sendRaw(PlayIds.frame(net.fissionmc.master.seamless.PlayPacketIds.s("Interact"), ByteArray(ib.readableBytes()).also { ib.readBytes(it) }))
+        check("seamless: an interaction with the pet by its CLIENT id reaches the right backend (the tamed wolf sits)", await(10_000) { run("b", "data get entity @e[type=minecraft:wolf,tag=rwolf,limit=1] Sitting").contains("1b") })
+        val here = a.chunkSets.lastOrNull().orEmpty()
+        val cx = Math.floor(a.pos!![0] / 16).toInt(); val cz = Math.floor(a.pos!![2] / 16).toInt()
+        val wanted = (-4..4).flatMap { dx -> (-4..4).map { dz -> ((cx + dx).toLong() shl 32) or ((cz + dz).toLong() and 0xffffffffL) } }
+        check("seamless: the client holds every chunk of the new backend's view around the player (${wanted.size}) and nothing far away", await(20_000) { val h = a.chunkSets.lastOrNull().orEmpty(); wanted.all { it in h } && h.size <= 130 }, "have ${a.chunkSets.lastOrNull()?.size}, missing ${wanted.count { it !in a.chunkSets.last() }}")
+
         // ---- hysteresis the other way: wiggling around the border changes nothing, then walking far inside a's region moves it back
-        val l1 = a.logins
+        val l1 = a.logins; val sw1 = switches()
         for (x in listOf(2.5, -3.5, 3.5, -4.5, 1.5, -7.5)) { tp(x, 4.5); quiet(900) }
         quiet(1500)
-        check("hysteresis: wiggling between x=-7.5 and 3.5 on b's side causes no switch", a.logins == l1, "logins=${a.logins} (was $l1)")
+        check("hysteresis: wiggling between x=-7.5 and 3.5 on b's side causes no switch", switches() == sw1, "switches=${switches()} (was $sw1)")
         tp(-14.5, 4.5)
-        check("walk back: at x=-14.5 the player returns to backend-a with one more Login", await(60_000) { a.logins == l1 + 1 } && await(15_000) { near(a.pos, -14.5, 4.5) }, "logins=${a.logins} ${a.pos?.toList()}")
+        check("walk back: at x=-14.5 the player returns to backend-a (one more switch, again without Login/Respawn)", await(60_000) { switches() == sw1 + 1 } && await(15_000) { near(a.pos, -14.5, 4.5) } && a.logins == baseLogins && a.respawns.get() == baseRespawns, "switches=${switches()} logins=${a.logins} ${a.pos?.toList()}")
         quiet(2500)
-        check("walk back: exactly one more switch, no flapping", a.logins == l1 + 1, "logins=${a.logins}")
+        check("walk back: exactly one more switch, no flapping", switches() == sw1 + 1, "switches=${switches()}")
         check("master log: exactly one new 'leaves backend-b for backend-a' line for the way back", moves("backend-b", "backend-a") == baBefore + 1, "${moves("backend-b", "backend-a")} (was $baBefore)")
         check("pet again: still exactly one Rex in total after the way back", run("a", "execute if entity @e[type=minecraft:wolf,tag=rwolf]").let { count(it) } + run("b", "execute if entity @e[type=minecraft:wolf,tag=rwolf]").let { count(it) } == 1)
 

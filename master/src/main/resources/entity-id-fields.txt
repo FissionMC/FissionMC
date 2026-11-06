@@ -1,0 +1,159 @@
+# Entity-id fields of the vanilla 26.3 play packets, generated from tools/EntityIdScan.java (raw output: master/src/test/resources/vanilla-scan/packets.txt) and classified by hand.
+# Line: <C|S> <packet class> <field> <KIND> <WIRE>   or   NOT <packet class> <field>   (an int-like field that is NOT an entity id)
+# KIND: ID = entity id; SELF = the receiving/sending player's own id; IDS = list of ids; OPT_ID = optional id; ID_OR_MINUS1 / ID_OR_0 = an id or the none marker;
+#       ID_IF_FLAG = an id only when the packet's flag says so; ADD_ENTITY_OWNER = AddEntity.data is the owner's id for the projectile entity types listed below, else not an id.
+# WIRE: V = VarInt, I = Int32, V+1 = VarInt of id+1 (0 = none), V[] = VarInt count + VarInts, OptV = Optional<VarInt>.
+# EntityIdTableTest checks that every int-like field of the scan is listed here (so a new vanilla version cannot add one silently).
+
+C ClientboundAddEntityPacket id ID V
+C ClientboundAddEntityPacket data ADD_ENTITY_OWNER V
+C ClientboundAnimatePacket id ID V
+NOT ClientboundAnimatePacket action
+NOT ClientboundBlockChangedAckPacket sequence
+C ClientboundBlockDestructionPacket id ID V
+NOT ClientboundBlockDestructionPacket progress
+NOT ClientboundBlockEventPacket b0
+NOT ClientboundBlockEventPacket b1
+NOT ClientboundChunkBatchFinishedPacket batchSize
+NOT ClientboundCommandSuggestionsPacket id
+NOT ClientboundCommandSuggestionsPacket start
+NOT ClientboundCommandSuggestionsPacket length
+NOT ClientboundCommandsPacket rootIndex
+NOT ClientboundContainerClosePacket containerId
+NOT ClientboundContainerSetContentPacket containerId
+NOT ClientboundContainerSetContentPacket stateId
+NOT ClientboundContainerSetDataPacket containerId
+NOT ClientboundContainerSetDataPacket id
+NOT ClientboundContainerSetDataPacket value
+NOT ClientboundContainerSetSlotPacket containerId
+NOT ClientboundContainerSetSlotPacket stateId
+NOT ClientboundContainerSetSlotPacket slot
+NOT ClientboundCooldownPacket duration
+C ClientboundDamageEventPacket entityId ID V
+C ClientboundDamageEventPacket sourceCauseId ID_OR_MINUS1 V+1
+C ClientboundDamageEventPacket sourceDirectId ID_OR_MINUS1 V+1
+C ClientboundDebugEntityValuePacket entityId ID V
+C ClientboundEntityEventPacket entityId ID I
+C ClientboundEntityPositionSyncPacket id ID V
+NOT ClientboundExplodePacket blockCount
+C ClientboundHurtAnimationPacket id ID V
+NOT ClientboundInitializeBorderPacket newAbsoluteMaxSize
+NOT ClientboundInitializeBorderPacket warningBlocks
+NOT ClientboundInitializeBorderPacket warningTime
+NOT ClientboundLevelChunkWithLightPacket x
+NOT ClientboundLevelChunkWithLightPacket z
+NOT ClientboundLevelEventPacket type
+NOT ClientboundLevelEventPacket data
+NOT ClientboundLevelParticlesPacket count
+NOT ClientboundLightUpdatePacket x
+NOT ClientboundLightUpdatePacket z
+C ClientboundLoginPacket playerId SELF I
+NOT ClientboundLoginPacket maxPlayers
+NOT ClientboundLoginPacket chunkRadius
+NOT ClientboundLoginPacket simulationDistance
+NOT ClientboundMerchantOffersPacket containerId
+NOT ClientboundMerchantOffersPacket villagerLevel
+NOT ClientboundMerchantOffersPacket villagerXp
+NOT ClientboundMountScreenOpenPacket containerId
+NOT ClientboundMountScreenOpenPacket inventoryColumns
+C ClientboundMountScreenOpenPacket entityId ID I
+C ClientboundMoveEntityPacket entityId ID V
+C ClientboundMoveMinecartPacket entityId ID V
+NOT ClientboundOpenScreenPacket containerId
+NOT ClientboundPlaceGhostRecipePacket containerId
+NOT ClientboundPlayerChatPacket globalIndex
+NOT ClientboundPlayerChatPacket index
+NOT ClientboundPlayerCombatEndPacket duration
+C ClientboundPlayerCombatKillPacket playerId SELF V
+C ClientboundPlayerLookAtPacket entity ID_IF_FLAG V
+NOT ClientboundPlayerPositionPacket id
+C ClientboundProjectilePowerPacket id ID V
+C ClientboundRemoveEntitiesPacket entityIds IDS V[]
+C ClientboundRemoveMobEffectPacket entityId ID V
+C ClientboundRotateHeadPacket entityId ID V
+NOT ClientboundSetBorderWarningDelayPacket warningDelay
+NOT ClientboundSetBorderWarningDistancePacket warningBlocks
+C ClientboundSetCameraPacket cameraId ID V
+NOT ClientboundSetChunkCacheCenterPacket x
+NOT ClientboundSetChunkCacheCenterPacket z
+NOT ClientboundSetChunkCacheRadiusPacket radius
+C ClientboundSetEntityDataPacket id ID V
+C ClientboundSetEntityLinkPacket sourceId ID I
+C ClientboundSetEntityLinkPacket destId ID_OR_0 I
+C ClientboundSetEntityMotionPacket id ID V
+C ClientboundSetEquipmentPacket entity ID V
+NOT ClientboundSetExperiencePacket totalExperience
+NOT ClientboundSetExperiencePacket experienceLevel
+NOT ClientboundSetHealthPacket food
+NOT ClientboundSetHeldSlotPacket slot
+NOT ClientboundSetObjectivePacket method
+C ClientboundSetPassengersPacket vehicle ID V
+C ClientboundSetPassengersPacket passengers IDS V[]
+NOT ClientboundSetPlayerInventoryPacket slot
+NOT ClientboundSetPlayerTeamPacket method
+NOT ClientboundSetScorePacket score
+NOT ClientboundSetSimulationDistancePacket simulationDistance
+NOT ClientboundSetTitlesAnimationPacket fadeIn
+NOT ClientboundSetTitlesAnimationPacket stay
+NOT ClientboundSetTitlesAnimationPacket fadeOut
+C ClientboundSoundEntityPacket id ID V
+NOT ClientboundSoundPacket x
+NOT ClientboundSoundPacket y
+NOT ClientboundSoundPacket z
+C ClientboundSwingAnimationPacket entityId ID V
+NOT ClientboundTagQueryPacket transactionId
+C ClientboundTakeItemEntityPacket itemId ID V
+C ClientboundTakeItemEntityPacket playerId ID V
+NOT ClientboundTakeItemEntityPacket amount
+C ClientboundTeleportEntityPacket id ID V
+NOT ClientboundTickingStepPacket tickSteps
+C ClientboundUpdateAttributesPacket entityId ID V
+C ClientboundUpdateMobEffectPacket entityId ID V
+NOT ClientboundUpdateMobEffectPacket effectAmplifier
+NOT ClientboundUpdateMobEffectPacket effectDurationTicks
+NOT ServerboundAcceptTeleportationPacket id
+S ServerboundAttackPacket entityId ID V
+NOT ServerboundBlockEntityTagQueryPacket transactionId
+NOT ServerboundChatAckPacket offset
+NOT ServerboundCommandSuggestionPacket id
+NOT ServerboundContainerButtonClickPacket containerId
+NOT ServerboundContainerButtonClickPacket buttonId
+NOT ServerboundContainerClickPacket containerId
+NOT ServerboundContainerClickPacket stateId
+NOT ServerboundContainerClosePacket containerId
+NOT ServerboundContainerSlotStateChangedPacket slotId
+NOT ServerboundContainerSlotStateChangedPacket containerId
+NOT ServerboundEditBookPacket slot
+NOT ServerboundEntityTagQueryPacket transactionId
+S ServerboundEntityTagQueryPacket entityId ID V
+S ServerboundInteractPacket entityId ID V
+NOT ServerboundJigsawGeneratePacket levels
+S ServerboundPickItemFromEntityPacket id ID V
+NOT ServerboundPlaceRecipePacket containerId
+NOT ServerboundPlayerActionPacket sequence
+S ServerboundPlayerCommandPacket id SELF V
+NOT ServerboundPlayerCommandPacket data
+NOT ServerboundSelectBundleItemPacket slotId
+NOT ServerboundSelectBundleItemPacket selectedItemIndex
+NOT ServerboundSelectTradePacket item
+NOT ServerboundSetCarriedItemPacket slot
+S ServerboundSetCommandMinecartPacket entity ID V
+NOT ServerboundSetJigsawBlockPacket selectionPriority
+NOT ServerboundSetJigsawBlockPacket placementPriority
+S ServerboundSpectatorActionPacket spectateEntityId OPT_ID OptV
+NOT ServerboundUseItemOnPacket sequence
+NOT ServerboundUseItemPacket sequence
+
+# Entity metadata (SetEntityData) values that hold an entity id; index = SynchedEntityData accessor id (tools/EntityDataScan.java). The entity types are the ones whose class has the field.
+# Line: META <entity class.field> <index> <serializer> <KIND> <entity type ids...>   (KIND: ID_OR_0 = id, 0 = none; ID_PLUS_1 = id+1, 0 = none; OPT_ID = Optional<VarInt> of the id)
+# Everything else of the INT/OPTIONAL_UNSIGNED_INT metadata (colours, counters, variants ...) is NOT an id and listed in vanilla-scan/entities.txt; OPTIONAL_LIVING_ENTITY_REFERENCE is a UUID.
+META boss.wither.WitherBoss.DATA_TARGET_A 16 INT ID_OR_0 149
+META boss.wither.WitherBoss.DATA_TARGET_B 17 INT ID_OR_0 149
+META boss.wither.WitherBoss.DATA_TARGET_C 18 INT ID_OR_0 149
+META monster.Guardian.DATA_ID_ATTACK_TARGET 17 INT ID_OR_0 64,41
+META animal.frog.Frog.DATA_TONGUE_TARGET_ID 19 OPTIONAL_UNSIGNED_INT OPT_ID 56
+META projectile.FireworkRocketEntity.DATA_ATTACHED_TO_TARGET 9 OPTIONAL_UNSIGNED_INT OPT_ID 54
+META projectile.FishingHook.DATA_HOOKED_ENTITY 8 INT ID_PLUS_1 160
+
+# Entity types whose ClientboundAddEntityPacket `data` is the OWNER'S ENTITY ID (classes extending Projectile; tools/EntityDataScan.java prints them):
+PROJECTILE_TYPES 6,18,38,40,45,49,53,54,80,108,109,116,121,123,126,139,147,151,160

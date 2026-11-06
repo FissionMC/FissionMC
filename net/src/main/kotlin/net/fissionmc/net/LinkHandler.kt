@@ -57,7 +57,7 @@ internal class LinkHandler(
                 if (initiator || peerHello != null) return reject(ctx, "unexpected Hello")
                 if (msg.protocol != PROTOCOL_VERSION) return reject(ctx, "protocol ${msg.protocol} != $PROTOCOL_VERSION")
                 if (msg.mcVersion != me.mcVersion) return reject(ctx, "mc version ${msg.mcVersion} != ${me.mcVersion}")
-                if (security != null && !security.knows(msg.nodeId)) return reject(ctx, "unknown node ${msg.nodeId}")
+                if (security != null && !security.knows(msg.nodeId)) return reject(ctx, "unknown node ${msg.nodeId}: add the line '${msg.nodeId} <public key>' to the master's authorized keys file (the backend prints that exact line at its start; gradlew :master:nodeKeys does the same)")
                 peerHello = msg
                 val sig = security?.sign(handshakeTranscript(msg.nodeId, me.nodeId, msg.nonce, myNonce, "acceptor")) ?: ByteArray(0)
                 val ch = Challenge(me.nodeId, myNonce, sig)

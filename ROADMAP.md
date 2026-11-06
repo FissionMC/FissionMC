@@ -68,6 +68,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] Player presence broadcast (backends report player positions to the master, 2 block granularity; not broadcast to other players/backends)
 - [~] Edge/ghost chunks (ghost chunks reach the client from the non-owner, block changes replicate into them; foreign entities in view and cross-border block updates missing)
 - [~] Player + entity handoff across borders (player: seamless switch with hysteresis, pets/riders travel; items/xp/mobs handed over with ack; projectiles, leashes, vehicles not)
+- [~] Seamless backend switch without the loading screen (`switch.mode: seamless`, default): backend-to-backend switches and region border crossings keep the client's level and player (no Login/Respawn/StartConfiguration): per-client entity id map + byte-level rewriter driven by a mechanically generated id table and checked against vanilla's codecs over ~150k recorded frames, cut-over in one bundle, chunk bookkeeping, PlayerLoaded from the master; limbo to first backend and dimension/seed changes still use Login+Respawn; scripted region-test passes, real client unverified
 - [ ] Cross-border interactions (explosions, fluids, pathing, redstone, block entities)
 - [ ] Dynamic region assignment
 

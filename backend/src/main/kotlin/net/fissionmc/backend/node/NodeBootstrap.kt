@@ -57,9 +57,19 @@ object NodeBootstrap {
         // missing file: the commented default (standalone), written once; unknown keys and wrong types stop the server with the key path
         if (net.fissionmc.net.FissionConfig.writeDefaultIfMissing(file, NodeBootstrap::class.java.getResourceAsStream("/fission.backend.default.yml")!!.readBytes().toString(Charsets.UTF_8))) log.info("No fission.yml: wrote the commented default to $file")
         val root = net.fissionmc.net.FissionConfig.load(file)
-        val cfg = NodeConfig.from(root, file.parent)
-        if (cfg.mode == NodeMode.COMBINED) combinedClientCfg = net.fissionmc.master.client.ClientConfig.from(root)
+        val parsed = NodeConfig.from(root, file.parent)
+        if (parsed.mode == NodeMode.COMBINED) combinedClientCfg = net.fissionmc.master.client.ClientConfig.from(root)
         root.finish()
+        // the backend id: node.id by hand wins; otherwise a random one is generated once and saved (net/NodeIds.kt), so it survives restarts
+        val cfg = if (parsed.mode == NodeMode.STANDALONE) parsed else {
+            val r = net.fissionmc.net.NodeIds.resolve(file, parsed.nodeId.ifBlank { null }, persistInYml = parsed.mode != NodeMode.COMBINED)
+            log.info("backend id: ${r.id}" + (if (r.generated) " (generated, saved to ${r.savedTo})" else if (parsed.nodeId.isBlank()) " (generated earlier, from .fission-node-id)" else " (node.id)"))
+            if (parsed.security && parsed.mode == NodeMode.BACKEND) runCatching { net.fissionmc.net.Keys.encode(net.fissionmc.net.Keys.loadOrCreate(parsed.keyFile).public) }.getOrNull()?.let {
+                log.info("master authorized keys line for this backend (add it to ${"the master's"} node.authorized file if it is not there): ${r.id} $it")
+            }
+            nodeId = r.id
+            parsed.copy(nodeId = r.id)
+        }
         if (cfg.mode == NodeMode.STANDALONE) return
         require(net.fissionmc.net.world.WorldFiles.safeRelative(levelName)) { "level-name '$levelName' is not usable for node sync" }
         val dest = universe.resolve(levelName).toAbsolutePath().normalize()

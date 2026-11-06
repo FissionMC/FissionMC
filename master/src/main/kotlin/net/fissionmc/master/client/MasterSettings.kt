@@ -136,6 +136,8 @@ data class MasterSettings(
     val messages: AnnouncementSettings = AnnouncementSettings(),
     /** `travel.pet-radius` */
     val petRadius: Int = 24,
+    /** `switch.mode`: `seamless` (default: a client stays in its level when the new backend's level is the same, no Login/Respawn, no loading screen) or `login` (always Login + Respawn). */
+    val switchMode: String = "seamless",
     /** `regions.margin` blocks of hysteresis at a region border (default 8). */
     val regionMargin: Int = 8,
 ) {
@@ -162,6 +164,7 @@ data class MasterSettings(
                     format = g.string("format", d.format), localFormat = l.string("format", d.localFormat), prefix = g.string("prefix", ""), suffix = g.string("suffix", ""),
                     allowColors = g.bool("allow-colors", false), maxLength = g.int("max-length", d.maxLength), timeoutMs = g.long("timeout-ms", d.timeoutMs),
                 ),
+                switchMode = root.section("switch").string("mode", "seamless").lowercase().also { if (it != "seamless" && it != "login") throw ConfigException("switch.mode: expected seamless or login, got '$it'") },
                 regionMargin = root.section("regions").int("margin", 8).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
                 petRadius = root.section("travel").int("pet-radius", 24).also { if (it !in 0..128) throw ConfigException("travel.pet-radius: expected 0-128, got $it") },
                 messages = AnnouncementSettings(

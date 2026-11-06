@@ -38,7 +38,7 @@ class ConfigFilesTest {
     @Test fun `the committed backend default parses`() {
         val root = FissionConfig.parse(Files.readString(repo.resolve("backend/src/main/resources/fission.backend.default.yml")))
         val n = NodeConfig.from(root, repo.resolve("run-a")); ClientConfig.from(root); root.finish()
-        assertEquals(net.fissionmc.net.NodeMode.STANDALONE, n.mode)
+        assertEquals(net.fissionmc.net.NodeMode.STANDALONE, n.mode); assertEquals("", n.nodeId, "no node.id in the default: a backend generates one")
     }
 
     @Test fun `the converted dev files of the user parse when present`() {

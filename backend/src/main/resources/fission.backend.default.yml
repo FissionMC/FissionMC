@@ -4,7 +4,9 @@
 
 node:
   mode: standalone             # standalone (plain single server) | backend | combined
-  # id: backend-1              # this backend's id (the master's regions and /fission send use it)
+  # id: backend-a              # this backend's id. Without it the backend generates `backend-xxxxxx` ONCE on its first start, saves it here (or into
+  #                            # `.fission-node-id` next to this file) and logs it with the exact line for the master's authorized keys file.
+  #                            # Write your own id when the master's regions.* / admin config must name this backend (a generated id is only known after the first start).
   # master: "127.0.0.1:25600"  # backend: where the master listens
   # master-public: "<base64>"  # backend: the master's public key (printed by the master / gradlew :master:nodeKeys)
   # security: true             # Ed25519 authentication (keep on outside tests)

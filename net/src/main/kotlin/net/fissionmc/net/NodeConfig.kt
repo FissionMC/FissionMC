@@ -17,7 +17,7 @@ enum class NodeMode {
  * ```
  * node:
  *   mode: backend            # standalone | backend | combined | master (master = master-only process, see :master:run)
- *   id: backend-1
+ *   id: backend-a            # optional: without it the backend generates `backend-xxxxxx` once and saves it (NodeIds)
  *   master: "host:port"      # backend: where the master listens
  *   listen: "host:port"      # master/combined: TCP listener for backends (optional in combined)
  *   key: fission-node.key    # this node's Ed25519 key file (created if missing)
@@ -31,6 +31,7 @@ enum class NodeMode {
 data class NodeConfig(
     val mode: NodeMode,
     val masterProcess: Boolean,
+    /** `node.id`; EMPTY when the file has none (a backend then generates and saves one, see [NodeIds]). */
     val nodeId: String,
     val master: NodeAddress.Tcp?,
     val listen: NodeAddress.Tcp?,
@@ -58,7 +59,7 @@ data class NodeConfig(
             val mode = if (master) NodeMode.STANDALONE else NodeMode.entries.firstOrNull { it.name.equals(modeText, true) }
                 ?: throw ConfigException("node.mode: expected standalone, backend, combined or master, got '$modeText'")
             return NodeConfig(
-                mode, master, text("id") ?: "backend-1", addr("master"), addr("listen"),
+                mode, master, text("id") ?: "", addr("master"), addr("listen"),
                 dir.resolve(text("key") ?: "fission-node.key"), text("master-public"),
                 dir.resolve(text("authorized") ?: "fission-authorized.keys"),
                 n.bool("security", true),

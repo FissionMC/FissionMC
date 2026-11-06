@@ -1,0 +1,10 @@
+decoration/ItemFrame.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;ILnet/minecraft/core/BlockPos;)V
+decoration/LeashFenceKnotEntity.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;ILnet/minecraft/core/BlockPos;)V
+decoration/painting/Painting.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;ILnet/minecraft/core/BlockPos;)V
+Entity.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/server/level/ServerEntity;)V
+item/FallingBlockEntity.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/server/level/ServerEntity;I)V
+monster/warden/Warden.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/server/level/ServerEntity;I)V
+net/minecraft/network/protocol/game/ClientboundAddEntityPacket.<init> -> <init>(ILjava/util/UUID;DDDFFLnet/minecraft/world/entity/EntityType;ILnet/minecraft/world/phys/Vec3;D)V
+net/minecraft/network/protocol/game/ClientboundAddEntityPacket.<init> -> <init>(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/server/level/ServerEntity;I)V
+projectile/FishingHook.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/server/level/ServerEntity;I)V
+projectile/Projectile.getAddEntityPacket -> <init>(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/server/level/ServerEntity;I)V

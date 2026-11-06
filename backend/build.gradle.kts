@@ -78,6 +78,7 @@ tasks.register<JavaExec>("run") {
         (project.findProperty("testStopThrows") as String?)?.let { systemProperty("fission.test.stop-throws", it) }
         (project.findProperty("testNoGuard") as String?)?.let { systemProperty("fission.test.no-guard", it) }
         (project.findProperty("checkStream") as String?)?.let { systemProperty("fission.check-stream", it) }
+        (project.findProperty("checkEntityIds") as String?)?.let { systemProperty("fission.check-entity-ids", it) }   // with -PcheckStream: the entity id rewriter against vanilla's codecs
     }
     // ./gradlew :backend:run -PmixinExport=1 : Mixin writes the transformed classes to run/.mixin.out (javap them to see what really got merged)
     if (project.hasProperty("mixinExport")) jvmArgs("-Dmixin.debug.export=true")

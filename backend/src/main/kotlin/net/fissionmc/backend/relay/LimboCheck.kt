@@ -35,10 +35,13 @@ object LimboCheck {
             val config = net.minecraft.network.protocol.configuration.ConfigurationProtocols.CLIENTBOUND.codec()
             val play = GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(server.registryAccess())).codec()
             var phase = "LOGIN"; var decompress: io.netty.channel.embedded.EmbeddedChannel? = null
+            val idCheck = if (System.getProperty("fission.check-entity-ids") != null) EntityIdCheck(log) else null
             frames.forEachIndexed { i, raw ->
                 try {
                     val buf = if (decompress != null) { decompress!!.writeInbound(raw.retain()); decompress!!.readInbound<io.netty.buffer.ByteBuf>() } else raw
+                    val copy = if (idCheck != null && phase == "PLAY") ByteArray(buf.readableBytes()).also { buf.getBytes(buf.readerIndex(), it) } else null
                     val p = when (phase) { "LOGIN" -> login.decode(buf); "CONFIG" -> config.decode(buf); else -> play.decode(buf) }
+                    if (idCheck != null && copy != null) runCatching { idCheck.frame(copy, p) { bytes -> play.decode(Unpooled.wrappedBuffer(bytes)) } }.onFailure { e -> log.warning("[fission] entity id check crashed on stream #$i: $e") }
                     val deep = ((p as? net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket)?.let { c -> runCatching { deepChunkCheck(server, c) }.getOrElse { e -> "deep check FAILED: $e" } }
                         ?: (p as? net.minecraft.network.protocol.game.ClientboundCommandsPacket)?.let { c -> runCatching { deepCommandsCheck(server, c) }.getOrElse { e -> "deep commands check FAILED: $e" } }) ?: ""
                     log.info("[fission] stream #$i ($phase, ${raw.readableBytes()} wire bytes): ${p.javaClass.simpleName}, unread ${buf.readableBytes()} $deep")
@@ -50,6 +53,8 @@ object LimboCheck {
                     }
                 } catch (t: Throwable) { log.warning("[fission] stream #$i ($phase): vanilla client FAILED: $t") }
             }
+            idCheck?.synthetic({ pk -> val out = Unpooled.buffer(); @Suppress("UNCHECKED_CAST") (play as net.minecraft.network.codec.StreamCodec<io.netty.buffer.ByteBuf, net.minecraft.network.protocol.Packet<*>>).encode(out, pk); ByteArray(out.readableBytes()).also { out.readBytes(it) } }) { bytes -> play.decode(Unpooled.wrappedBuffer(bytes)) }
+            idCheck?.report()
             log.info("[fission] stream check done: ${frames.size} frames")
         } catch (t: Throwable) { log.warning("[fission] stream check failed: $t") }
     }

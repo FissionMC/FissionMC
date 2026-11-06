@@ -57,8 +57,25 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private var clientInfoPayload: ByteArray? = null
     private var relayId: Long? = null
     /** A backend switch in progress: the new backend's configuration is being completed by the master (see [Switch.kt]). */
-    private class Switch(val id: Long, val nodeId: String) { val cfg = ConfigVirtualClient(); var inPlay = false; val startedNanos = System.nanoTime() }
+    private class Switch(val id: Long, val nodeId: String) {
+        val cfg = ConfigVirtualClient(); var inPlay = false; val startedNanos = System.nanoTime()
+        /** Seamless transplant: the new backend's Login was consumed and its stream is buffered until the client can take over. */
+        var login: net.fissionmc.master.seamless.SpawnInfo? = null
+        val buffer = ArrayList<ByteArray>(); var gotPosition = false; var timeout: ScheduledFuture<*>? = null
+    }
     private var switching: Switch? = null
+    // ---- seamless switching (no Login/Respawn between same-level backends)
+    private val idMap = net.fissionmc.master.seamless.EntityIdMap()
+    private val clientView = net.fissionmc.master.seamless.ClientView(idMap)
+    private val rewriter = net.fissionmc.master.seamless.EntityRewriter(idMap,
+        net.fissionmc.master.seamless.PeMetadataCodec { f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }) { server.log("[client $playerName] $it") }
+    /** What the backend the client is on told it about its level (null in the limbo): a switch to a backend with the same level can skip the Login. */
+    private var currentSpawn: net.fissionmc.master.seamless.SpawnInfo? = null
+    private val seamless: Boolean get() = server.settings.switchMode == "seamless"
+    /** ChunkBatchFinished frames forwarded whose ChunkBatchReceived the client has not sent yet; after a transplant that many acks still belong to the OLD backend and are swallowed. */
+    private var batchOutstanding = 0; private var staleBatchAcks = 0
+    private val pBatchFinished by lazy { net.fissionmc.master.seamless.PlayPacketIds.c("ChunkBatchFinished") }
+    private val pBatchAck by lazy { net.fissionmc.master.seamless.PlayPacketIds.s("ChunkBatchReceived") }
     private var graceTask: ScheduledFuture<*>? = null
     /** Waiting for the old backend to save the player before the new one is attached. */
     private var switchPending = false
@@ -185,9 +202,12 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             server.log("[client $playerName] DROPPED backend frame id $id: not a clientbound $state packet (client phase=$state)")
             return
         }
-        val frame = toClient(rawFrame) ?: return
+        // seamless switching: entity ids of the current backend -> the client's id space (identity until the first transplant)
+        val rewritten = if (seamless && state == ConnectionState.PLAY) (rewriter.toClient(rawFrame) ?: return) else rawFrame
+        val frame = toClient(rewritten) ?: return
         if (state == ConnectionState.PLAY) {
-            cleanup.observe(frame)
+            cleanup.observe(frame); clientView.observe(frame)
+            if (id == pBatchFinished) batchOutstanding++
             if (id == PlayIds.keepAliveS2C && frame.size >= 9) { backendKeepAlives.add(java.nio.ByteBuffer.wrap(PlayIds.payload(frame)).long); while (backendKeepAlives.size > 8) backendKeepAlives.poll() }
             if (id == PlayIds.commands) { val patched = ChatCommandTree.patch(frame, isAdmin, server.log); if (patched != null) { writeRelay(patched); return } }
         }
@@ -210,12 +230,14 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     override fun detachedFrom(bindingId: Long, reason: String, backendLost: Boolean) { channel.eventLoop().execute {
         val sw = switching
         if (sw != null && sw.id == bindingId) {   // the backend we were switching to refused or died: the player stays where it is
-            switching = null; restoreDataOwner()
+            sw.timeout?.cancel(false); switching = null; restoreDataOwner()
             server.log("[client $playerName] switch to ${sw.nodeId} failed: $reason")
             tell("Could not move to ${sw.nodeId}: ${reason.removePrefix("kick:")}")
             return@execute
         }
         if (bindingId != relayId) return@execute
+        val pendingTransplant = switching?.takeIf { it.login != null }
+        if (pendingTransplant != null) { server.log("[client $playerName] backend ended during a transplant to ${pendingTransplant.nodeId}: taking over now"); completeTransplant(pendingTransplant); return@execute }
         relayId = null; currentNodeId = null; backendLevel = 0
         server.log("[client $playerName] backend session ended: $reason")
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) { channel.close(); return@execute }
@@ -244,7 +266,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private fun toLimboSeamless() {
         server.log("[client] $playerName: backend lost, back to limbo")
         pendingFromBackend.clear(); tap = null; tracker = net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion(), ConnectionState.PLAY)
-        mode = Mode.LIMBO
+        mode = Mode.LIMBO; currentSpawn = null; idMap.start(Limbo.ENTITY_ID); clientView.reset()
         startLimboPlay(cleanup.cleanupFrames())
     }
 
@@ -305,8 +327,70 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             if (r.finished) sw.inPlay = true
             return
         }
+        if (sw.login != null) { bufferForTransplant(sw, frame); return }
         if (Limbo.idOf(frame) != PlayIds.login) { server.log("[client $playerName] dropped play frame ${Limbo.idOf(frame)} from ${sw.nodeId} before its Login"); return }
+        // seamless: the client keeps its level and player when the new backend's level is the same one
+        val cur = currentSpawn; val parsed = runCatching { net.fissionmc.master.seamless.SpawnInfo.parse(frame) }.getOrNull()
+        val why = when {
+            !seamless -> "switch.mode is login"
+            mode != Mode.RELAY || relayId == null -> "the client is in the limbo (first entry)"
+            cur == null -> "the level of the current backend is unknown"
+            parsed == null -> "the Login could not be parsed"
+            else -> cur.incompatibility(parsed)
+        }
+        if (why == null && parsed != null) {
+            sw.login = parsed
+            sw.timeout = channel.eventLoop().schedule({ if (switching === sw) { server.log("[client $playerName] transplant to ${sw.nodeId}: no complete first chunk batch within 4 s, taking over with what arrived"); completeTransplant(sw) } }, 4, TimeUnit.SECONDS)
+            return
+        }
+        server.log("[switch] $playerName -> ${sw.nodeId}: Login+Respawn path because $why")
         completeSwitch(sw, frame)
+    }
+
+    /** The new backend's stream after its Login, held back until the first chunk batch is complete (or 4 s). */
+    private fun bufferForTransplant(sw: Switch, frame: ByteArray) {
+        val id = Limbo.idOf(frame)
+        sw.buffer += frame
+        if (id == net.fissionmc.master.seamless.PlayPacketIds.c("PlayerPosition")) sw.gotPosition = true
+        if ((id == pBatchFinished && sw.gotPosition) || sw.buffer.size > 40_000) completeTransplant(sw)
+    }
+
+    /**
+     * The seamless takeover: no Login, no Respawn, no StartConfiguration. In ONE bundle (the client applies it in one tick): remove what the old backend put on the client,
+     * translate the new Login into incremental packets, replay the new backend's join stream in the client's id space; the chunks follow (and the client's chunks the new
+     * backend does not cover are forgotten). The new backend gets PlayerLoaded from the master: the client does not send one without a Login.
+     */
+    private fun completeTransplant(sw: Switch) {
+        val login = sw.login ?: return
+        if (switching !== sw) return
+        sw.timeout?.cancel(false)
+        val old = relayId; val before = currentNodeId
+        val cleanupTab = cleanup.cleanupFrames()
+        val removal = net.fissionmc.master.seamless.TransplantBuilder.cleanup(idMap, clientView, cleanupTab)
+        val removedEntities = idMap.heldIds().size
+        relayId = sw.id; currentNodeId = sw.nodeId; switching = null
+        if (old != null) server.relay?.detach(old, "switched to ${sw.nodeId}")
+        backendKeepAlives.clear(); pendingFromBackend.clear()
+        staleBatchAcks = batchOutstanding; batchOutstanding = 0
+        idMap.transplantTo(login.playerId)
+        val heldChunks = clientView.chunks.toList(); clientView.objectives.clear(); clientView.teams.clear(); clientView.effects.clear()
+        currentSpawn = login
+        val chunkish = setOf("LevelChunkWithLight", "LightUpdate", "ChunkBatchStart", "ChunkBatchFinished", "ForgetLevelChunk", "ChunksBiomes").map { net.fissionmc.master.seamless.PlayPacketIds.c(it) }.toSet()
+        val (chunkFrames, other) = sw.buffer.partition { Limbo.idOf(it) in chunkish }
+        val bundled = removal.size + other.size < 3500
+        if (bundled) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(net.fissionmc.master.seamless.TransplantBuilder.bundleDelimiter))
+        removal.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); clientView.observe(it) }
+        net.fissionmc.master.seamless.TransplantBuilder.fromLogin(login, idMap.clientSelf).forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
+        other.forEach { deliverRelay(it) }
+        if (bundled) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(net.fissionmc.master.seamless.TransplantBuilder.bundleDelimiter))
+        chunkFrames.forEach { deliverRelay(it) }
+        val sentByNew = clientView.chunks.filter { it !in heldChunks.toSet() }.toSet() + chunkFrames.mapNotNull { f -> if (Limbo.idOf(f) == net.fissionmc.master.seamless.PlayPacketIds.c("LevelChunkWithLight")) io.netty.buffer.Unpooled.wrappedBuffer(f).let { b -> VarInts.tryRead(b); val x = b.readInt(); val z = b.readInt(); (x.toLong() and 0xFFFFFFFFL) or ((z.toLong() and 0xFFFFFFFFL) shl 32) } else null }
+        val forgets = net.fissionmc.master.seamless.TransplantBuilder.forgetOutside(heldChunks, sentByNew, clientView.centerX, clientView.centerZ, login.chunkRadius)
+        forgets.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); clientView.observe(it) }
+        channel.flush()
+        server.relay?.toBackend(sw.id, PlayIds.frame(PlayIds.playerLoaded))
+        announceArrival(sw.nodeId, if (old != null) before else null)
+        server.log("[client] $playerName now on ${sw.nodeId} (transplant: no Login/Respawn, client keeps entity id ${idMap.clientSelf}, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, $removedEntities entities removed, ${removal.size} cleanup frames, ${sw.buffer.size} buffered frames, ${forgets.size} chunks forgotten)")
     }
 
     /** The new backend's Login arrived: leave the old binding, clean up what a new level does not reset, hand the client the Login. */
@@ -324,6 +408,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val cleanupFrames = cleanup.cleanupFrames()
         cleanupFrames.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
         selfEntityId = if (login.size >= 5) java.nio.ByteBuffer.wrap(PlayIds.payload(login)).int else -1
+        idMap.start(selfEntityId); clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
+        currentSpawn = runCatching { net.fissionmc.master.seamless.SpawnInfo.parse(login) }.getOrNull()
         val out = toClient(login)
         if (out != null) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(out))
         // a second Login keeps the old LocalPlayer (bound to the old level): Respawn makes the client build a new one (see RespawnFrames)
@@ -339,7 +425,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val id = server.relay?.attach(this, nodeId)
         if (id == null) { tell("Could not move to ${nodeId ?: "a backend"}: not connected"); return }
         if (old != null) server.relay?.detach(old, "switch (classic)")
-        relayId = id; currentNodeId = server.relay?.nodeIdOf(id); mode = Mode.AWAIT_ACK
+        relayId = id; currentNodeId = server.relay?.nodeIdOf(id); mode = Mode.AWAIT_ACK; currentSpawn = null; clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
         keepAlive?.cancel(false); backendKeepAlives.clear(); pendingFromBackend.clear()
         tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log)
         tracker = tap?.tracker ?: net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
@@ -360,7 +446,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 val bytes = ByteArray(buf.readableBytes()); buf.readBytes(bytes)
                 val id = relayId
                 if (tracker.clientState == ConnectionState.PLAY && interceptClient(bytes)) return
-                val out = fromClient(bytes)
+                val tapped = fromClient(bytes)
+                val out = if (seamless && tapped != null) rewriter.toBackend(tapped) else tapped
                 if (id != null && out != null && !server.relay!!.toBackend(id, out)) pauseReading()
             } finally { ReferenceCountUtil.release(buf) }
             return
@@ -392,6 +479,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 val p = PlayIds.payload(bytes); if (p.size < 8) return false
                 return !backendKeepAlives.remove(java.nio.ByteBuffer.wrap(p).long)   // an answer to a previous backend's challenge would kick the player on this one
             }
+            pBatchAck -> { if (staleBatchAcks > 0) { staleBatchAcks--; return true }; if (batchOutstanding > 0) batchOutstanding--; return false }
             PlayIds.chatCommand, PlayIds.chatCommandSigned -> {
                 val cmd = Strings.readFirst(bytes) ?: return false
                 return MasterCommands.handle(this, server, cmd)
@@ -557,7 +645,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         // coming back from a backend the client keeps its old LocalPlayer: Respawn right after the limbo's Login (see RespawnFrames)
         val withRespawn = if (before.isEmpty()) frames else listOf(frames[0], RespawnFrames.fromLogin(frames[0])) + frames.drop(1)
         Limbo.sendRaw(channel, before + withRespawn)
-        selfEntityId = Limbo.ENTITY_ID
+        selfEntityId = Limbo.ENTITY_ID; idMap.start(Limbo.ENTITY_ID); clientView.reset(); currentSpawn = null; batchOutstanding = 0; staleBatchAcks = 0
         server.log("[client] $playerName joined limbo")
         graceTask?.cancel(false)
         graceTask = channel.eventLoop().schedule({ graceOver = true; tryAttach() }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
