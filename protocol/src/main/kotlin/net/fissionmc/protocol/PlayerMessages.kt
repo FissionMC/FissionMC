@@ -59,7 +59,31 @@ data class MasterStats(
     }
 }
 
-/** Registers player relay messages (ids 48-63; 48-53 used). Ids are wire format: never reuse one. */
+/**
+ * Master -> backend (id 54): [playerId] (a relayed player of this backend) sent chat [text] while in GLOBAL chat mode. The master has
+ * forwarded the client's chat packet right after it, unchanged (a dropped signed packet would break the signature chain). The backend
+ * marks the next chat of that player with this text as global: it runs the Paper chat event path with an EMPTY recipient/viewer set (nothing
+ * is delivered to players) and answers with [GlobalChatResult] carrying the same [seq].
+ */
+data class GlobalChat(val playerId: Long, val seq: Long, val text: String) : NodeMessage
+
+/**
+ * Backend -> master (id 55): what the chat events made of the message. [cancelled]: a plugin cancelled it (do not broadcast).
+ * [modified]: plugins changed the message; then [messageJson] is the final Adventure component (JSON) and is trusted; otherwise the
+ * master formats the original (sanitised) text itself. [displayName] is the sender's display name as plain text (for the `{displayname}` placeholder).
+ */
+data class GlobalChatResult(val playerId: Long, val seq: Long, val cancelled: Boolean, val modified: Boolean, val displayName: String, val messageJson: String) : NodeMessage
+
+/**
+ * Master -> every OTHER backend (id 56), after a global message was accepted: [text] is the final plain text, [messageJson] the final
+ * component. The backend fires the chat events for a never-spawned ghost player named [name] with an empty viewer set: monitor only, a
+ * plugin there cannot modify or cancel anything. [fromBackend] is the sender's backend node id.
+ */
+data class GlobalChatObserved(
+    val uuidHigh: Long, val uuidLow: Long, val name: String, val fromBackend: String, val text: String, val messageJson: String,
+) : NodeMessage
+
+/** Registers player relay messages (ids 48-63; 48-56 used). Ids are wire format: never reuse one. */
 fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerAttach>(48, { m, b ->
         b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeVarInt(m.protocol)
@@ -84,6 +108,11 @@ fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
         MasterStats(b.readLong(), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readLong(), b.readLong(), b.readLong(), b.readLong(),
             b.readVarInt(), b.readVarInt(), b.readVarInt(), List(b.readVarInt().also { require(it in 0..1024) }) { NodeStat(b.readString(64), b.readVarInt(), b.readLong(), b.readBoolean()) })
     })
+    .register<GlobalChat>(54, { m, b -> b.writeLong(m.playerId).writeLong(m.seq).writeString(m.text, 1024) }, { b -> GlobalChat(b.readLong(), b.readLong(), b.readString(1024)) })
+    .register<GlobalChatResult>(55, { m, b -> b.writeLong(m.playerId).writeLong(m.seq).writeBoolean(m.cancelled).writeBoolean(m.modified).writeString(m.displayName, 256).writeString(m.messageJson, 262144) },
+        { b -> GlobalChatResult(b.readLong(), b.readLong(), b.readBoolean(), b.readBoolean(), b.readString(256), b.readString(262144)) })
+    .register<GlobalChatObserved>(56, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeString(m.fromBackend, 64).writeString(m.text, 1024).writeString(m.messageJson, 262144) },
+        { b -> GlobalChatObserved(b.readLong(), b.readLong(), b.readString(64), b.readString(64), b.readString(1024), b.readString(262144)) })
     .register<PlayerPacketToBackend>(49, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToBackend(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerPacketToClient>(50, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToClient(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerDetach>(51, { m, b -> b.writeLong(m.playerId).writeString(m.reason, 256) }, { b -> PlayerDetach(b.readLong(), b.readString(256)) })

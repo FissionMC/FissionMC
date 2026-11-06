@@ -25,7 +25,7 @@ fun main(args: Array<String>) {
     println("[master] event log epoch ${hub.epoch}")
     println("[master] listening on ${listen.host}:${listen.port}, worlds in ${cfg.worldRoot}")
     val clientCfg = ClientConfig.load(Path.of(args.firstOrNull() ?: "fission.properties"))
-    val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay).start() else null
+    val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = net.fissionmc.master.client.MasterSettings.load(Path.of(args.firstOrNull() ?: "fission.properties"))).start() else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })
     val props = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }

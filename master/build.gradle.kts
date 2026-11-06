@@ -43,3 +43,12 @@ tasks.register<JavaExec>("clientProbe") {
     mainClass = "net.fissionmc.master.client.ClientProbeMainKt"
     doFirst { args(project.property("port") as String, project.property("out") as String) }
 }
+
+// Writes the class path of the scripted probes to build/probe.classpath, so scripts can run them with plain java (no Gradle) while servers run.
+tasks.register("probeClasspath") {
+    group = "fission"
+    dependsOn("testClasses"); dependsOn(adventurePatch)
+    val cp = files(adventurePatch) + sourceSets["test"].runtimeClasspath
+    val out = layout.buildDirectory.file("probe.classpath")
+    doLast { out.get().asFile.writeText(cp.asPath) }
+}

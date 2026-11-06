@@ -51,9 +51,9 @@ class PacketTap private constructor(private val channel: Any, val user: User, va
 
     companion object {
         /** Null (and a log line) when PacketEvents cannot create users, e.g. its mapping resources are missing. */
-        fun create(channel: Any, uuid: UUID?, name: String?, version: ClientVersion = ClientVersion.V_26_3, log: (String) -> Unit = {}): PacketTap? = try {
-            val user = User(channel, ConnectionState.CONFIGURATION, version, UserProfile(uuid, name))
-            PacketTap(channel, user, ClientStateTracker(StateIds.forVersion(version)))
+        fun create(channel: Any, uuid: UUID?, name: String?, version: ClientVersion = ClientVersion.V_26_3, log: (String) -> Unit = {}, start: ConnectionState = ConnectionState.CONFIGURATION): PacketTap? = try {
+            val user = User(channel, start, version, UserProfile(uuid, name))
+            PacketTap(channel, user, ClientStateTracker(StateIds.forVersion(version), start))
         } catch (t: Throwable) { log("packet tap unavailable: ${t.javaClass.simpleName}: ${t.message}"); null }
     }
 }

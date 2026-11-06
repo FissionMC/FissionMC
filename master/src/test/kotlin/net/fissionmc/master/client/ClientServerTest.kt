@@ -70,13 +70,19 @@ class TestClient(port: Int) : AutoCloseable {
             override fun flush() { rawOut.flush() }
         }
     }
+    fun readTimeout(ms: Int) { sock.soTimeout = ms }
     fun setState(s: ConnectionState) { user.decoderState = s; user.encoderState = s }
     fun setCompression(t: Int) { threshold = t }
 
-    fun send(w: PacketWrapper<*>) {
+    @Synchronized fun send(w: PacketWrapper<*>) {
         val b = Unpooled.buffer(); w.buffer = b
         w.writeVarInt(w.nativePacketId); w.write()
-        var body = ByteArray(b.readableBytes()); b.readBytes(body)
+        sendRaw(ByteArray(b.readableBytes()).also { b.readBytes(it) })
+    }
+
+    /** Sends one packet frame (id + payload): compression and length prefix are added. */
+    @Synchronized fun sendRaw(frame: ByteArray) {
+        var body = frame
         if (threshold >= 0) {
             val o = Unpooled.buffer()
             if (body.size < threshold) { VarInts.write(o, 0); o.writeBytes(body) }
@@ -111,8 +117,10 @@ class TestClient(port: Int) : AutoCloseable {
     /** The event of the last [readAny] (null if PacketEvents could not map the id). */
     var lastEvent: com.github.retrooper.packetevents.event.PacketSendEvent? = null
     /** Reads one frame with PacketEvents; returns its type (null if PacketEvents cannot map the id) and id. */
+    /** The raw body (packet id + payload) of the last [readAny]. */
+    @Volatile var lastBody: ByteArray = ByteArray(0)
     fun readAny(): Pair<PacketTypeCommon?, Int> {
-        val body = readBody(); val id = VarInts.tryRead(Unpooled.wrappedBuffer(body))!!
+        val body = readBody(); lastBody = body; val id = VarInts.tryRead(Unpooled.wrappedBuffer(body))!!
         return try { val ev = EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(body), false); lastEvent = ev; ev.packetType to id } catch (t: Throwable) { lastEvent = null; null to id }
     }
     /** True if the server sends nothing for [ms] milliseconds. */
@@ -157,8 +165,7 @@ class ClientServerTest {
         c.skip(PacketType.Play.Server.JOIN_GAME); c.skip(PacketType.Play.Server.PLAYER_POSITION_AND_LOOK)
         c.skip(PacketType.Play.Server.CHANGE_GAME_STATE); c.skip(PacketType.Play.Server.UPDATE_VIEW_POSITION)
         c.skip(PacketType.Play.Server.CHUNK_DATA)
-        val chat = c.expect(PacketType.Play.Server.SYSTEM_CHAT_MESSAGE) { WrapperPlayServerSystemChatMessage(it) }
-        assertTrue(chat.message.toString().contains("Waiting for a backend"))
+        assertTrue(c.silentFor(300), "the limbo sends nothing after its Login burst (no chat line)")
         return ok.uuid
     }
 
@@ -233,37 +240,92 @@ class ClientServerTest {
         override fun close(reason: String) { isOpen = false; closed.complete(reason) }
     }
 
-    @Test fun `limbo to backend handoff sends start configuration, then the backend configuration in order`() {
-        val registry = net.fissionmc.master.NodeRegistry()
-        val link = FakeBackendLink()
-        val node = net.fissionmc.master.RegisteredNode(net.fissionmc.net.PeerInfo("b1", net.fissionmc.protocol.NodeRole.BACKEND, 1, MC_VERSION), link)
-        registry.register(node.info, link)
-        val relay = net.fissionmc.master.PlayerRelay(registry)
-        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, compressionThreshold = 256), relay = relay, log = {}).start().use { s ->
+    private class Rig(val registry: net.fissionmc.master.NodeRegistry, val links: Map<String, FakeBackendLink>, val relay: net.fissionmc.master.PlayerRelay)
+    private fun rig(vararg ids: String): Rig {
+        val registry = net.fissionmc.master.NodeRegistry(); val links = ids.associateWith { FakeBackendLink() }
+        links.forEach { (id, l) -> registry.register(net.fissionmc.net.PeerInfo(id, net.fissionmc.protocol.NodeRole.BACKEND, 1, MC_VERSION), l) }
+        return Rig(registry, links, net.fissionmc.master.PlayerRelay(registry))
+    }
+    private fun FakeBackendLink.next(pred: (net.fissionmc.protocol.NodeMessage) -> Boolean): net.fissionmc.protocol.NodeMessage =
+        generateSequence { sent.poll(10, java.util.concurrent.TimeUnit.SECONDS) }.first(pred)
+    private fun frameId(m: net.fissionmc.protocol.NodeMessage) = Limbo.idOf((m as net.fissionmc.protocol.PlayerPacketToBackend).bytes)
+    /** A backend's Login frame with a chosen entity id (the limbo's own Login frame, entity id patched). */
+    private fun loginFrame(entityId: Int): ByteArray {
+        val f = Limbo.encode(Limbo.joinGame(100, Limbo.config.overworldDimensionId)); val o = VarInts.size(Limbo.idOf(f))
+        java.nio.ByteBuffer.wrap(f).putInt(o, entityId); return f
+    }
+
+    @Test fun `limbo to backend switch completes the backend configuration itself and never sends StartConfiguration`() {
+        val r = rig("b1"); val link = r.links.getValue("b1")
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, compressionThreshold = 256), relay = r.relay, log = {}).start().use { s ->
             TestClient(s.port).use { c ->
                 joinLimbo(c, s.port, "Handoff")
-                // vanilla's client reconfigures only a loaded level: nothing may follow the limbo burst until it says so (PlayerLoaded)
-                assertTrue(c.silentFor(700), "no StartConfiguration before the client reported its level loaded")
+                // vanilla's client accepts a new level only when it finished the first one: nothing may follow the limbo burst until PlayerLoaded
+                assertTrue(c.silentFor(700), "nothing before the client reported its level loaded")
                 c.send(WrapperPlayClientPlayerLoaded())
-                // the master asks the (fake) backend to take the player ...
-                val attach = generateSequence { link.sent.poll(10, java.util.concurrent.TimeUnit.SECONDS) }.first { it is net.fissionmc.protocol.PlayerAttach } as net.fissionmc.protocol.PlayerAttach
-                // ... which immediately starts its configuration (recorded from the real backend), BEFORE the client acknowledged anything
-                val real = Limbo.config.let { it.beforeKnownPacks + it.afterKnownPacks }
-                // plus one stray PLAY-state custom_payload (id 24, what the real client choked on) in the middle of the configuration
-                val stray = Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage("minecraft:register", "x".toByteArray()))
-                assertEquals(24, Limbo.idOf(stray), "play custom_payload id")
-                real.forEachIndexed { i, f ->
-                    if (i == 3) relay.handle(registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, stray))
-                    relay.handle(registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, f))
-                }
-                // the client must first be told to reconfigure, and only after its ack may it see backend frames
+                val attach = link.next { it is net.fissionmc.protocol.PlayerAttach } as net.fissionmc.protocol.PlayerAttach
+                val cfg = Limbo.config.let { it.beforeKnownPacks + it.afterKnownPacks }
+                // the backend starts its configuration at once; the master (its virtual client) answers known packs and the end
+                cfg.forEach { f -> r.relay.handle(r.registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, f)) }
+                val known = link.next { it is net.fissionmc.protocol.PlayerPacketToBackend && frameId(it) == PacketType.Configuration.Client.SELECT_KNOWN_PACKS.getId(ClientVersion.V_26_3) }
+                assertTrue(known is net.fissionmc.protocol.PlayerPacketToBackend)
+                link.next { it is net.fissionmc.protocol.PlayerPacketToBackend && frameId(it) == PacketType.Configuration.Client.CONFIGURATION_END_ACK.getId(ClientVersion.V_26_3) }
+                assertTrue(c.silentFor(300), "the client sees none of the backend's configuration")
+                // the backend's play side: Login (entity id 77), then a keepalive
+                r.relay.handle(r.registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, loginFrame(77)))
+                val ka = Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerKeepAlive(4242L))
+                r.relay.handle(r.registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, ka))
+                // the client stays in PLAY: cleanup frames, the Login with the backend's id, the keepalive; never StartConfiguration
+                val types = ArrayList<Pair<com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon?, Int>>()
+                while (types.none { it.first == PacketType.Play.Server.KEEP_ALIVE }) types += c.readAny()
+                assertTrue(types.none { it.first == PacketType.Play.Server.CONFIGURATION_START }, "no StartConfiguration: $types")
+                assertTrue(types.any { it.first == PacketType.Play.Server.JOIN_GAME }, "the backend's Login reaches the client: $types")
+                val login = types.indexOfFirst { it.first == PacketType.Play.Server.JOIN_GAME }
+                assertEquals(PacketType.Play.Server.KEEP_ALIVE, types[login + 1].first, "backend frames follow the Login")
+                // keepalive answers: a stale id (previous backend) must not reach the backend, the current one must
+                c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientKeepAlive(999L))
+                c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientKeepAlive(4242L))
+                val got = link.next { it is net.fissionmc.protocol.PlayerPacketToBackend && frameId(it) == PacketType.Play.Client.KEEP_ALIVE.getId(ClientVersion.V_26_3) } as net.fissionmc.protocol.PlayerPacketToBackend
+                assertEquals(4242L, java.nio.ByteBuffer.wrap(PlayIds.payload(got.bytes)).long, "only the current backend's challenge is forwarded")
+                java.nio.file.Files.write(java.nio.file.Path.of("build/switch-stream.bin"), c.received.toByteArray())
+            }
+        }
+    }
+
+    @Test fun `a backend whose configuration differs falls back to StartConfiguration with a reason`() {
+        val r = rig("b1"); val link = r.links.getValue("b1")
+        val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, compressionThreshold = 256), relay = r.relay, log = { logs += it }).start().use { s ->
+            TestClient(s.port).use { c ->
+                joinLimbo(c, s.port, "Differs")
+                c.send(WrapperPlayClientPlayerLoaded())
+                val attach = link.next { it is net.fissionmc.protocol.PlayerAttach } as net.fissionmc.protocol.PlayerAttach
+                val tags = PacketType.Configuration.Server.UPDATE_TAGS.getId(ClientVersion.V_26_3)
+                val cfg = Limbo.config.let { it.beforeKnownPacks + it.afterKnownPacks }.map { if (Limbo.idOf(it) == tags) it.copyOf().also { b -> b[b.size - 1] = (b[b.size - 1] + 1).toByte() } else it }
+                cfg.forEach { f -> r.relay.handle(r.registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, f)) }
                 c.skip(PacketType.Play.Server.CONFIGURATION_START)
-                c.send(WrapperPlayClientConfigurationAck()); c.setState(ConnectionState.CONFIGURATION)
-                for (f in real) {
-                    val ev = c.readFrameForTest()
-                    assertEquals(Limbo.idOf(f), ev, "backend frame order/identity")
-                }
-                java.nio.file.Files.write(java.nio.file.Path.of("build/handoff-stream.bin"), c.received.toByteArray())
+                assertTrue(logs.any { it.contains("configuration differs") } && logs.any { it.contains("falling back") }, logs.toString())
+            }
+        }
+    }
+
+    @Test fun `backend loss in play returns the client to the limbo without StartConfiguration`() {
+        val r = rig("b1"); val link = r.links.getValue("b1")
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, compressionThreshold = 256), relay = r.relay, log = {}).start().use { s ->
+            r.registry.addListener(r.relay.listener)
+            TestClient(s.port).use { c ->
+                joinLimbo(c, s.port, "Lost")
+                c.send(WrapperPlayClientPlayerLoaded())
+                val attach = link.next { it is net.fissionmc.protocol.PlayerAttach } as net.fissionmc.protocol.PlayerAttach
+                (Limbo.config.let { it.beforeKnownPacks + it.afterKnownPacks }).forEach { f -> r.relay.handle(r.registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, f)) }
+                r.relay.handle(r.registry["b1"]!!, net.fissionmc.protocol.PlayerPacketToClient(attach.playerId, loginFrame(5)))
+                c.skipUntil(PacketType.Play.Server.JOIN_GAME)
+                link.close("test: backend died")
+                // cleanup frames, then the limbo's Login again; the connection stays in PLAY
+                val seen = ArrayList<com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon?>()
+                while (PacketType.Play.Server.JOIN_GAME !in seen) seen += c.readAny().first
+                assertTrue(PacketType.Play.Server.CONFIGURATION_START !in seen, seen.toString())
+                c.skip(PacketType.Play.Server.PLAYER_POSITION_AND_LOOK)
             }
         }
     }

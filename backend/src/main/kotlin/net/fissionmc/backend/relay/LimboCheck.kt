@@ -39,7 +39,8 @@ object LimboCheck {
                 try {
                     val buf = if (decompress != null) { decompress!!.writeInbound(raw.retain()); decompress!!.readInbound<io.netty.buffer.ByteBuf>() } else raw
                     val p = when (phase) { "LOGIN" -> login.decode(buf); "CONFIG" -> config.decode(buf); else -> play.decode(buf) }
-                    val deep = (p as? net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket)?.let { c -> runCatching { deepChunkCheck(server, c) }.getOrElse { e -> "deep check FAILED: $e" } } ?: ""
+                    val deep = ((p as? net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket)?.let { c -> runCatching { deepChunkCheck(server, c) }.getOrElse { e -> "deep check FAILED: $e" } }
+                        ?: (p as? net.minecraft.network.protocol.game.ClientboundCommandsPacket)?.let { c -> runCatching { deepCommandsCheck(server, c) }.getOrElse { e -> "deep commands check FAILED: $e" } }) ?: ""
                     log.info("[fission] stream #$i ($phase, ${raw.readableBytes()} wire bytes): ${p.javaClass.simpleName}, unread ${buf.readableBytes()} $deep")
                     when (p) {
                         is net.minecraft.network.protocol.login.ClientboundLoginCompressionPacket -> decompress = io.netty.channel.embedded.EmbeddedChannel(net.minecraft.network.CompressionDecoder(p.compressionThreshold, false))
@@ -51,6 +52,22 @@ object LimboCheck {
             }
             log.info("[fission] stream check done: ${frames.size} frames")
         } catch (t: Throwable) { log.warning("[fission] stream check failed: $t") }
+    }
+
+    /**
+     * Deep commands check: what the client does with ClientboundCommandsPacket (build the Brigadier tree from the entries); reports the root's
+     * literal children and the children of `chat` (the master adds `/chat global|local|toggle`).
+     */
+    private fun deepCommandsCheck(server: MinecraftServer, p: net.minecraft.network.protocol.game.ClientboundCommandsPacket): String {
+        val ctx = net.minecraft.commands.CommandBuildContext.simple(server.registryAccess(), net.minecraft.world.flag.FeatureFlags.REGISTRY.allFlags())
+        val builder = object : net.minecraft.network.protocol.game.ClientboundCommandsPacket.NodeBuilder<Any> {
+            override fun createLiteral(id: String) = com.mojang.brigadier.builder.LiteralArgumentBuilder.literal<Any>(id)
+            override fun createArgument(id: String, type: com.mojang.brigadier.arguments.ArgumentType<*>, suggestionId: net.minecraft.resources.Identifier?) = com.mojang.brigadier.builder.RequiredArgumentBuilder.argument<Any, Any?>(id, type as com.mojang.brigadier.arguments.ArgumentType<Any?>)
+            override fun configure(input: com.mojang.brigadier.builder.ArgumentBuilder<Any, *>, executable: Boolean, restricted: Boolean) = input
+        }
+        val root = p.getRoot(ctx, builder)
+        val chat = root.getChild("chat")
+        return "commands tree OK: ${root.children.size} root children, chat=${chat?.children?.map { it.name }}"
     }
 
     /**
@@ -154,7 +171,8 @@ object LimboCheck {
     @JvmStatic fun once(server: MinecraftServer) {
         if (done) return
         System.getProperty("fission.record-chunk")?.let { recordChunk(server, it) }
-        System.getProperty("fission.check-stream")?.let { checkStream(server, it) }
+        // a comma separated list of files is replayed one after the other (each file is one client connection)
+        System.getProperty("fission.check-stream")?.let { spec -> spec.split(',').filter { it.isNotBlank() }.forEach { f -> log.info("[fission] stream check of $f"); checkStream(server, f) }; log.info("[fission] all stream checks finished") }
         System.getProperty("fission.check-pipeline")?.let { checkPipeline(server, it) }
         if (System.getProperty("fission.check-ids") != null) runCatching {
             fun id(c: net.minecraft.network.codec.StreamCodec<io.netty.buffer.ByteBuf, out net.minecraft.network.protocol.Packet<*>>, p: net.minecraft.network.protocol.Packet<*>): Int {

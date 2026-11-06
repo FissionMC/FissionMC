@@ -51,7 +51,7 @@ class LimboTest {
 
     @Test fun `play packets are produced for the recorded overworld id`() {
         val frames = Limbo.playFrames(100, Limbo.config.overworldDimensionId)
-        assertEquals(6, frames.size)
+        assertEquals(5, frames.size)
         assertEquals(PacketType.Play.Server.JOIN_GAME.getId(v), Limbo.idOf(frames[0]))
     }
 

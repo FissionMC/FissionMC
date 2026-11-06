@@ -31,7 +31,10 @@ class ClientServer(
     private val extraPlayers: () -> Int = { 0 },
     val relay: net.fissionmc.master.PlayerRelay? = null,
     val log: (String) -> Unit = { println(it) },
+    val settings: MasterSettings = MasterSettings(),
 ) : Closeable {
+    /** Global chat (needs the relay). */
+    val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
     private val dumpCounter = java.util.concurrent.atomic.AtomicInteger()
     val keyPair: KeyPair = LoginCrypto.newKeyPair()
     private val sessions = ConcurrentHashMap<UUID, ClientSession>()
@@ -54,6 +57,10 @@ class ClientServer(
         log("[master] clients: ${config.host}:$port, online-mode=${config.onlineMode}, compression=${config.compressionThreshold}")
         return this
     }
+
+    /** Sessions that are playing on a backend right now (global chat audience). */
+    fun allSessions(): List<ClientSession> = sessions.values.toList()
+    fun findByName(name: String): ClientSession? = sessions.values.firstOrNull { it.playerName.equals(name, ignoreCase = true) }
 
     /** A backend became available: move waiting limbo players over. */
     fun attachWaiting() { sessions.values.forEach { it.tryAttach() } }

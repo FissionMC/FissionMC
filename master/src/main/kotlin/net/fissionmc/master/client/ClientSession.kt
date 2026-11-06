@@ -40,8 +40,10 @@ import javax.crypto.Cipher
  * All packets are decoded/encoded with PacketEvents wrappers.
  */
 class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAdapter(), net.fissionmc.master.RelayClient {
-    private enum class Mode { LIMBO, AWAIT_ACK, RELAY, REJOIN }
+    private enum class Mode { LIMBO, AWAIT_ACK, RELAY }
     private var mode = Mode.LIMBO
+    val inRelay: Boolean get() = mode == Mode.RELAY
+    val inLimbo: Boolean get() = mode == Mode.LIMBO
     private var configSent = false
     /** The client reported ServerboundPlayerLoaded (ClientPacketListener.notifyPlayerLoaded): its level is up, reconfiguring is safe. */
     private var clientLoaded = false
@@ -54,6 +56,18 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
      */
     private var clientInfoPayload: ByteArray? = null
     private var relayId: Long? = null
+    /** A backend switch in progress: the new backend's configuration is being completed by the master (see [Switch.kt]). */
+    private class Switch(val id: Long, val nodeId: String) { val cfg = ConfigVirtualClient(); var inPlay = false; val startedNanos = System.nanoTime() }
+    private var switching: Switch? = null
+    private var graceTask: ScheduledFuture<*>? = null
+    private val cleanup = SwitchCleanup({ f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }, { server.log("[client $playerName] $it") })
+    /** Keepalive ids the CURRENT backend sent and the client has not answered yet (a stale answer for a previous backend must not reach this one). */
+    private val backendKeepAlives = java.util.ArrayDeque<Long>()
+    /** Entity id the current Login gave the client (informational: the scripted test asserts it follows the backend's Login). */
+    @Volatile var selfEntityId = -1; private set
+    /** Backend this client is currently relayed to (null in limbo). */
+    @Volatile var currentNodeId: String? = null; private set
+    @Volatile var chatGlobal = server.settings.chat.defaultGlobal
     private var hostName = ""
     private var tap: net.fissionmc.packets.PacketTap? = null
     private var tracker = net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
@@ -79,6 +93,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private var registered = false
     val state: ConnectionState get() = user.decoderState
     val playerName: String get() = prof?.name ?: username
+    val bindingId: Long? get() = relayId
+    val uuid: java.util.UUID? get() = prof?.uuid
+    /** True when the client is in the PLAY phase on a backend (global chat and `/fission send` apply). */
+    val inBackendPlay: Boolean get() = mode == Mode.RELAY && tracker.clientState == ConnectionState.PLAY && tracker.serverState == ConnectionState.PLAY
 
     override fun channelActive(ctx: ChannelHandlerContext) {
         channel = ctx.channel()
@@ -89,6 +107,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     override fun channelInactive(ctx: ChannelHandlerContext) {
         keepAlive?.cancel(false)
         relayId?.let { server.relay?.detach(it, "client left") }
+        switching?.let { server.relay?.detach(it.id, "client left") }
         if (registered) server.unregister(this)
         ctx.fireChannelInactive()
     }
@@ -104,8 +123,17 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         }, 20, 20, TimeUnit.MILLISECONDS)
     }
 
-    override fun deliver(rawFrame: ByteArray) { channel.eventLoop().execute {
-        if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) return@execute
+    override fun deliver(rawFrame: ByteArray) = deliverFrom(relayId ?: -1L, rawFrame)
+
+    override fun deliverFrom(bindingId: Long, rawFrame: ByteArray) { channel.eventLoop().execute {
+        val sw = switching
+        if (sw != null && sw.id == bindingId) { onSwitchFrame(sw, rawFrame); return@execute }
+        if (bindingId != relayId) return@execute   // a binding that was already detached
+        deliverRelay(rawFrame)
+    } }
+
+    private fun deliverRelay(rawFrame: ByteArray) {
+        if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) return
         // A frame whose id does not exist in the phase the client is in would make the vanilla client drop the connection
         // ("Received unknown packet id N" in IdDispatchCodec). Vanilla's server cannot produce one (its outbound protocol is switched
         // together with the client's: ServerGamePacketListenerImpl.switchToConfig / handleConfigurationFinished); a backend that does
@@ -113,57 +141,151 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val state = tracker.serverState; val id = tracker.packetId(rawFrame)
         if (PacketType.getById(com.github.retrooper.packetevents.protocol.PacketSide.SERVER, state, ClientVersion.V_26_3, id) == null) {
             server.log("[client $playerName] DROPPED backend frame id $id: not a clientbound $state packet (client phase=$state)")
-            return@execute
+            return
         }
-        val frame = toClient(rawFrame) ?: return@execute
+        val frame = toClient(rawFrame) ?: return
+        if (state == ConnectionState.PLAY) {
+            cleanup.observe(frame)
+            if (id == PlayIds.keepAliveS2C && frame.size >= 9) { backendKeepAlives.add(java.nio.ByteBuffer.wrap(PlayIds.payload(frame)).long); while (backendKeepAlives.size > 8) backendKeepAlives.poll() }
+            if (id == PlayIds.commands) { val patched = ChatCommandTree.patch(frame, server.log); if (patched != null) { writeRelay(patched); return } }
+        }
         when (mode) {
-            Mode.RELAY -> {
-                if (!channel.isActive) return@execute
-                if (!channel.isWritable && channel.bytesBeforeWritable() == 0L) { /* flush pending below */ }
-                channel.writeAndFlush(io.netty.buffer.Unpooled.wrappedBuffer(frame))
-                if (channel.bytesBeforeUnwritable() == 0L) overflow++ else overflow = 0
-                if (overflow > 20_000) { server.log("[client $playerName] too slow, dropping"); channel.close() }
-            }
+            Mode.RELAY -> writeRelay(frame)
             else -> if (pendingFromBackend.size < 20_000) pendingFromBackend.add(frame) else channel.close()
         }
-    } }
+    }
+
+    private fun writeRelay(frame: ByteArray) {
+        if (!channel.isActive) return
+        channel.writeAndFlush(io.netty.buffer.Unpooled.wrappedBuffer(frame))
+        if (channel.bytesBeforeUnwritable() == 0L) overflow++ else overflow = 0
+        if (overflow > 20_000) { server.log("[client $playerName] too slow, dropping"); channel.close() }
+    }
     private var overflow = 0
 
-    override fun detached(reason: String, backendLost: Boolean) { channel.eventLoop().execute {
-        relayId = null
+    override fun detached(reason: String, backendLost: Boolean) = detachedFrom(relayId ?: -1L, reason, backendLost)
+
+    override fun detachedFrom(bindingId: Long, reason: String, backendLost: Boolean) { channel.eventLoop().execute {
+        val sw = switching
+        if (sw != null && sw.id == bindingId) {   // the backend we were switching to refused or died: the player stays where it is
+            switching = null
+            server.log("[client $playerName] switch to ${sw.nodeId} failed: $reason")
+            tell("Could not move to ${sw.nodeId}: ${reason.removePrefix("kick:")}")
+            return@execute
+        }
+        if (bindingId != relayId) return@execute
+        relayId = null; currentNodeId = null
         server.log("[client $playerName] backend session ended: $reason")
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) { channel.close(); return@execute }
         // the client's real phase is what the tracker saw, not what we last set by hand
         user.decoderState = tracker.clientState; user.encoderState = tracker.serverState
         when {
-            backendLost && mode == Mode.RELAY && tracker.clientState == ConnectionState.PLAY && tracker.serverState == ConnectionState.PLAY -> backToLimbo()
+            // the backend died while the client plays: back to the limbo in the PLAY state (no Reconfiguring screen), or on to the backend we are switching to
+            backendLost && mode == Mode.RELAY && tracker.clientState == ConnectionState.PLAY && tracker.serverState == ConnectionState.PLAY ->
+                if (switching == null) toLimboSeamless() else server.log("[client $playerName] waiting for the switch to ${switching!!.nodeId}")
             reason.startsWith("kick:") -> disconnect(reason.removePrefix("kick:"))
             else -> channel.close()   // mid-configuration there is no way back, the client has to reconnect
         }
     } }
 
-    /** The backend died while the client was playing: reconfigure the client into limbo (play -> configuration -> limbo). */
-    private fun backToLimbo() {
-        mode = Mode.REJOIN; pendingFromBackend.clear(); configSent = false
+    /** Runs [r] on this client's event loop after [delayMs]. */
+    fun schedule(delayMs: Long, r: Runnable) { channel.eventLoop().schedule(r, delayMs, TimeUnit.MILLISECONDS) }
+
+    /** A system chat line from the master itself (only while the client is in the PLAY phase). */
+    fun tell(text: String) = tell(Component.text(text))
+    fun tell(c: Component) { channel.eventLoop().execute {
+        if (!channel.isActive || mode != Mode.RELAY || tracker.serverState != ConnectionState.PLAY) return@execute
+        writeRelay(Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage(false, c)))
+    } }
+
+    /** The backend died while the client was playing: put it into the limbo without leaving the PLAY state (cleanup, then the limbo's Login). */
+    private fun toLimboSeamless() {
         server.log("[client] $playerName: backend lost, back to limbo")
-        send(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerConfigurationStart())
+        pendingFromBackend.clear(); tap = null; tracker = net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion(), ConnectionState.PLAY)
+        mode = Mode.LIMBO
+        startLimboPlay(cleanup.cleanupFrames())
     }
 
-    /** Moves a limbo player to a backend (if one is alive): play -> configuration, then the backend's configuration/play is relayed. */
-    fun tryAttach() { channel.eventLoop().execute {
-        // Vanilla's client only reconfigures a running level (ClientPacketListener.handleConfigurationStart clears the level it is still
-        // loading otherwise: the real-client failure happened when StartConfiguration followed the Login burst immediately). So wait for
-        // ServerboundPlayerLoaded; a client that never sends it (no level ready) is attached after a grace period anyway.
-        if (mode != Mode.LIMBO || user.decoderState != ConnectionState.PLAY || !channel.isActive) return@execute
-        if (!clientLoaded && !graceOver) return@execute
-        val id = server.relay?.attach(this) ?: return@execute
-        relayId = id; mode = Mode.AWAIT_ACK
+    /** Moves a limbo player to a backend (if one is alive), see [startSwitch]. */
+    fun tryAttach() { channel.eventLoop().execute { if (mode == Mode.LIMBO) startSwitch(null) } }   // timers and backend joins only ever move LIMBO players
+
+    /**
+     * Moves the client to [nodeId] (round robin when null) without leaving the PLAY state. The new backend starts its CONFIGURATION with
+     * the master as its client ([ConfigVirtualClient]); its Login completes the switch ([completeSwitch]). If the backend's configuration
+     * differs from the one the client got, the old StartConfiguration path is used for this switch ([classicAttach]).
+     * [report] receives a short reason when nothing could be started.
+     */
+    fun startSwitch(nodeId: String?, report: (String) -> Unit = {}) { channel.eventLoop().execute {
+        if (!channel.isActive) return@execute
+        if (mode == Mode.LIMBO && user.decoderState != ConnectionState.PLAY) return@execute
+        if (switching != null) { report("a switch is already running"); return@execute }
+        if (mode == Mode.LIMBO) {
+            // Vanilla's client only accepts the second Login once it finished loading the first level it got (the real-client failure
+            // happened when StartConfiguration followed the limbo burst immediately); a client that never says so is moved after a grace period.
+            if (!clientLoaded && !graceOver) { report("the player is still loading the limbo"); return@execute }
+        } else if (mode != Mode.RELAY || tracker.clientState != ConnectionState.PLAY || tracker.serverState != ConnectionState.PLAY) { report("the player is busy"); return@execute }
+        if (nodeId != null && nodeId == currentNodeId) { report("already on $nodeId"); return@execute }
+        val id = server.relay?.attach(this, nodeId)
+        if (id == null) { report(if (nodeId == null) "no backend is alive" else "backend $nodeId is not connected"); return@execute }
+        val node = server.relay!!.nodeIdOf(id) ?: "?"
+        switching = Switch(id, node)
+        // the client's real options go first, like in the first configuration of a fresh vanilla connection
+        clientInfoPayload?.let { p -> server.relay?.toBackend(id, PlayIds.frame(0, p)) }
+        server.log("[client] $playerName -> backend $node (player $id), seamless")
+    } }
+
+    private fun onSwitchFrame(sw: Switch, frame: ByteArray) {
+        if (!sw.inPlay) {
+            val r = sw.cfg.onFrame(frame)
+            r.replies.forEach { server.relay?.toBackend(sw.id, it) }
+            if (r.abort != null) {
+                server.log("[client $playerName] switch to ${sw.nodeId}: ${r.abort}")
+                switching = null; server.relay?.detach(sw.id, "switch aborted")
+                if (r.mismatch) { server.log("[client $playerName] falling back to StartConfiguration for ${sw.nodeId}"); classicAttach(sw.nodeId) }
+                else tell("Could not move to ${sw.nodeId}: ${r.abort}")
+                return
+            }
+            if (r.finished) sw.inPlay = true
+            return
+        }
+        if (Limbo.idOf(frame) != PlayIds.login) { server.log("[client $playerName] dropped play frame ${Limbo.idOf(frame)} from ${sw.nodeId} before its Login"); return }
+        completeSwitch(sw, frame)
+    }
+
+    /** The new backend's Login arrived: leave the old binding, clean up what a new level does not reset, hand the client the Login. */
+    private fun completeSwitch(sw: Switch, login: ByteArray) {
+        val old = relayId
+        relayId = sw.id; currentNodeId = sw.nodeId; switching = null
+        if (old != null) server.relay?.detach(old, "switched to ${sw.nodeId}")
+        keepAlive?.cancel(false); keepAlive = null
+        backendKeepAlives.clear()
+        pendingFromBackend.clear()
+        mode = Mode.RELAY
+        tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log, ConnectionState.PLAY)
+        tracker = tap?.tracker ?: net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion(), ConnectionState.PLAY)
+        val cleanupFrames = cleanup.cleanupFrames()
+        cleanupFrames.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
+        selfEntityId = if (login.size >= 5) java.nio.ByteBuffer.wrap(PlayIds.payload(login)).int else -1
+        val out = toClient(login)
+        if (out != null) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(out))
+        channel.flush()
+        server.log("[client] $playerName now on ${sw.nodeId} (Login entity id $selfEntityId, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, ${cleanupFrames.size} cleanup frames)")
+    }
+
+    /** The old way: StartConfiguration, the client reconfigures (shows "Reconfiguring"). Used only when the backend's configuration differs. */
+    private fun classicAttach(nodeId: String?) {
+        val old = relayId
+        val id = server.relay?.attach(this, nodeId)
+        if (id == null) { tell("Could not move to ${nodeId ?: "a backend"}: not connected"); return }
+        if (old != null) server.relay?.detach(old, "switch (classic)")
+        relayId = id; currentNodeId = server.relay?.nodeIdOf(id); mode = Mode.AWAIT_ACK
+        keepAlive?.cancel(false); backendKeepAlives.clear(); pendingFromBackend.clear()
         tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log)
         tracker = tap?.tracker ?: net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
-        keepAlive?.cancel(false)
+        user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
         send(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerConfigurationStart())
-        server.log("[client] $playerName -> backend (player $id)")
-    } }
+        server.log("[client] $playerName -> backend $currentNodeId (player $id), classic StartConfiguration")
+    }
 
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
         server.log("[client ${channel.remoteAddress()}] ${cause.javaClass.simpleName}: ${cause.message}")
@@ -176,6 +298,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             try {
                 val bytes = ByteArray(buf.readableBytes()); buf.readBytes(bytes)
                 val id = relayId
+                if (tracker.clientState == ConnectionState.PLAY && interceptClient(bytes)) return
                 val out = fromClient(bytes)
                 if (id != null && out != null && !server.relay!!.toBackend(id, out)) pauseReading()
             } finally { ReferenceCountUtil.release(buf) }
@@ -199,6 +322,34 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             }
         } catch (t: Throwable) { exceptionCaught(ctx, t) }
         finally { ReferenceCountUtil.release(buf) }
+    }
+
+    /** Master-owned client packets in the PLAY phase (keepalive filter, `/chat`, `/fission send`). True = swallowed here. */
+    private fun interceptClient(bytes: ByteArray): Boolean {
+        when (val pid = tracker.packetId(bytes)) {
+            PlayIds.keepAliveC2S -> {
+                val p = PlayIds.payload(bytes); if (p.size < 8) return false
+                return !backendKeepAlives.remove(java.nio.ByteBuffer.wrap(p).long)   // an answer to a previous backend's challenge would kick the player on this one
+            }
+            PlayIds.chatCommand, PlayIds.chatCommandSigned -> {
+                val cmd = Strings.readFirst(bytes) ?: return false
+                return MasterCommands.handle(this, server, cmd)
+            }
+            PlayIds.chat -> {
+                val msg = Strings.readFirst(bytes) ?: return false
+                onChat(msg)   // never swallowed: a dropped signed message would break the client's signature chain; the backend decides what happens to it
+                return false
+            }
+            else -> { if (pid < 0) return false }
+        }
+        return false
+    }
+
+    /** Global chat: tell the sender's backend to run the event path for this message (see [GlobalChatHub]). */
+    private fun onChat(text: String) {
+        if (!chatGlobal) return
+        val id = relayId ?: return
+        server.chat?.onGlobalMessage(this, id, text)
     }
 
     // ---- sending ----
@@ -325,13 +476,23 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     // ---- limbo play ----
-    private fun enterPlay() {
+    private fun enterPlay() { startLimboPlay(emptyList()) }
+
+    /**
+     * The limbo's play entry sequence (Login first). [before] is sent ahead of it when the client is already in PLAY (coming back from a
+     * backend: cleanup frames); the second Login makes the client build a new level, like vanilla's ClientPacketListener.handleLogin does.
+     */
+    private fun startLimboPlay(before: List<ByteArray>) {
         clientLoaded = false; graceOver = false   // a re-entered limbo (backend lost) loads its level again
         user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
-        Limbo.sendRaw(channel, Limbo.playFrames(server.config.maxPlayers, Limbo.config.overworldDimensionId))
+        currentNodeId = null; backendKeepAlives.clear()
+        Limbo.sendRaw(channel, before + Limbo.playFrames(server.config.maxPlayers, Limbo.config.overworldDimensionId))
+        selfEntityId = Limbo.ENTITY_ID
         server.log("[client] $playerName joined limbo")
-        channel.eventLoop().schedule({ graceOver = true; tryAttach() }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
+        graceTask?.cancel(false)
+        graceTask = channel.eventLoop().schedule({ graceOver = true; tryAttach() }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
         lastKeepAliveAck = System.nanoTime()
+        keepAlive?.cancel(false)
         keepAlive = channel.eventLoop().scheduleAtFixedRate({
             if (mode != Mode.LIMBO) return@scheduleAtFixedRate   // nothing play-state after StartConfiguration (ServerGamePacketListenerImpl.switchToConfig swaps the outbound protocol at once)
             if (System.nanoTime() - lastKeepAliveAck > TimeUnit.SECONDS.toNanos(30)) { disconnect("Timed out"); return@scheduleAtFixedRate }
@@ -341,13 +502,6 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     private fun onPlay(e: PacketReceiveEvent) {
-        if (mode == Mode.REJOIN) {
-            if (e.packetType == PacketType.Play.Client.CONFIGURATION_ACK) {
-                user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION
-                mode = Mode.LIMBO; tap = null; Limbo.sendRaw(channel, Limbo.config.beforeKnownPacks)
-            }
-            return
-        }
         if (mode == Mode.AWAIT_ACK) {
             if (e.packetType == PacketType.Play.Client.CONFIGURATION_ACK) {
                 user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION

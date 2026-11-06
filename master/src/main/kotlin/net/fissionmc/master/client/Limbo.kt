@@ -86,6 +86,9 @@ object Limbo {
         parse(readFrames(bytes))
     }
 
+    /** Hashes of the recorded data frames (features, known packs, registries, tags): what a backend's configuration must equal for a seamless switch. */
+    val configHashes: List<String> by lazy { ConfigVirtualClient.dataHashes(config.beforeKnownPacks + config.afterKnownPacks) }
+
     /** Raw frames (packet id + payload), exactly as the real server produced them. */
     fun sendRaw(ch: io.netty.channel.Channel, frames: List<ByteArray>) {
         frames.forEach { ch.write(Unpooled.wrappedBuffer(it)) }; ch.flush()
@@ -121,11 +124,11 @@ object Limbo {
         Limbo::class.java.getResourceAsStream("/limbo-chunk.bin")?.readAllBytes() ?: error("limbo-chunk.bin is missing: record it with -PrecordChunk")
     }
 
+    /** An unsigned system chat line (the limbo itself sends none: nothing is sent or received in limbo). */
     fun chat(text: String): PacketWrapper<*> = WrapperPlayServerSystemChatMessage(false, Component.text(text))
 
     /** The whole play-phase entry sequence as raw frames (wrappers encoded, the chunk replayed from the vanilla recording). */
     fun playFrames(maxPlayers: Int, overworldId: Int): List<ByteArray> = listOf(
         encode(joinGame(maxPlayers, overworldId)), encode(position()), encode(startLoadingChunks()), encode(viewPosition()), chunkFrame,
-        encode(chat("You are connected to the FissionMC master. Waiting for a backend...")),
     )
 }

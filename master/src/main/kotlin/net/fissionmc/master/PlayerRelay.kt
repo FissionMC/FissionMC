@@ -14,6 +14,10 @@ interface RelayClient {
     val virtualHost: String get() = ""
     /** A packet frame (id + payload) from the backend for this client. Called on the node link's thread. */
     fun deliver(frame: ByteArray)
+    /** Like [deliver], but says which binding (player id of an [PlayerRelay.attach]) the frame came from; a client with two bindings (backend switch) overrides this. */
+    fun deliverFrom(bindingId: Long, frame: ByteArray) = deliver(frame)
+    /** Like [detached], for a client that may hold two bindings at once. */
+    fun detachedFrom(bindingId: Long, reason: String, backendLost: Boolean = false) = detached(reason, backendLost)
     /**
      * The backend session ended. [backendLost] is true when the backend itself went away (the client may be sent back to limbo);
      * otherwise the backend closed/kicked the player; [reason] starting with `kick:` carries a message for the client.
@@ -40,11 +44,20 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** Relayed players per backend node id. */
     fun playersByNode(): Map<String, Int> = bindings.values.groupingBy { it.node.info.nodeId }.eachCount()
 
-    /** Attaches [client] to a live backend; returns the player id, or null if no backend is alive. */
-    fun attach(client: RelayClient): Long? {
+    /** Node id a binding talks to (null once detached). */
+    fun nodeIdOf(id: Long): String? = bindings[id]?.node?.info?.nodeId
+
+    /** Binding ids of all players currently attached (any backend), with their node id. */
+    fun bindingNodes(): Map<Long, String> = bindings.mapValues { it.value.node.info.nodeId }
+
+    /**
+     * Attaches [client] to a live backend; returns the player id, or null if no backend is alive. With [nodeId] the named backend is used
+     * (null when that one is not alive), otherwise round robin.
+     */
+    fun attach(client: RelayClient, nodeId: String? = null): Long? {
         val live = registry.all.filter { it.link.isOpen }.sortedBy { it.info.nodeId }
         if (live.isEmpty()) return null
-        val node = live[Math.floorMod(rr.getAndIncrement(), live.size)]
+        val node = if (nodeId != null) live.firstOrNull { it.info.nodeId == nodeId } ?: return null else live[Math.floorMod(rr.getAndIncrement(), live.size)]
         val id = ids.getAndIncrement()
         val p = client.profile
         bindings[id] = Binding(id, node, client)
@@ -61,6 +74,15 @@ class PlayerRelay(private val registry: NodeRegistry) {
         return b.node.link.isWritable
     }
 
+    /** Sends a control message (not a packet frame) to the backend a binding talks to. */
+    fun sendTo(id: Long, msg: NodeMessage) { bindings[id]?.node?.link?.takeIf { it.isOpen }?.send(msg) }
+
+    /** Sends [msg] to every live backend except [nodeId]. */
+    fun broadcastExcept(nodeId: String, msg: NodeMessage) { registry.broadcast(msg, nodeId) }
+
+    /** Receives the backends' answers to global chat messages (set by the master main / tests). */
+    @Volatile var chatResultHandler: ((GlobalChatResult) -> Unit)? = null
+
     fun isWritable(id: Long): Boolean = bindings[id]?.node?.link?.isWritable ?: true
 
     /** The client went away. */
@@ -71,8 +93,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
 
     fun handle(node: RegisteredNode, msg: NodeMessage): Boolean {
         when (msg) {
-            is PlayerPacketToClient -> { framesOut.incrementAndGet(); bytesOut.addAndGet(msg.bytes.size.toLong()); bindings[msg.playerId]?.takeIf { it.node === node }?.client?.deliver(msg.bytes) }
-            is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detached(msg.reason) }
+            is PlayerPacketToClient -> { framesOut.incrementAndGet(); bytesOut.addAndGet(msg.bytes.size.toLong()); bindings[msg.playerId]?.takeIf { it.node === node }?.let { it.client.deliverFrom(it.id, msg.bytes) } }
+            is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
+            is GlobalChatResult -> chatResultHandler?.invoke(msg)
             else -> return false
         }
         return true
@@ -81,7 +104,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** All players of a backend that left lose their session. */
     val listener = object : NodeRegistry.Listener {
         override fun left(node: RegisteredNode, reason: String) {
-            bindings.values.filter { it.node === node }.forEach { bindings.remove(it.id); it.client.detached("backend ${node.info.nodeId} lost: $reason", true) }
+            bindings.values.filter { it.node === node }.forEach { bindings.remove(it.id); it.client.detachedFrom(it.id, "backend ${node.info.nodeId} lost: $reason", true) }
         }
     }
 }

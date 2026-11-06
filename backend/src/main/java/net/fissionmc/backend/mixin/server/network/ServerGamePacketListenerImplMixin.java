@@ -207,6 +207,10 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
         if (msg.isEmpty() || this.player.getChatVisibility() == ChatVisiblity.HIDDEN) {
             return;
         }
+        // FissionMC: global chat (the master marked this message): run the events with an empty audience, deliver nothing here
+        if (net.fissionmc.backend.relay.GlobalChatBackend.intercept(this.player, msg, original, async)) {
+            return;
+        }
 
         if (this.player.getChatVisibility() == ChatVisiblity.SYSTEM) {
             // Do nothing, this is coming from a plugin

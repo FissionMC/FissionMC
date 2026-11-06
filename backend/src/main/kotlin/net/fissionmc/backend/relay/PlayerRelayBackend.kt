@@ -83,6 +83,7 @@ object PlayerRelayBackend {
         net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { net.fissionmc.backend.node.MasterInfo.lines() }
         NodeBootstrap.addMessageHandler { m ->
             if (m is MasterStats) net.fissionmc.backend.node.MasterInfo.onStats(m)
+            if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)
             if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }
         }
         enabled = true
@@ -104,6 +105,7 @@ object PlayerRelayBackend {
 
     @JvmStatic fun tick(server: MinecraftServer) {
         serverRef = server
+        GlobalChatBackend.setServer(server)
         LimboCheck.once(server)
         GameplayCheck.tick(server)
         drain(server)
@@ -180,7 +182,7 @@ object PlayerRelayBackend {
                 p.addFirst("fission_out", Out(v))
             }
         })
-        v.tap = net.fissionmc.packets.PacketTap.create(v.channel, profile.id(), profile.name(), com.github.retrooper.packetevents.protocol.player.ClientVersion.getById(a.protocol)) { log.info("[fission] ${a.name}: $it") }
+        v.tap = net.fissionmc.packets.PacketTap.create(v.channel, profile.id(), profile.name(), com.github.retrooper.packetevents.protocol.player.ClientVersion.getById(a.protocol), log = { log.info("[fission] ${a.name}: $it") })
         v.channel.closeFuture().addListener {
             val removed = synchronized(sessions) { sessions.remove(v.id) }   // idempotent
             NodeBootstrap.link?.takeIf { it.isOpen }?.send(PlayerDetach(v.id, "closed on backend"))
