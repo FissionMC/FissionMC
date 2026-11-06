@@ -19,7 +19,25 @@ fun main(args: Array<String>) {
     val propsEarly = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
     relay.playerData = PlayerDataStore(Path.of(propsEarly.getProperty("playerdata.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "playerdata"), { println(it) })
     registry.addListener(relay.listener)
-    val master = MasterServer(transport, listen, cfg.worldRoot, registry) { n, m -> if (!relay.handle(n, m)) hub.handle(n, m) }.start()
+    // chunk authority: the master is the canonical store of chunk data
+    val chunkProps = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
+    val chunks = if ((chunkProps.getProperty("chunk.authority") ?: "true").trim().lowercase() != "false") {
+        val det = (chunkProps.getProperty("chunk.authority.deterministic") ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val timer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "chunk-authority").also { it.isDaemon = true } }
+        val store = net.fissionmc.master.chunk.FileChunkStore(Path.of(chunkProps.getProperty("chunkstore.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "chunkstore")) { println(it) }
+        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, (chunkProps.getProperty("chunk.lease-seconds")?.trim()?.toLongOrNull() ?: 60L) * 1000, deterministic = { d -> "true" in det || d in det }).also { a ->
+            val every = chunkProps.getProperty("chunk.stats-interval")?.trim()?.toLongOrNull() ?: 30L
+            var last = ""
+            timer.scheduleWithFixedDelay({ val l = a.statsLine(); if (l != last) { last = l; println(l) } }, every, every, java.util.concurrent.TimeUnit.SECONDS)
+            registry.addListener(a.listener)
+            println("[master] chunk authority on (${store.count()} blobs in the store)")
+        }
+    } else null
+    // authority off: answer every request with "nothing, generate locally" so backends never wait for a timeout; pushes are ignored
+    val chunkOff: ((RegisteredNode, net.fissionmc.protocol.NodeMessage) -> Boolean)? = if (chunks == null) { n, m ->
+        if (m is net.fissionmc.protocol.ChunkRequest) { n.link.send(net.fissionmc.protocol.ChunkAbsent(m.reqId, false)); true } else m is net.fissionmc.protocol.ChunkPush
+    } else null
+    val master = MasterServer(transport, listen, cfg.worldRoot, registry) { n, m -> if (!relay.handle(n, m) && chunks?.handle(n, m) != true && chunkOff?.invoke(n, m) != true) hub.handle(n, m) }.start()
     master.registry.addListener(object : NodeRegistry.Listener {
         override fun joined(node: RegisteredNode) = println("[master] ${node.info.nodeId} joined")
         override fun left(node: RegisteredNode, reason: String) = println("[master] ${node.info.nodeId} left: $reason")
@@ -38,6 +56,6 @@ fun main(args: Array<String>) {
     if (props.getProperty("debug.packets") == "true") System.setProperty("fission.debug.packets", "1")
     if (props.getProperty("debug.relay-probe") == "true")
         registry.addListener(RelayProbe(relay, props.getProperty("debug.record-limbo")?.let { Path.of(it) }))
-    Runtime.getRuntime().addShutdownHook(Thread { stats.close(); clients?.close(); master.close(); transport.close() })
+    Runtime.getRuntime().addShutdownHook(Thread { chunks?.let { println(it.statsLine()) }; stats.close(); clients?.close(); master.close(); transport.close() })
     Thread.currentThread().join()
 }

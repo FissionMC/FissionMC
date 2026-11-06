@@ -52,3 +52,14 @@ tasks.register("probeClasspath") {
     val out = layout.buildDirectory.file("probe.classpath")
     doLast { out.get().asFile.writeText(cp.asPath) }
 }
+
+// ./gradlew :master:importWorld -Pworld=<world dir>[,<world dir>...] [-Pstore=run-master/chunkstore] : seeds the master's chunk store from world directories
+tasks.register<JavaExec>("importWorld") {
+    group = "fission"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass = "net.fissionmc.master.chunk.ChunkImportKt"
+    doFirst {
+        val store = rootProject.file((project.findProperty("store") as String?) ?: "run-master/chunkstore").path
+        args(listOf(store) + (project.property("world") as String).split(',').map { rootProject.file(it).path })
+    }
+}

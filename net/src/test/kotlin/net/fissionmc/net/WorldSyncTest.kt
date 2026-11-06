@@ -10,16 +10,16 @@ class WorldSyncTest {
     @Test fun pullsDiffsAndDeletes() {
         val root = Files.createTempDirectory("ws-root"); val dest = Files.createTempDirectory("ws-dest")
         val w = root.resolve("world")
-        Files.createDirectories(w.resolve("region"))
+        Files.createDirectories(w.resolve("blobs"))
         Files.write(w.resolve("level.dat"), ByteArray(100) { it.toByte() })
-        Files.write(w.resolve("region/r.0.0.mca"), ByteArray(FILE_CHUNK_SIZE * 2 + 17) { (it * 7).toByte() }) // multi-chunk
-        Files.write(w.resolve("region/exact.mca"), ByteArray(FILE_CHUNK_SIZE)) // exact chunk multiple
+        Files.write(w.resolve("blobs/r.0.0.mca"), ByteArray(FILE_CHUNK_SIZE * 2 + 17) { (it * 7).toByte() }) // multi-chunk
+        Files.write(w.resolve("blobs/exact.mca"), ByteArray(FILE_CHUNK_SIZE)) // exact chunk multiple
         Files.write(w.resolve("empty"), ByteArray(0))
         Files.write(w.resolve("session.lock"), byteArrayOf(1))
         // dest: one identical file, one stale, one extra
         Files.write(dest.resolve("level.dat"), ByteArray(100) { it.toByte() })
-        Files.createDirectories(dest.resolve("region"))
-        Files.write(dest.resolve("region/r.0.0.mca"), byteArrayOf(9))
+        Files.createDirectories(dest.resolve("blobs"))
+        Files.write(dest.resolve("blobs/r.0.0.mca"), byteArrayOf(9))
         Files.write(dest.resolve("junk.txt"), byteArrayOf(1))
 
         val a = NodeAddress.Local("w-" + System.nanoTime())
@@ -59,9 +59,9 @@ class WorldSyncTest {
     }
 
     @Test fun `player files are local only at any depth, other world files are not`() {
-        for (local in listOf("players/data/1234.dat", "players/stats/1234.json", "players/advancements/1234.json", "players/data/x/y.dat", "playerdata/1.dat", "stats/1.json", "advancements/1.json", "session.lock", "a/b/session.lock"))
+        for (local in listOf("players/data/1234.dat", "players/stats/1234.json", "players/advancements/1234.json", "players/data/x/y.dat", "dimensions/minecraft/overworld/region/r.0.0.mca", "dimensions/minecraft/the_nether/entities/r.-1.0.mca", "dimensions/minecraft/overworld/poi/r.0.0.mca", "region/r.0.0.mca", "playerdata/1.dat", "stats/1.json", "advancements/1.json", "session.lock", "a/b/session.lock"))
             assertTrue(WorldFiles.isLocalOnly(local), local)
-        for (shared in listOf("level.dat", "data/minecraft/scoreboard.dat", "dimensions/minecraft/overworld/region/r.0.0.mca", "datapacks/x/pack.mcmeta", "playersX/data.dat", "my/players/data/1.dat"))
+        for (shared in listOf("level.dat", "data/minecraft/scoreboard.dat", "datapacks/x/pack.mcmeta", "playersX/data.dat", "my/players/data/1.dat"))
             assertFalse(WorldFiles.isLocalOnly(shared), shared)
     }
 

@@ -19,7 +19,17 @@ object WorldFiles {
 
     /** True for paths that belong to the backend itself and are outside the world sync (both directions). */
     fun isLocalOnly(rel: String): Boolean =
-        rel.substringAfterLast('/') in ignored || localOnlyDirs.any { rel.startsWith(it) }
+        rel.substringAfterLast('/') in ignored || localOnlyDirs.any { rel.startsWith(it) } || isChunkData(rel)
+
+    /**
+     * Chunk data (`region/`, `entities/`, `poi/` folders at any depth, 26.x: `dimensions/<ns>/<path>/region/r.0.0.mca`) travels through the chunk protocol
+     *; the files on a backend are a cache. The pull neither lists, serves, replaces nor deletes them.
+     */
+    fun isChunkData(rel: String): Boolean {
+        val parts = rel.split('/')
+        return parts.size >= 2 && parts[parts.size - 2] in chunkDirs
+    }
+    private val chunkDirs = setOf("region", "entities", "poi")
 
     /** Reject anything that could escape the world directory. */
     fun safeRelative(path: String): Boolean =

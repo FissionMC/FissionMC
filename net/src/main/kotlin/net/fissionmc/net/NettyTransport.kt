@@ -13,6 +13,7 @@ import net.fissionmc.protocol.MessageRegistry
 import net.fissionmc.protocol.registerWorldMessages
 import net.fissionmc.protocol.registerReplicationMessages
 import net.fissionmc.protocol.registerPlayerMessages
+import net.fissionmc.protocol.registerChunkMessages
 import java.io.Closeable
 import java.net.InetSocketAddress
 import java.util.concurrent.CompletableFuture
@@ -23,7 +24,7 @@ import java.util.concurrent.CompletableFuture
  */
 class NettyTransport(
     private val me: LocalNode,
-    private val registry: MessageRegistry = MessageRegistry.core().registerWorldMessages().registerReplicationMessages().registerPlayerMessages(),
+    private val registry: MessageRegistry = MessageRegistry.core().registerWorldMessages().registerReplicationMessages().registerPlayerMessages().registerChunkMessages(),
     private val heartbeatMs: Long = 5_000,
     private val timeoutMs: Long = 20_000,
     private val security: NodeSecurity? = null,
