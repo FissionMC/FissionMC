@@ -234,7 +234,10 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     // --- LOCAL (default): stays on one backend
     var ma = a.events.size; var mb = b.events.size
     a.say("hello-local-A")
-    check("local: the sender's backend delivers vanilla player chat to the sender", await(8000) { a.playerChats(ma, "hello-local-A").isNotEmpty() })
+    check("local: the sender's backend delivers the line to the sender (the master-pushed local format: a system line)", await(8000) { a.sysTexts(ma).any { it.contains("hello-local-A") } })
+    val localLine = a.events.drop(ma).firstOrNull { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE && it.bodyHas("hello-local-A") }
+    check("local format: the line is rendered by the backend's chat.local.format (server id, #b0d8d8 colour, player head object), not by vanilla",
+        localLine != null && localLine.bodyHas("backend-") && localLine.bodyHas("player") && String(localLine.body, Charsets.ISO_8859_1).lowercase().contains("#b0d8d8"), localLine?.let { String(it.body, Charsets.ISO_8859_1).filter { c -> c.code in 32..126 }.take(200) } ?: "no line")
     quiet(1500)
     check("local: the other backend's player receives nothing", b.playerChats(mb).isEmpty() && b.sysTexts(mb).none { it.contains("hello-local-A") })
 
@@ -252,6 +255,7 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     ma = a.events.size; mb = b.events.size
     a.say("hello-global-A")
     check("global: sender receives the unsigned system line", await(8000) { a.sysTexts(ma).any { it == "<ProbeA> hello-global-A" } }, a.sysTexts(ma).toString())
+    check("global format: the line carries the player head object of chat.global.format (<head:{uuid}>)", a.events.drop(ma).firstOrNull { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE && it.text == "<ProbeA> hello-global-A" }?.bodyHas("player") == true)
     check("global: a player on the OTHER backend receives it", await(8000) { b.sysTexts(mb).any { it == "<ProbeA> hello-global-A" } }, b.sysTexts(mb).toString())
     check("global: no vanilla player-chat packet was delivered by the backend", a.playerChats(ma, "hello-global-A").isEmpty() && b.playerChats(mb, "hello-global-A").isEmpty())
     ma = a.events.size; mb = b.events.size
@@ -276,7 +280,7 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     quiet(800)
     ma = a.events.size; mb = b.events.size
     a.say("local-again-A")
-    check("local again: the sender's backend delivers", await(8000) { a.playerChats(ma, "local-again-A").isNotEmpty() })
+    check("local again: the sender's backend delivers", await(8000) { a.sysTexts(ma).any { it.contains("local-again-A") } })
     quiet(1200)
     check("local again: nothing on the other backend", b.playerChats(mb).isEmpty() && b.sysTexts(mb).none { it.contains("local-again-A") })
 
@@ -295,7 +299,7 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     b.command("chat local")
     quiet(300)
     a.say("same-backend-now")
-    check("send: after the move both players share a backend (local chat reaches B)", await(8000) { b.playerChats(mb, "same-backend-now").isNotEmpty() })
+    check("send: after the move both players share a backend (local chat reaches B)", await(8000) { b.sysTexts(mb).any { it.contains("same-backend-now") } })
     val aLogins = a.logins
     b.command("fission send ProbeA backend-b")      // refused for B, then A itself moves
     a.command("fission send ProbeA backend-b")

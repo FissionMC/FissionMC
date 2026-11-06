@@ -41,7 +41,7 @@ class GlobalChatHub(private val server: ClientServer, private val relay: PlayerR
         if (r.cancelled) { log("[chat] ${p.session.playerName}: cancelled by a plugin on ${p.node}, not broadcast"); return }
         val message: Component = if (r.modified && r.messageJson.isNotEmpty()) GsonComponentSerializer.gson().deserialize(r.messageJson)
             else ChatFormatter.messageComponent(p.text, settings.allowColors)
-        val line = ChatFormatter.format(settings, p.session.playerName, r.displayName.ifEmpty { p.session.playerName }, p.node, message)
+        val line = ChatFormatter.format(settings, p.session.playerName, r.displayName.ifEmpty { p.session.playerName }, p.node, message, p.session.uuid ?: java.util.UUID(0, 0))
         val plain = ChatFormatter.plain(line)
         log("[chat] [global] $plain")
         server.allSessions().forEach { it.tell(line) }

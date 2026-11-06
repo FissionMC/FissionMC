@@ -154,7 +154,7 @@ class SwitchAndChatTest {
         val p = Properties().apply { setProperty("chat.default", "global"); setProperty("chat.global.format", "{name}: {message}"); setProperty("chat.global.allow-colors", "true"); setProperty("chat.global.max-length", "40") }
         val m = MasterSettings.parse(p)
         assertTrue(m.chat.defaultGlobal); assertEquals("{name}: {message}", m.chat.format); assertTrue(m.chat.allowColors); assertEquals(40, m.chat.maxLength)
-        assertFalse(MasterSettings.parse(Properties()).chat.defaultGlobal); assertEquals("<{name}> {message}", MasterSettings.parse(Properties()).chat.format)
+        assertFalse(MasterSettings.parse(Properties()).chat.defaultGlobal); assertEquals("\\<{name}> {message}", MasterSettings.parse(Properties()).chat.globalTemplate())
     }
 
     @Test fun `admins are keyed by uuid, a name only bootstraps once and then grants nothing`() {

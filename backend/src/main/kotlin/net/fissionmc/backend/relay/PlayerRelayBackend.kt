@@ -87,6 +87,7 @@ object PlayerRelayBackend {
             if (m is ChunkData || m is ChunkAbsent || m is ChunkStored || m is ChunkAvailable) net.fissionmc.backend.chunk.ChunkAuthorityBackend.onMessage(m)
             if (m is PlayerFile || m is EntityTransfer || m is EntityRemove) TravelBackend.onMessage(m, serverRef)
             if (m is RegionMap || m is GenerateChunk || m is EntityHandover) RegionsBackend.onMessage(m, serverRef)
+            if (m is ChatFormat) LocalChatBackend.onMessage(m)
             if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)
             if (m is PlayerPermission || m is PlayerDetach) PermissionBackend.onMessage(m, serverRef)
             if (m is PlayerData || m is PlayerDataFlush || m is PlayerAttach || m is PlayerDetach) PlayerDataBackend.onMessage(m, serverRef)

@@ -55,6 +55,12 @@ fun main(args: Array<String>) {
     val settings = net.fissionmc.master.client.MasterSettings.load(Path.of(args.firstOrNull() ?: "fission.properties")) { println("[master] $it") }
     if (settings.adminStore.any && !clientCfg.onlineMode)
         println("[master] WARN admins exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as an admin's name (and is then bound to it first if the admin has not logged in yet). Use online mode outside development.")
+    // local chat format (chat.local.format): pushed to the backends on join, on every attach and every 5 s (a first send can precede the backend's handlers)
+    val chatFormat = net.fissionmc.protocol.ChatFormat(settings.chat.syntax, settings.chat.localFormat)
+    relay.chatFormat = chatFormat
+    registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { node.link.send(chatFormat) } })
+    java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "chat-format-resend").also { it.isDaemon = true } }
+        .scheduleWithFixedDelay({ registry.all.filter { it.link.isOpen }.forEach { n -> n.link.send(chatFormat) } }, 5, 5, java.util.concurrent.TimeUnit.SECONDS)
     val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = settings).start() else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })

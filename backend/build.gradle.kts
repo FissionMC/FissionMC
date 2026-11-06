@@ -84,3 +84,11 @@ tasks.register<JavaExec>("run") {
     args("--nogui")
     standardInput = System.`in`
 }
+
+// ./gradlew :backend:chatVectors : the shared chat template vectors on the BACKEND's class path (paper-api's adventure 5.x), see ChatVectors
+tasks.register<JavaExec>("chatVectors") {
+    group = "fission"
+    classpath = files(mcJar, mcLibs, sourceSets["main"].runtimeClasspath)   // paper-api's adventure services need the game's libraries (DFU)
+    mainClass = "net.fissionmc.master.chat.ChatVectors"
+    workingDir = layout.buildDirectory.dir("chat-vectors").get().asFile.also { it.mkdirs() }   // paper-api writes a logs/ folder to the working directory
+}

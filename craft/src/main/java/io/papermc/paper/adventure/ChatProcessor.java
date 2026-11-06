@@ -186,6 +186,15 @@ public final class ChatProcessor {
         final ChatRenderer renderer = event.renderer();
 
         final Set<Audience> viewers = event.viewers();
+        // FissionMC: the master-pushed local chat format. Only when nobody replaced Paper's default renderer (plugins keep full control of the event); the line goes out as a
+        // system message to every viewer (Paper's raw chat type paper:raw is not in this server's chat_type registry, and changing the registry would break the seamless switch).
+        final ChatRenderer fissionLocal = net.fissionmc.craft.chat.LocalChatHook.renderer;
+        if (fissionLocal != null && renderer instanceof ChatRenderer.Default) {
+            for (final Audience viewer : viewers) {
+                viewer.sendMessage(fissionLocal.render(player, displayName, message, viewer));
+            }
+            return;
+        }
         final ResourceKey<ChatType> chatTypeKey = renderer instanceof ChatRenderer.Default ? ChatType.CHAT : PAPER_RAW;
         final ChatType.Bound chatType = ChatType.bind(chatTypeKey, this.player.level().registryAccess(), PaperAdventure.asVanilla(displayName(player)));
 

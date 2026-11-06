@@ -1,0 +1,18 @@
+# name	syntax	allow-colors	display name	template	message	expected (ChatTemplate.describe); see ChatVectors.kt
+user-global	minimessage	false	Dr Alex	<#b0d8d8>Global <#759e9e>| &r<head:{uuid}> <#949393>{message}	hello world	Global {#B0D8D8}|| {#759E9E}|head(35deb110-752a-3928-95c4-cc89250ce08e,true){-}| {-}|hello world{#949393}
+user-local	minimessage	false	Dr Alex	<#b0d8d8>{serverid} <#759e9e>| &r<head:{uuid}> <#949393>{message}	hello	backend-a {#B0D8D8}|| {#759E9E}|head(35deb110-752a-3928-95c4-cc89250ce08e,true){-}| {-}|hello{#949393}
+tags in the message are text	minimessage	false	Dr Alex	<#b0d8d8>Global <#759e9e>| &r<head:{uuid}> <#949393>{message}	<red>RED</red> <click:run_command:/op x>c</click> <head:Notch>	Global {#B0D8D8}|| {#759E9E}|head(35deb110-752a-3928-95c4-cc89250ce08e,true){-}| {-}|<red>RED</red> <click:run_command:/op x>c</click> <head:Notch>{#949393}
+legacy codes in the message, colours off	minimessage	false	Dr Alex	{name}: {message}	&cnot red &r&l	Alex: &cnot red &r&l{-}
+legacy codes in the message, colours on	minimessage	true	Dr Alex	{name}: {message}	&chello	Alex: {-}|hello{#FF5555}
+placeholders typed by the player	minimessage	false	Dr Alex	{name}: {message}	{name} {uuid} {serverid} {message}	Alex: {name} {uuid} {serverid} {message}{-}
+hostile display name	minimessage	false	<red>&cEvil</red>{message}	{displayname}: {message}	x	<red>&cEvil</red>{message}: x{-}
+reset between colours	minimessage	false	Dr Alex	&cRed&rPlain &l&nBold&r!	m	Red{#FF5555}|Plain {-}|Bold{-,bold+underlined}|!{-}
+hex and named codes	minimessage	false	Dr Alex	&#ff0000R&#00ff00G&9B {name}	m	R{#FF0000}|G{#00FF00}|B Alex{#5555FF}
+name displayname uuid serverid backend	minimessage	false	Dr Alex	{name}|{displayname}|{uuid}|{serverid}|{backend}	m	Alex|Dr Alex|35deb110-752a-3928-95c4-cc89250ce08e|backend-a|backend-a{-}
+escaped less-than default format	minimessage	false	Dr Alex	\<{name}> {message}	hello	<Alex> hello{-}
+unknown tag stays as text	minimessage	false	Dr Alex	<notatag>x {message}	m	<notatag>x m{-}
+ampersand without code	minimessage	false	Dr Alex	A & B &z {message}	m	A & B &z m{-}
+head by name, no hat	minimessage	false	Dr Alex	<head:Notch:false>{message}	m	head(Notch,false){-}|m{-}
+legacy syntax, the old format	legacy	false	Dr Alex	&#b0d8d8Global &#759e9e| &r&#949393{name}: {message}	hi	Global {#B0D8D8}|| {#759E9E}|Alex{#949393}|: {#949393}|hi{#949393}
+legacy syntax, vanilla look	legacy	false	Dr Alex	<{name}> {message}	hi	<{-}|Alex{-}|> {-}|hi{-}
+legacy syntax ignores minimessage tags	legacy	false	Dr Alex	<red>{name}</red> {uuid} {serverid} {message}	hi	<red>{-}|Alex{-}|</red> 35deb110-752a-3928-95c4-cc89250ce08e {-}|backend-a{-}| {-}|hi{-}

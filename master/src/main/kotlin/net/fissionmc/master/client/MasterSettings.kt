@@ -6,14 +6,18 @@ import java.util.Properties
 import java.util.UUID
 
 /**
- * Global chat settings (`chat.*` keys of the master's fission.properties).
- * Format codes: `&` colour/format codes and `&#rrggbb`; placeholders `{name} {displayname} {backend} {message}`.
+ * Chat settings (`chat.*` keys of the master's fission.properties).
+ * Syntax `chat.format.syntax=minimessage|legacy` (see [net.fissionmc.master.chat.ChatTemplate]); placeholders `{name} {displayname} {uuid} {serverid} {backend} {message}`.
  */
 data class ChatSettings(
     /** `chat.default=local|global`: mode of a player who never used `/chat`. */
     val defaultGlobal: Boolean = false,
-    /** `chat.global.format` */
-    val format: String = "<{name}> {message}",
+    /** `chat.format.syntax=minimessage|legacy` (default minimessage; `&` codes also work inside minimessage templates). */
+    val syntax: String = "minimessage",
+    /** `chat.global.format` (empty = the vanilla looking default `<name> message`). */
+    val format: String = "",
+    /** `chat.local.format`: template of LOCAL chat lines, pushed to the backends and rendered there (empty = vanilla rendering on the backend). */
+    val localFormat: String = "",
     /** `chat.global.prefix` / `chat.global.suffix` wrap the format (same codes). */
     val prefix: String = "",
     val suffix: String = "",
@@ -23,7 +27,10 @@ data class ChatSettings(
     val maxLength: Int = 256,
     /** `chat.global.timeout-ms`: how long the master waits for the sender's backend to run the chat events before dropping the message. */
     val timeoutMs: Long = 3000,
-)
+) {
+    /** The global template: [format], or the default for the syntax (a literal `<` must be escaped in MiniMessage). */
+    fun globalTemplate(): String = format.ifEmpty { if (syntax.equals("legacy", ignoreCase = true)) "<{name}> {message}" else "\\<{name}> {message}" }
+}
 
 /**
  * The master's admins, keyed by UUID (admin == operator level 4 on every backend, and who may use the master's own commands).
@@ -141,7 +148,8 @@ data class MasterSettings(
             return MasterSettings(
                 chat = ChatSettings(
                     defaultGlobal = (get("chat.default") ?: "local").lowercase() == "global",
-                    format = raw("chat.global.format", d.format), prefix = raw("chat.global.prefix", ""), suffix = raw("chat.global.suffix", ""),
+                    syntax = (get("chat.format.syntax") ?: d.syntax).lowercase().also { require(it == "minimessage" || it == "legacy") { "chat.format.syntax must be minimessage or legacy, not '$it'" } },
+                    format = raw("chat.global.format", d.format), localFormat = raw("chat.local.format", d.localFormat), prefix = raw("chat.global.prefix", ""), suffix = raw("chat.global.suffix", ""),
                     allowColors = (get("chat.global.allow-colors") ?: "false").lowercase() == "true",
                     maxLength = get("chat.global.max-length")?.toInt() ?: d.maxLength,
                     timeoutMs = get("chat.global.timeout-ms")?.toLong() ?: d.timeoutMs,

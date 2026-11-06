@@ -1,8 +1,6 @@
 package net.fissionmc.master.client
 
 import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.TextReplacementConfig
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 
 /** Formats global chat lines on the master (pure functions, unit tested). */
 object ChatFormatter {
@@ -16,7 +14,6 @@ object ChatFormatter {
         walk(c); return sb.toString()
     }
 
-    private val legacy = LegacyComponentSerializer.builder().character('&').hexColors().build()
 
     /**
      * Player text made safe: control characters and the section sign (the legacy formatting char) removed, whitespace trimmed, length capped.
@@ -29,17 +26,12 @@ object ChatFormatter {
     }
 
     /** The player's words as a component: plain text unless [allowColors] (then `&` colour/format codes apply, nothing else can be injected). */
-    fun messageComponent(sanitized: String, allowColors: Boolean): Component = if (allowColors) legacy.deserialize(sanitized) else Component.text(sanitized)
+    fun messageComponent(sanitized: String, allowColors: Boolean): Component = net.fissionmc.master.chat.ChatTemplate.messageComponent(sanitized, allowColors)
 
     /**
-     * The template (`prefix + format + suffix`, `&` codes) with `{name} {displayname} {backend}` replaced by plain text and `{message}` by
-     * [message]. The message is substituted last, so placeholders typed by a player are never expanded.
+     * The global template (`prefix + format + suffix`, syntax per [ChatSettings.syntax]) rendered by [net.fissionmc.master.chat.ChatTemplate]: `{name} {displayname} {uuid}
+     * {serverid} {backend}` as plain components, `{message}` last as the given component, so player text never injects tags, codes or placeholders.
      */
-    fun format(s: ChatSettings, name: String, displayName: String, backend: String, message: Component): Component {
-        var c: Component = legacy.deserialize(s.prefix + s.format + s.suffix)
-        fun rep(token: String, with: Component) { c = c.replaceText(TextReplacementConfig.builder().matchLiteral(token).replacement(with).build()) }
-        rep("{name}", Component.text(name)); rep("{displayname}", Component.text(displayName)); rep("{backend}", Component.text(backend))
-        rep("{message}", message)
-        return c
-    }
+    fun format(s: ChatSettings, name: String, displayName: String, backend: String, message: Component, uuid: java.util.UUID = java.util.UUID(0, 0)): Component =
+        net.fissionmc.master.chat.ChatTemplate.render(s.prefix + s.globalTemplate() + s.suffix, s.syntax, name, Component.text(displayName), uuid, backend, message)
 }

@@ -2,6 +2,9 @@ evaluationDependsOn(":packetevents")
 dependencies {
     api(project(":net"))
     api(project(":packets"))
+    // MiniMessage for the chat templates: the SAME line as the adventure the master already uses (PacketEvents' patched 4.26.1). The backend (via project(":master")) resolves
+    // this module to paper-api's 5.x like it does adventure-api, so there is still exactly one copy on the backend class path (never add it to :backend/:craft).
+    implementation("net.kyori:adventure-text-minimessage:4.26.1")
     testImplementation(kotlin("test"))
 }
 

@@ -37,6 +37,9 @@ object NodeBootstrap {
     /** Called with every master link once the world is pulled: the first connection and every reconnect. */
     @JvmStatic fun addConnectListener(h: (NodeLink) -> Unit) { connectListeners += h }
 
+    /** This backend's node id (`node.id`), set once the world is ready. */
+    @JvmStatic @Volatile var nodeId: String = ""
+
     @Volatile private var started = false
 
     /** A new master link after the first one (reconnect): route its messages, then tell the listeners. */
@@ -93,6 +96,7 @@ object NodeBootstrap {
         log.info("World ready: ${r.downloaded} downloaded (${r.bytes / 1024} KiB), ${r.unchanged} unchanged, ${r.deleted} removed in ${(System.nanoTime() - t0) / 1_000_000} ms")
         // From here on, messages from the master go to the registered handlers.
         l.handler = { msg -> extraHandlers.forEach { it(msg) } }
+        nodeId = cfg.nodeId
         net.fissionmc.backend.replication.Replication.attach(cfg.nodeId)
         net.fissionmc.backend.relay.PlayerRelayBackend.attach()
         started = true
