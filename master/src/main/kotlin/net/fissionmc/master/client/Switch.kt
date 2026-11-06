@@ -27,6 +27,7 @@ object PlayIds {
     val chatCommand by lazy { PacketType.Play.Client.CHAT_COMMAND_UNSIGNED.getId(V) }
     val chatCommandSigned by lazy { PacketType.Play.Client.CHAT_COMMAND.getId(V) }
     val chat by lazy { PacketType.Play.Client.CHAT_MESSAGE.getId(V) }
+    val respawn by lazy { PacketType.Play.Server.RESPAWN.getId(V) }
     val playerLoaded by lazy { PacketType.Play.Client.PLAYER_LOADED.getId(V) }
 
     val cfgEnd by lazy { PacketType.Configuration.Server.CONFIGURATION_END.getId(V) }
@@ -173,5 +174,31 @@ class SwitchCleanup(private val decode: (ByteArray) -> PacketSendEvent?, private
         out += Limbo.encode(WrapperPlayServerClearTitles(true))
         tab.clear(); bars.clear()
         return out
+    }
+}
+
+
+/**
+ * The Respawn that must follow every Login the client gets while it is already playing.
+ *
+ * `ClientPacketListener.handleLogin` creates the LocalPlayer only when `minecraft.player == null`; a second Login keeps the OLD LocalPlayer, whose
+ * `Entity.level` still points at the previous ClientLevel (nothing in the client ever calls `Entity.setLevel`). That player then moves and collides in
+ * the old level: no chunks around it, so it cannot move horizontally ("glued to the block") and bobs up and down. `handleRespawn` is what creates a new
+ * LocalPlayer on the current level (BungeeCord/Velocity send it for the same reason; it is not only the "drop old chunks" trick). Same dimension as
+ * the old player's level: the level made by the Login is kept (no dummy dimension needed); different: the Respawn builds the matching level.
+ *
+ * Layout (26.3, ClientboundLoginPacket / ClientboundRespawnPacket codecs): Login = int entity id, bool hardcore, varint n + n identifiers,
+ * varint maxPlayers, varint chunkRadius, varint simulationDistance, 3 bools, CommonPlayerSpawnInfo, bool onlineMode, bool enforcesSecureChat.
+ * Respawn = CommonPlayerSpawnInfo + byte dataToKeep (0: keep nothing).
+ */
+object RespawnFrames {
+    fun fromLogin(login: ByteArray): ByteArray {
+        val b = Unpooled.wrappedBuffer(login)
+        VarInts.tryRead(b)!!; b.skipBytes(4 + 1)
+        repeat(VarInts.tryRead(b)!!) { b.skipBytes(VarInts.tryRead(b)!!) }
+        repeat(3) { VarInts.tryRead(b)!! }; b.skipBytes(3)
+        val start = b.readerIndex(); val end = login.size - 2
+        require(end > start) { "Login frame too short" }
+        return PlayIds.frame(PlayIds.respawn, login.copyOfRange(start, end) + byteArrayOf(0))
     }
 }

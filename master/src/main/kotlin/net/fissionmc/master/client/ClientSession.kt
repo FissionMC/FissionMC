@@ -268,6 +268,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         selfEntityId = if (login.size >= 5) java.nio.ByteBuffer.wrap(PlayIds.payload(login)).int else -1
         val out = toClient(login)
         if (out != null) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(out))
+        // a second Login keeps the old LocalPlayer (bound to the old level): Respawn makes the client build a new one (see RespawnFrames)
+        runCatching { RespawnFrames.fromLogin(login) }.onSuccess { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }.onFailure { server.log("[client $playerName] no Respawn after the Login: $it") }
         channel.flush()
         server.log("[client] $playerName now on ${sw.nodeId} (Login entity id $selfEntityId, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, ${cleanupFrames.size} cleanup frames)")
     }
@@ -486,7 +488,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         clientLoaded = false; graceOver = false   // a re-entered limbo (backend lost) loads its level again
         user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
         currentNodeId = null; backendKeepAlives.clear()
-        Limbo.sendRaw(channel, before + Limbo.playFrames(server.config.maxPlayers, Limbo.config.overworldDimensionId))
+        val frames = Limbo.playFrames(server.config.maxPlayers, Limbo.config.overworldDimensionId)
+        // coming back from a backend the client keeps its old LocalPlayer: Respawn right after the limbo's Login (see RespawnFrames)
+        val withRespawn = if (before.isEmpty()) frames else listOf(frames[0], RespawnFrames.fromLogin(frames[0])) + frames.drop(1)
+        Limbo.sendRaw(channel, before + withRespawn)
         selfEntityId = Limbo.ENTITY_ID
         server.log("[client] $playerName joined limbo")
         graceTask?.cancel(false)

@@ -47,6 +47,23 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
     @Volatile var logins = 0; @Volatile var startConfigs = 0; @Volatile var failed: Throwable? = null
     val loginIndexes = CopyOnWriteArrayList<Int>()      // index in [events] of each JOIN_GAME
     @Volatile private var stop = false
+    /** Chunks received since the latest Login (x,z packed), like the client's chunk cache of its current level. */
+    val chunkSets = CopyOnWriteArrayList<MutableSet<Long>>()
+    @Volatile var pos: DoubleArray? = null
+    @Volatile var loadedSent = false
+    @Volatile var batches = 0
+    @Volatile var look = floatArrayOf(0f, 0f)
+    val positionPackets = java.util.concurrent.atomic.AtomicInteger()     // ClientboundPlayerPosition packets since the latest Login
+    val teleportIds = CopyOnWriteArrayList<Int>()
+    val loadedAfterChunks = CopyOnWriteArrayList<Boolean>()   // per Login: PlayerLoaded was sent only once the player's own chunk was there
+
+    /** ClientPacketListener.notifyPlayerLoaded: the level is ready once the chunk at the player's position is loaded (LevelLoadTracker). */
+    private fun maybeLoaded() {
+        val p = pos ?: return; val set = chunkSets.lastOrNull() ?: return
+        if (holdLoaded || loadedSent) return
+        val key = (Math.floor(p[0] / 16).toLong() shl 32) or (Math.floor(p[2] / 16).toLong() and 0xffffffffL)
+        if (key in set) { loadedSent = true; loadedAfterChunks += true; c.send(WrapperPlayClientPlayerLoaded()) }
+    }
 
     fun connect(): Bot {
         c.readTimeout(120_000)
@@ -59,6 +76,15 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
             com.github.retrooper.packetevents.wrapper.configuration.client.WrapperConfigClientSettings.ChatVisibility.FULL, true, 127.toByte(),
             com.github.retrooper.packetevents.protocol.player.HumanoidArm.RIGHT, false, true))
         Thread({ run() }, "bot-$name").also { it.isDaemon = true }.start()
+        // LocalPlayer.sendPosition each client tick: a status-only packet every tick while standing still on the ground (the periodic full position is left out: two in one server tick are a kick)
+        Thread({
+            var tick = 0
+            try { while (!stop) { Thread.sleep(50); tick++
+                val p = pos ?: continue; if (!loadedSent) continue
+                val loc = com.github.retrooper.packetevents.protocol.world.Location(p[0], p[1], p[2], look[0], look[1])
+                c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying(false, false, true, loc))
+            } } catch (_: Throwable) {}
+        }, "move-$name").also { it.isDaemon = true }.start()
         return this
     }
 
@@ -73,8 +99,24 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
                     PacketType.Play.Server.CONFIGURATION_START -> { startConfigs++; c.send(WrapperPlayClientConfigurationAck()); c.setState(ConnectionState.CONFIGURATION) }
                     PacketType.Play.Server.SYSTEM_CHAT_MESSAGE -> text = runCatching { ChatFormatter.plain(WrapperPlayServerSystemChatMessage(c.lastEvent!!).message) }.getOrNull()
                     PacketType.Play.Server.KEEP_ALIVE -> c.send(WrapperPlayClientKeepAlive(Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readLong()))
-                    PacketType.Play.Server.JOIN_GAME -> { logins++; loginIndexes += events.size }
-                    PacketType.Play.Server.CHUNK_DATA -> if (!holdLoaded) c.send(WrapperPlayClientPlayerLoaded())   // ClientPacketListener.notifyPlayerLoaded once the level is ready
+                    PacketType.Play.Server.JOIN_GAME -> { logins++; loginIndexes += events.size; chunkSets += java.util.concurrent.ConcurrentHashMap.newKeySet<Long>(); pos = null; loadedSent = false; positionPackets.set(0); teleportIds.clear() }
+                    PacketType.Play.Server.CHUNK_DATA -> {
+                        val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val x = b.readInt(); val z = b.readInt()
+                        chunkSets.lastOrNull()?.add((x.toLong() shl 32) or (z.toLong() and 0xffffffffL)); maybeLoaded()
+                    }
+                    PacketType.Play.Server.CHUNK_BATCH_END -> {   // ClientPacketListener.handleChunkBatchFinished: answer with the wanted chunks per tick
+                        batches++
+                        c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientChunkBatchAck(9.0f))
+                    }
+                    PacketType.Play.Server.PLAYER_POSITION_AND_LOOK -> {   // id, teleport id, x y z, delta x y z (doubles), yRot xRot (floats), relatives (int)
+                        val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val tp = VarInts.tryRead(b)!!
+                        val p = doubleArrayOf(b.readDouble(), b.readDouble(), b.readDouble()); b.skipBytes(24)
+                        val yaw = b.readFloat(); val pitch = b.readFloat()
+                        pos = p; look = floatArrayOf(yaw, pitch); positionPackets.incrementAndGet(); teleportIds += tp
+                        // 26.3: ServerboundAcceptTeleportation carries the client's position and rotation (the server applies them)
+                        c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm(tp, p[0], p[1], p[2], yaw, pitch))
+                        maybeLoaded()
+                    }
                     else -> {}
                 }
                 events += Ev(System.nanoTime() / 1_000_000, type, id, text, body)
@@ -127,10 +169,25 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     fun selfIdOk(bot: Bot, k: Int): Boolean {
         val start = bot.loginIndexes[k]; val id = bot.events[start].entityIdOfLogin()
         val next = bot.loginIndexes.getOrNull(k + 1) ?: bot.events.size
-        return bot.events.subList(start + 1, next).any { (it.type == PacketType.Play.Server.UPDATE_ATTRIBUTES || it.type == PacketType.Play.Server.ENTITY_METADATA) && it.firstVarInt() == id }
+        return bot.events.toList().subList(start + 1, next).any { (it.type == PacketType.Play.Server.UPDATE_ATTRIBUTES || it.type == PacketType.Play.Server.ENTITY_METADATA) && it.firstVarInt() == id }
     }
     check("A: packets about the player use the id of the backend's Login", selfIdOk(a, 1), "login ids ${a.loginIndexes.map { a.events[it].entityIdOfLogin() }}")
     check("B: packets about the player use the id of the backend's Login", selfIdOk(b, 1))
+
+    // --- a faithful client gets its world: the chunk batches are acknowledged, so the backend keeps sending, and PlayerLoaded follows only
+    //     once the chunk under the player is there. (Real-client report: "stuck in a state of falling" after the seamless Login.)
+    fun worldOk(bot: Bot, label: String, minChunks: Int) {
+        val ok = await(40_000) { (bot.chunkSets.lastOrNull()?.size ?: 0) >= minChunks && bot.loadedSent }
+        check("$label: the new level gets its chunks (${bot.chunkSets.lastOrNull()?.size ?: 0} >= $minChunks, batches acked ${bot.batches}) and the client reports it loaded", ok,
+            "position ${bot.pos?.toList()}, loaded=${bot.loadedSent}")
+    }
+    worldOk(a, "A after limbo -> backend", 60); worldOk(b, "B after limbo -> backend", 60)
+    // the player must settle: the backend sends ClientboundPlayerPosition once (the join teleport) and then leaves the player alone
+    fun settled(bot: Bot, label: String) {
+        quiet(4000)
+        check("$label: the position is not corrected again (rubber banding): ${bot.positionPackets.get()} PlayerPosition packet(s) since the Login, teleport ids ${bot.teleportIds}", bot.positionPackets.get() <= 1, "position ${bot.pos?.toList()}")
+    }
+    settled(a, "A on its first backend"); settled(b, "B on its first backend")
 
     // --- LOCAL (default): stays on one backend
     var ma = a.events.size; var mb = b.events.size
@@ -163,7 +220,7 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     check("global: a plugin that modifies the message changes what everybody reads", await(8000) { a.sysTexts(ma).contains("<ProbeA> LOUD WORDS") && b.sysTexts(mb).contains("<ProbeA> LOUD WORDS") }, a.sysTexts(ma).toString())
     val secondLoginOfC = c.loginIndexes.getOrNull(1)
     val limboEnd = secondLoginOfC ?: c.events.size
-    check("limbo: nothing was delivered to the limbo player while it waited", c.events.subList(limboSince, limboEnd).none { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE || it.type == PacketType.Play.Server.CHAT_MESSAGE },
+    check("limbo: nothing was delivered to the limbo player while it waited", c.events.toList().subList(limboSince, limboEnd).none { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE || it.type == PacketType.Play.Server.CHAT_MESSAGE },
         "limbo window ${limboEnd - limboSince} frames, second login ${if (secondLoginOfC == null) "not yet" else "seen"}")
     check("limbo: the player's own chat/commands were dropped without disconnect", c.failed == null)
     ma = a.events.size; mb = b.events.size
@@ -188,7 +245,8 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     val bLogins = b.logins; mb = b.events.size
     a.command("fission send ProbeB backend-a")      // A is on backend-a (first attach), B moves over
     check("send: the player receives a new Login (no StartConfiguration)", await(40_000) { b.logins == bLogins + 1 }, "logins=${b.logins}")
-    check("send: tab cleanup (PlayerInfoRemove) precedes the new Login", b.events.subList(mb, b.loginIndexes.last()).any { it.type == PacketType.Play.Server.PLAYER_INFO_REMOVE })
+    check("send: tab cleanup (PlayerInfoRemove) precedes the new Login", b.events.toList().subList(mb, b.loginIndexes.last()).any { it.type == PacketType.Play.Server.PLAYER_INFO_REMOVE })
+    worldOk(b, "send: B on the new backend", 60); settled(b, "send: B on the new backend")
     check("send: packets about the player use the new backend's Login id", await(8000) { selfIdOk(b, b.loginIndexes.size - 1) })
     quiet(1500)
     ma = a.events.size; mb = b.events.size
