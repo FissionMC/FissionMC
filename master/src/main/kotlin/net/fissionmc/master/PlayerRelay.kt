@@ -46,6 +46,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** Relayed players per backend node id. */
     fun playersByNode(): Map<String, Int> = bindings.values.groupingBy { it.node.info.nodeId }.eachCount()
 
+    /** `travel.pet-radius` (blocks, 0 = pets stay): which tamed pets travel with a player that is flushed for a move. */
+    @Volatile var petRadius: Int = 24
+
     /** `messages.local.enabled` (set by the client server): the backends announce joins and leaves themselves. */
     @Volatile var localAnnouncements: Boolean = false
 
@@ -54,6 +57,14 @@ class PlayerRelay(private val registry: NodeRegistry) {
 
     /** The canonical player data (null = no player data handling: tests, or disabled). */
     @Volatile var playerData: PlayerDataStore? = null
+
+    // ---- traveling entities
+    private class Pending(val origin: String, val transfer: EntityTransfer)
+    private val pendingEntities = ConcurrentHashMap<java.util.UUID, Pending>()
+    private val awaitingAck = ConcurrentHashMap<java.util.UUID, String>()   // player -> backend that still holds the originals
+
+    /** A failed switch leaves the player where it is: its collected entities were never spawned elsewhere, the originals stay. */
+    fun dropPendingEntities(uuid: java.util.UUID) { pendingEntities.remove(uuid); awaitingAck.remove(uuid) }
 
     fun setDataOwner(uuid: java.util.UUID, nodeId: String?) { playerData?.setOwner(uuid, nodeId) }
 
@@ -65,7 +76,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
         val store = playerData; val b = bindings[id]
         if (store == null || b == null || !b.node.link.isOpen) { done(); return }
         store.awaitSave(uuid, timeoutMs, done)
-        b.node.link.send(PlayerDataFlush(id))
+        b.node.link.send(PlayerDataFlush(id, petRadius))
     }
 
     /** Ids of the backends that are connected now. */
@@ -93,6 +104,13 @@ class PlayerRelay(private val registry: NodeRegistry) {
         playerData?.let { store ->   // the stored data goes first, the backend loads it when it creates the player
             val data = store.read(p.uuid)
             node.link.send(PlayerData(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, data != null, data ?: ByteArray(0)))
+            for (kind in intArrayOf(PlayerFileKind.STATS, PlayerFileKind.ADVANCEMENTS)) {
+                val f = store.readFile(p.uuid, kind)
+                node.link.send(PlayerFile(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, kind, f != null, f ?: ByteArray(0)))
+            }
+            pendingEntities.remove(p.uuid)?.let { pe ->   // pets, riders: they arrive before the player and are spawned once it is placed
+                node.link.send(pe.transfer); awaitingAck[p.uuid] = pe.origin
+            }
             store.setOwner(p.uuid, node.info.nodeId)
         }
         client.remoteAddress?.let { a -> node.link.send(PlayerClientInfo(id, a.address?.hostAddress ?: a.hostString, a.port, client.virtualHost)) }
@@ -131,6 +149,13 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
             is GlobalChatResult -> chatResultHandler?.invoke(msg)
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
+            is PlayerFileSave -> playerData?.onFileSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.kind, msg.bytes)
+            is PlayerFlushed -> playerData?.flushed(java.util.UUID(msg.uuidHigh, msg.uuidLow))
+            is EntityTransfer -> { val u = java.util.UUID(msg.playerHigh, msg.playerLow); if (msg.blobs.isEmpty()) pendingEntities.remove(u) else pendingEntities[u] = Pending(node.info.nodeId, msg) }
+            is EntityTransferAck -> {
+                val u = java.util.UUID(msg.playerHigh, msg.playerLow); val origin = awaitingAck.remove(u)
+                if (origin != null && msg.spawned.isNotEmpty()) registry[origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned))
+            }
             is PlayerDataSave -> playerData?.onSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.nbt)
             else -> return false
         }

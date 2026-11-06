@@ -97,8 +97,11 @@ class PlayerData(val playerId: Long, val uuidHigh: Long, val uuidLow: Long, val 
  */
 class PlayerDataSave(val uuidHigh: Long, val uuidLow: Long, val nbt: ByteArray) : NodeMessage
 
-/** Master -> backend (id 59): save the relayed player [playerId] now (before the master moves it to another backend); the answer is a [PlayerDataSave]. */
-data class PlayerDataFlush(val playerId: Long) : NodeMessage
+/**
+ * Master -> backend (id 59): the relayed player [playerId] is about to move to another backend: collect the entities that travel with it (pets within [petRadius] blocks,
+ * 0 = none; riders), save it, and answer with [EntityTransfer], [PlayerDataSave], [PlayerFileSave]s and finally [PlayerFlushed].
+ */
+data class PlayerDataFlush(val playerId: Long, val petRadius: Int = 24) : NodeMessage
 
 /**
  * Master -> backend (id 60), sent right before [PlayerAttach] and again whenever the master's admin set changes: the permission level the master
@@ -120,10 +123,43 @@ data class PlayerPermissionReport(val uuidHigh: Long, val uuidLow: Long, val lev
  */
 data class AnnouncementMode(val local: Boolean) : NodeMessage
 
+/** Which per-player JSON file a [PlayerFile] / [PlayerFileSave] carries. */
+object PlayerFileKind { const val STATS = 0; const val ADVANCEMENTS = 1 }
+
+/**
+ * Master -> backend (id 71), sent right after [PlayerData] and before [PlayerAttach]: the player's stats or advancements file as the master stores it
+ * ([present] false: none stored, the backend keeps its own). The backend writes it into its local `players/stats|advancements` folder before the player joins.
+ */
+class PlayerFile(val playerId: Long, val uuidHigh: Long, val uuidLow: Long, val kind: Int, val present: Boolean, val bytes: ByteArray) : NodeMessage
+
+/** Backend -> master (id 72): the stats/advancements file the backend just saved (same ownership rule as [PlayerDataSave]). */
+class PlayerFileSave(val uuidHigh: Long, val uuidLow: Long, val kind: Int, val bytes: ByteArray) : NodeMessage
+
+/** Backend -> master (id 73): the flush asked by [PlayerDataFlush] is complete (entities collected, player data, stats and advancements all sent). */
+data class PlayerFlushed(val uuidHigh: Long, val uuidLow: Long) : NodeMessage
+
+/** An entity that travels with a player: [kind] 0 = pet (owned by the player), 1 = rider on the player; [bytes] = zlib(NbtIo.write(entity NBT incl. its own passengers)). */
+class EntityBlob(val kind: Int, val uuidHigh: Long, val uuidLow: Long, val bytes: ByteArray)
+object EntityBlobKind { const val PET = 0; const val RIDER = 1 }
+
+/**
+ * Entities travelling with player ([playerHigh],[playerLow]) (id 74). Backend -> master on a flush (collected on the old backend), master -> backend before the
+ * attach; the new backend spawns them after it placed the player and confirms with [EntityTransferAck].
+ */
+class EntityTransfer(val playerHigh: Long, val playerLow: Long, val blobs: List<EntityBlob>) : NodeMessage
+
+/** New backend -> master (id 75): these entity uuids (pairs high/low) are now spawned here; the master tells the old backend to remove its copies. */
+class EntityTransferAck(val playerHigh: Long, val playerLow: Long, val spawned: List<Long>) : NodeMessage
+
+/** Master -> old backend (id 76): discard these entities (pairs high/low): they live on another backend now. */
+class EntityRemove(val uuids: List<Long>) : NodeMessage
+
 /** Largest player data blob accepted on the wire (a player file is a few KiB; ender chests and big inventories reach some hundred). */
 const val MAX_PLAYER_DATA = 4 * 1024 * 1024
+const val MAX_ENTITY_BLOB = 1024 * 1024
+const val MAX_ENTITY_BLOBS = 64
 
-/** Registers player relay messages (ids 48-63 and 70; 48-61 and 70 used). Ids are wire format: never reuse one. */
+/** Registers player relay messages (ids 48-63 and 70-76; 48-61 and 70-76 used). Ids are wire format: never reuse one. */
 fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerAttach>(48, { m, b ->
         b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeVarInt(m.protocol)
@@ -157,10 +193,23 @@ fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
         { b -> PlayerData(b.readLong(), b.readLong(), b.readLong(), b.readBoolean(), b.readByteArray(MAX_PLAYER_DATA)) })
     .register<PlayerDataSave>(58, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeByteArray(m.nbt, MAX_PLAYER_DATA) },
         { b -> PlayerDataSave(b.readLong(), b.readLong(), b.readByteArray(MAX_PLAYER_DATA)) })
-    .register<PlayerDataFlush>(59, { m, b -> b.writeLong(m.playerId) }, { b -> PlayerDataFlush(b.readLong()) })
+    .register<PlayerDataFlush>(59, { m, b -> b.writeLong(m.playerId).writeVarInt(m.petRadius) }, { b -> PlayerDataFlush(b.readLong(), b.readVarInt()) })
     .register<PlayerPermission>(60, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermission(b.readLong(), b.readLong(), b.readLong(), b.readVarInt()) })
     .register<PlayerPermissionReport>(61, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermissionReport(b.readLong(), b.readLong(), b.readVarInt()) })
     .register<AnnouncementMode>(70, { m, b -> b.writeBoolean(m.local) }, { b -> AnnouncementMode(b.readBoolean()) })
+    .register<PlayerFile>(71, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.kind).writeBoolean(m.present).writeByteArray(m.bytes, MAX_PLAYER_DATA) },
+        { b -> PlayerFile(b.readLong(), b.readLong(), b.readLong(), b.readVarInt(), b.readBoolean(), b.readByteArray(MAX_PLAYER_DATA)) })
+    .register<PlayerFileSave>(72, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.kind).writeByteArray(m.bytes, MAX_PLAYER_DATA) },
+        { b -> PlayerFileSave(b.readLong(), b.readLong(), b.readVarInt(), b.readByteArray(MAX_PLAYER_DATA)) })
+    .register<PlayerFlushed>(73, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow) }, { b -> PlayerFlushed(b.readLong(), b.readLong()) })
+    .register<EntityTransfer>(74, { m, b -> b.writeLong(m.playerHigh).writeLong(m.playerLow).writeVarInt(m.blobs.size)
+        m.blobs.forEach { e -> b.writeVarInt(e.kind).writeLong(e.uuidHigh).writeLong(e.uuidLow).writeByteArray(e.bytes, MAX_ENTITY_BLOB) } },
+        { b -> val hi = b.readLong(); val lo = b.readLong(); val n = b.readVarInt(); require(n in 0..MAX_ENTITY_BLOBS) { "too many entities" }
+            EntityTransfer(hi, lo, List(n) { EntityBlob(b.readVarInt(), b.readLong(), b.readLong(), b.readByteArray(MAX_ENTITY_BLOB)) }) })
+    .register<EntityTransferAck>(75, { m, b -> b.writeLong(m.playerHigh).writeLong(m.playerLow).writeVarInt(m.spawned.size); m.spawned.forEach { b.writeLong(it) } },
+        { b -> val hi = b.readLong(); val lo = b.readLong(); val n = b.readVarInt(); require(n in 0..MAX_ENTITY_BLOBS * 2) { "too many" }; EntityTransferAck(hi, lo, List(n) { b.readLong() }) })
+    .register<EntityRemove>(76, { m, b -> b.writeVarInt(m.uuids.size); m.uuids.forEach { b.writeLong(it) } },
+        { b -> val n = b.readVarInt(); require(n in 0..MAX_ENTITY_BLOBS * 2) { "too many" }; EntityRemove(List(n) { b.readLong() }) })
     .register<PlayerPacketToBackend>(49, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToBackend(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerPacketToClient>(50, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToClient(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerDetach>(51, { m, b -> b.writeLong(m.playerId).writeString(m.reason, 256) }, { b -> PlayerDetach(b.readLong(), b.readString(256)) })

@@ -39,7 +39,11 @@ object PlayerDataBackend {
             }
             is PlayerDataFlush -> {
                 val u = byBinding[m.playerId] ?: return
-                server?.execute { savePlayer(server, u) }
+                server?.execute {
+                    TravelBackend.collectAndSend(server, u, m.petRadius)   // pets and riders first, then the player file, stats and advancements
+                    savePlayer(server, u)
+                    NodeBootstrap.link?.takeIf { it.isOpen }?.send(PlayerFlushed(u.mostSignificantBits, u.leastSignificantBits))
+                }
             }
         }
     }

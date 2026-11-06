@@ -125,6 +125,8 @@ data class MasterSettings(
     val chat: ChatSettings = ChatSettings(),
     val adminStore: AdminStore = AdminStore(),
     val messages: AnnouncementSettings = AnnouncementSettings(),
+    /** `travel.pet-radius` */
+    val petRadius: Int = 24,
 ) {
     val announcements: Announcements by lazy { Announcements(messages) }
     fun isAdmin(uuid: UUID?): Boolean = adminStore.isAdmin(uuid)
@@ -142,6 +144,7 @@ data class MasterSettings(
                     maxLength = get("chat.global.max-length")?.toInt() ?: d.maxLength,
                     timeoutMs = get("chat.global.timeout-ms")?.toLong() ?: d.timeoutMs,
                 ),
+                petRadius = get("travel.pet-radius")?.toIntOrNull()?.coerceIn(0, 128) ?: 24,
                 messages = AnnouncementSettings(
                     joinGlobal = (get("messages.join.global") ?: "true").lowercase() != "false", leaveGlobal = (get("messages.leave.global") ?: "true").lowercase() != "false",
                     joinFormat = p.getProperty("messages.join.format")?.trim() ?: "", leaveFormat = p.getProperty("messages.leave.format")?.trim() ?: "",

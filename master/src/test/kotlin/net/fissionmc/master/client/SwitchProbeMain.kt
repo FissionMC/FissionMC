@@ -328,6 +328,100 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     val gotJoin = await(5000) { a.joinLines() >= joinsBefore + 1 }
     check("announcements: /fission send and the move to the other backend produced no join/leave lines; B's disconnect exactly one 'left', its reconnect one 'joined'",
         gotJoin && a.joinLines() == joinsBefore + 1 && a.leaveLines() == leavesBefore + 1, "joins ${a.joinLines()} (was $joinsBefore), leaves ${a.leaveLines()} (was $leavesBefore)")
+    // --- traveling entities and stats: pets, riders, a mount, advancements and stats follow B2 between backends
+    val root = System.getProperty("user.dir")
+    fun logPath(node: String) = Path.of(root, if (node == "a") "run-a/backend.log" else "run-b/backend.log")
+    fun runConsole(node: String, cmd: String): String {
+        val f = logPath(node); val before = Files.size(f).toInt(); console(node, cmd)
+        val all = Files.readAllBytes(f); return String(all, before, all.size - before, Charsets.ISO_8859_1)
+    }
+    fun passes(out: String) = out.contains("Test passed")
+    fun moveB2(to: String) {
+        val l0 = b2.logins; val m0 = a.events.size
+        a.command("fission send ProbeB backend-$to")
+        await(30_000) { b2.logins == l0 + 1 || a.sysTexts(m0).any { it.contains("already on") } }
+        quiet(1500)
+    }
+    val bu = UUID.nameUUIDFromBytes("OfflinePlayer:ProbeB".toByteArray()); val ownerInts = listOf((bu.mostSignificantBits shr 32).toInt(), bu.mostSignificantBits.toInt(), (bu.leastSignificantBits shr 32).toInt(), bu.leastSignificantBits.toInt()).joinToString(",")
+    moveB2("a"); moveB2("b"); moveB2("a")                                       // B2 is on backend-a now, whatever it was before
+    // a stone platform at y 99 on both backends (the area is forceloaded there), the player stands on it: pets must not spawn inside terrain
+    fun cleanTestWorld() { for (n in listOf("a", "b")) { for (t in listOf("rex", "tom", "sitty", "pup", "dkey", "piggy", "vill", "boaty", "bpig")) runConsole(n, "kill @e[tag=$t]"); runConsole(n, "fill 0 99 0 8 99 8 minecraft:air"); runConsole(n, "forceload remove all") } }
+    for (n in listOf("a", "b")) { for (t in listOf("rex", "tom", "sitty", "pup", "dkey", "piggy", "vill", "boaty", "bpig")) runConsole(n, "kill @e[tag=$t]") }   // leftovers of an earlier run
+    for (n in listOf("a", "b")) { runConsole(n, "forceload add 0 0 16 16"); runConsole(n, "fill 0 99 0 8 99 8 minecraft:stone"); runConsole(n, "fill 0 100 0 8 104 8 minecraft:air") }
+    runConsole("a", "tp ProbeB 4.5 100 4.5"); quiet(1500)
+    // pets with real NBT: collar colour, custom name, a potion effect, health below max, a leash held by the player, a baby, a chested donkey with a saddle, a plugin PDC value
+    val own = "Owner:[I;$ownerInts]"
+    runConsole("a", "execute at ProbeB run summon minecraft:wolf ~ ~ ~ {Tags:[\"rex\"],CustomName:'\"Rex\"',$own,Health:5.0f,CollarColor:11b,active_effects:[{id:\"minecraft:speed\",amplifier:1b,duration:99999}]}")
+    runConsole("a", "execute at ProbeB run summon minecraft:cat ~ ~ ~ {Tags:[\"tom\"],CustomName:'\"Tom\"',$own,Sitting:0b,CollarColor:3b}")
+    runConsole("a", "execute at ProbeB run summon minecraft:wolf ~ ~ ~ {Tags:[\"sitty\"],CustomName:'\"Sitty\"',$own,Sitting:1b}")
+    runConsole("a", "execute at ProbeB run summon minecraft:wolf ~ ~ ~ {Tags:[\"pup\"],CustomName:'\"Pup\"',$own,Age:-24000}")
+    runConsole("a", "execute at ProbeB run summon minecraft:donkey ~ ~ ~ {Tags:[\"dkey\"],CustomName:'\"Dk\"',$own,ChestedHorse:1b,Items:[{Slot:2b,id:\"minecraft:diamond\",count:3}],equipment:{saddle:{id:\"minecraft:saddle\",count:1}}}")
+    runConsole("a", "fissiontest rider ProbeB")
+    runConsole("a", "fissiontest rider ProbeB villager")
+    runConsole("a", "fissiontest shoulder ProbeB")
+    runConsole("a", "fissiontest leash ProbeB rex")
+    runConsole("a", "fissiontest pdc rex mark hello-pdc")
+    runConsole("a", "advancement grant ProbeB only minecraft:story/root")
+    val subjects = linkedMapOf("wolf Rex (collar, effect, health, leash, pdc)" to "@e[type=minecraft:wolf,tag=rex,limit=1]", "cat Tom" to "@e[type=minecraft:cat,tag=tom,limit=1]",
+        "baby wolf Pup" to "@e[type=minecraft:wolf,tag=pup,limit=1]", "donkey with saddle and chest" to "@e[type=minecraft:donkey,tag=dkey,limit=1]",
+        "pig riding the player" to "@e[type=minecraft:pig,tag=piggy,limit=1]", "villager riding the player" to "@e[type=minecraft:villager,tag=vill,limit=1]")
+    fun dump(node: String, selector: String): Map<String, String>? = Snbt.fromConsole(runConsole(node, "data get entity $selector"))
+    val shoulderBefore = Snbt.fromConsole(runConsole("a", "data get entity ProbeB ShoulderEntityLeft").replace("has the following entity data", "x entity data"))
+    val dumpsBefore = subjects.mapValues { (_, sel) -> dump("a", sel) }
+    check("travel setup: every subject exists on backend-a and its NBT can be read", dumpsBefore.all { it.value != null && it.value!!.size > 10 } && shoulderBefore != null, dumpsBefore.filter { it.value == null || it.value!!.size <= 10 }.keys.toString() + " shoulder=${shoulderBefore != null}")
+    check("travel setup: the tamed wolf, a cat, the sitting wolf and a pig riding the player exist on backend-a",
+        passes(runConsole("a", "execute if entity @e[type=minecraft:wolf,tag=rex]")) && passes(runConsole("a", "execute if entity @e[type=minecraft:cat,tag=tom]")) && passes(runConsole("a", "execute as @e[type=minecraft:pig,tag=piggy] on vehicle if entity @s[type=minecraft:player,name=ProbeB]")))
+    println("[probe] NBT before: Rex has ${dumpsBefore.values.first()?.size} keys, e.g. ${dumpsBefore.values.first()?.keys?.take(40)}")
+    runConsole("a", "save-all flush")
+    val statsA = Files.readString(Path.of(root, "run-a/world/players/stats/$bu.json"))
+    moveB2("b")
+    val travelled = await(10_000) { passes(runConsole("b", "execute if entity @e[type=minecraft:wolf,tag=rex]")) }
+    check("travel: the tamed wolf arrived on backend-b", travelled)
+    check("travel: the cat arrived too", passes(runConsole("b", "execute if entity @e[type=minecraft:cat,tag=tom]")))
+    check("travel: exactly one Rex on the target (no duplicates)", runConsole("b", "execute if entity @e[type=minecraft:wolf,tag=rex]").contains("Count: 1"))
+    check("travel: the pig that rode the player rides it again", passes(runConsole("b", "execute as @e[type=minecraft:pig,tag=piggy] on vehicle if entity @s[type=minecraft:player,name=ProbeB]")))
+    check("travel: the villager that rode the player rides it again", passes(runConsole("b", "execute as @e[type=minecraft:villager,tag=vill] on vehicle if entity @s[type=minecraft:player,name=ProbeB]")))
+    // the full NBT before and after: every key must be identical except the documented allowlist (NbtDiff.allowed)
+    for ((name, sel) in subjects) {
+        val after = dump("b", sel); val before = dumpsBefore[name]
+        if (before == null || after == null) { check("travel NBT: $name is readable on both backends", false); continue }
+        val d = NbtDiff.diff(before, after)
+        println("[probe] NBTDIFF $name: ${d.describe()}")
+        check("travel NBT: $name arrives with identical data (UUID, name, owner, collar, effects, health, age, items, leash, BukkitValues ...)", d.clean, d.describe())
+    }
+    val rexAfter = dump("b", subjects.values.first())
+    check("travel NBT: the PDC value set by a plugin survived", rexAfter?.entries?.any { it.key.startsWith("BukkitValues") && it.value.contains("hello-pdc") } == true, rexAfter?.keys?.filter { it.startsWith("BukkitValues") }.toString())
+    check("travel NBT: the leash to the player survived", rexAfter?.keys?.any { it.startsWith("Leash") || it.startsWith("leash") } == true && dumpsBefore.values.first()?.keys?.any { it.startsWith("Leash") || it.startsWith("leash") } == true)
+    val shoulderAfter = Snbt.fromConsole(runConsole("b", "data get entity ProbeB ShoulderEntityLeft").replace("has the following entity data", "x entity data"))
+    val sd = if (shoulderBefore != null && shoulderAfter != null) NbtDiff.diff(shoulderBefore, shoulderAfter) else null
+    println("[probe] NBTDIFF shoulder parrot: ${sd?.describe()}")
+    check("travel NBT: the shoulder parrot arrives with identical data", sd?.clean == true, sd?.describe() ?: "not readable")
+    check("travel: the originals are gone from the source backend", await(10_000) { !passes(runConsole("a", "execute if entity @e[type=minecraft:wolf,tag=rex]")) && !passes(runConsole("a", "execute if entity @e[type=minecraft:cat,tag=tom]")) && !passes(runConsole("a", "execute if entity @e[type=minecraft:pig,tag=piggy]")) && !passes(runConsole("a", "execute if entity @e[type=minecraft:donkey,tag=dkey]")) })
+    check("travel: the sitting wolf stays on the source", passes(runConsole("a", "execute if entity @e[type=minecraft:wolf,tag=sitty]")) && !passes(runConsole("b", "execute if entity @e[type=minecraft:wolf,tag=sitty]")))
+    check("travel: advancements follow (story/root is done on backend-b)", passes(runConsole("b", "execute if entity @a[name=ProbeB,advancements={minecraft:story/root=true}]")))
+    runConsole("b", "save-all flush")
+    fun playTime(j: String) = Regex("\"minecraft:play_time\"\\s*:\\s*(\\d+)").find(j)?.groupValues?.get(1)?.toLong() ?: -1
+    val statsB = Files.readString(Path.of(root, "run-b/world/players/stats/$bu.json"))
+    check("travel: stats follow (play time on backend-b continues from backend-a's ${playTime(statsA)})", playTime(statsA) > 0 && playTime(statsB) >= playTime(statsA), "a=${playTime(statsA)} b=${playTime(statsB)}")
+    // a mount with a second passenger: boat on backend-b, a pig on the boat, B2 rides it to backend-a
+    runConsole("b", "execute at ProbeB run summon minecraft:oak_boat ~ ~ ~ {Tags:[\"boaty\"],CustomName:'\"Boaty\"'}")
+    runConsole("b", "execute at ProbeB run summon minecraft:pig ~ ~ ~ {Tags:[\"bpig\"],CustomName:'\"Bp\"'}")
+    runConsole("b", "ride @e[type=minecraft:pig,tag=bpig,limit=1] mount @e[type=minecraft:oak_boat,tag=boaty,limit=1]")
+    runConsole("b", "ride ProbeB mount @e[type=minecraft:oak_boat,tag=boaty,limit=1]")
+    check("travel setup: B2 rides the boat on backend-b", passes(runConsole("b", "execute as @e[type=minecraft:oak_boat,tag=boaty] on passengers if entity @s[type=minecraft:player,name=ProbeB]")))
+    val boatBefore = dump("b", "@e[type=minecraft:oak_boat,tag=boaty,limit=1]"); val bpigBefore = dump("b", "@e[type=minecraft:pig,tag=bpig,limit=1]")
+    moveB2("a")
+    check("travel: the player arrives riding the same boat on backend-a", await(10_000) { passes(runConsole("a", "execute as @e[type=minecraft:oak_boat,tag=boaty] on passengers if entity @s[type=minecraft:player,name=ProbeB]")) })
+    check("travel: the boat's other passenger (a pig) arrives on the boat too", passes(runConsole("a", "execute as @e[type=minecraft:pig,tag=bpig] on vehicle if entity @s[type=minecraft:oak_boat,tag=boaty]")))
+    for ((name, before, sel) in listOf(Triple("boat", boatBefore, "@e[type=minecraft:oak_boat,tag=boaty,limit=1]"), Triple("boat passenger pig", bpigBefore, "@e[type=minecraft:pig,tag=bpig,limit=1]"))) {
+        val after = dump("a", sel)
+        val d = if (before != null && after != null) NbtDiff.diff(before, after) else null
+        println("[probe] NBTDIFF $name: ${d?.describe()}")
+        check("travel NBT: $name arrives with identical data", d?.clean == true, d?.describe() ?: "not readable")
+    }
+    check("travel: the boat is gone from the source", !passes(runConsole("b", "execute if entity @e[type=minecraft:oak_boat,tag=boaty]")))
+    runConsole("a", "ride ProbeB dismount"); runConsole("a", "gamemode creative ProbeB"); cleanTestWorld(); runConsole("a", "save-all flush"); runConsole("b", "save-all flush")
+
     val before = a.logins; val mk = a.events.size
     println("[probe] PHASE1-DONE")
     System.out.flush()

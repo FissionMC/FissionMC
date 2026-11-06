@@ -271,7 +271,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     /** A failed switch leaves the player where it is: the data owner goes back to that backend. */
-    private fun restoreDataOwner() { uuid?.let { server.relay?.setDataOwner(it, currentNodeId) } }
+    private fun restoreDataOwner() { uuid?.let { server.relay?.setDataOwner(it, currentNodeId); server.relay?.dropPendingEntities(it) } }
 
     private fun onSwitchFrame(sw: Switch, frame: ByteArray) {
         if (!sw.inPlay) {

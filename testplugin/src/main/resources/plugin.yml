@@ -3,3 +3,7 @@ version: 0.1.0
 main: net.fissionmc.testplugin.TestPlugin
 api-version: "26.3"
 load: STARTUP
+commands:
+  fissiontest:
+    description: test helpers for the scripted runs
+    usage: /fissiontest rider <player>

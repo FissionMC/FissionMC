@@ -23,6 +23,25 @@ class PlayerDataStore(val dir: Path, private val log: (String) -> Unit = {}, pri
     init { Files.createDirectories(dir) }
 
     private fun file(uuid: UUID) = dir.resolve("$uuid.dat")
+    private fun jsonFile(uuid: UUID, kind: Int) = dir.resolve("$uuid.${if (kind == net.fissionmc.protocol.PlayerFileKind.STATS) "stats" else "adv"}.json")
+
+    /** The player's stats or advancements JSON as stored (null = none). */
+    fun readFile(uuid: UUID, kind: Int): ByteArray? = try { jsonFile(uuid, kind).takeIf { Files.isRegularFile(it) }?.let { Files.readAllBytes(it) } } catch (t: Throwable) { log("[playerdata] cannot read $uuid json: $t"); null }
+
+    private fun validJson(b: ByteArray) = b.size in 2..MAX_PLAYER_DATA && String(b, 0, minOf(b.size, 64), Charsets.UTF_8).trimStart().startsWith("{")
+
+    /** A stats/advancements file from the owning backend, replaced atomically. */
+    fun onFileSave(nodeId: String, uuid: UUID, kind: Int, bytes: ByteArray): Boolean {
+        val o = owners[uuid]
+        if (o != null && o != nodeId) { log("[playerdata] ignored a json save of $uuid from $nodeId (owner is $o)"); return false }
+        if (!(kind == net.fissionmc.protocol.PlayerFileKind.STATS || kind == net.fissionmc.protocol.PlayerFileKind.ADVANCEMENTS) || !validJson(bytes)) { log("[playerdata] refused a json file for $uuid (kind $kind, ${bytes.size} bytes)"); return false }
+        return try {
+            val tmp = Files.createTempFile(dir, "$uuid-", ".tmp"); Files.write(tmp, bytes)
+            try { Files.move(tmp, jsonFile(uuid, kind), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+            catch (_: java.nio.file.AtomicMoveNotSupportedException) { Files.move(tmp, jsonFile(uuid, kind), StandardCopyOption.REPLACE_EXISTING) }
+            true
+        } catch (t: Throwable) { log("[playerdata] cannot write $uuid json: $t"); false }
+    }
 
     fun read(uuid: UUID): ByteArray? = try { file(uuid).takeIf { Files.isRegularFile(it) }?.let { Files.readAllBytes(it) } } catch (t: Throwable) { log("[playerdata] cannot read $uuid: $t"); null }
 
@@ -51,12 +70,13 @@ class PlayerDataStore(val dir: Path, private val log: (String) -> Unit = {}, pri
     fun onSave(nodeId: String, uuid: UUID, bytes: ByteArray): Boolean {
         val o = owners[uuid]
         if (o != null && o != nodeId) { log("[playerdata] ignored a save of $uuid from $nodeId (owner is $o)"); return false }
-        val ok = write(uuid, bytes)
-        if (ok) waiters.remove(uuid)?.forEach { it() }
-        return ok
+        return write(uuid, bytes)
     }
 
-    /** Runs [done] once: when the next save of [uuid] arrives or after [timeoutMs]. */
+    /** The backend finished a flush: everything it had to send for [uuid] has arrived (the link keeps order). */
+    fun flushed(uuid: UUID) { waiters.remove(uuid)?.forEach { it() } }
+
+    /** Runs [done] once: when the flush of [uuid] is complete ([flushed]) or after [timeoutMs]. */
     fun awaitSave(uuid: UUID, timeoutMs: Long, done: () -> Unit) {
         val once = AtomicBoolean()
         val run = { if (once.compareAndSet(false, true)) done() }

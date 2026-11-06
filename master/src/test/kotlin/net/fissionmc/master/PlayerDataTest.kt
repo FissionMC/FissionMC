@@ -46,7 +46,8 @@ class PlayerDataTest {
         val saved = CountDownLatch(1)
         s.awaitSave(u, 5000) { saved.countDown() }
         assertEquals(1, saved.count)
-        s.onSave("b", u, gz("x")); assertTrue(saved.await(2, TimeUnit.SECONDS))
+        s.onSave("b", u, gz("x")); assertEquals(1, saved.count, "a plain save does not end a flush")
+        s.flushed(u); assertTrue(saved.await(2, TimeUnit.SECONDS))
         val timedOut = CountDownLatch(1); s.awaitSave(UUID(9, 9), 100) { timedOut.countDown() }
         assertTrue(timedOut.await(3, TimeUnit.SECONDS), "no save: carry on after the timeout")
     }
@@ -60,7 +61,7 @@ class PlayerDataTest {
         assertFalse(none.present); assertEquals(0, none.nbt.size)
         val sv = Unpooled.buffer().also { reg.encode(PlayerDataSave(1, 2, data), it) }.let { reg.decode(it) as PlayerDataSave }
         assertEquals(1, sv.uuidHigh); assertContentEquals(data, sv.nbt)
-        val b = Unpooled.buffer(); reg.encode(PlayerDataFlush(5), b); assertEquals(PlayerDataFlush(5), reg.decode(b))
+        val b = Unpooled.buffer(); reg.encode(PlayerDataFlush(5, 12), b); assertEquals(PlayerDataFlush(5, 12), reg.decode(b))
     }
 
     @Test fun `attach sends the stored data first and records the owner, a save is stored, a flush asks the backend`() {
@@ -93,6 +94,8 @@ class PlayerDataTest {
         relay.flushPlayerData(id2, u, 5000) { flushed = true }
         assertTrue(link.sent.last() is PlayerDataFlush); assertFalse(flushed)
         relay.handle(reg["b1"]!!, PlayerDataSave(u.mostSignificantBits, u.leastSignificantBits, gz("after flush")))
+        assertFalse(flushed, "the player file alone does not complete the flush")
+        relay.handle(reg["b1"]!!, PlayerFlushed(u.mostSignificantBits, u.leastSignificantBits))
         assertTrue(flushed); assertNotEquals(id1, id2)
     }
 

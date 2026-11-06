@@ -93,9 +93,20 @@ public abstract class AbstractBoatMixin extends VehicleEntity {
     // CraftBukkit start - add Bukkit remove cause
     @Inject(method = "remove(Lnet/minecraft/world/entity/Entity$RemovalReason;)V", at = @At("HEAD"), cancellable = true)
     private void fission$removeDelegate(Entity.RemovalReason reason, CallbackInfo ci) {
+        if (this.fission$inRemoveDelegate) {
+            return;   // re-entered through Entity.remove(reason, cause) -> remove(reason): let the vanilla body run (the unguarded delegate recursed until the stack overflowed and crashed the server)
+        }
         ci.cancel();
-        this.remove(reason, null);
+        this.fission$inRemoveDelegate = true;
+        try {
+            this.remove(reason, null);
+        } finally {
+            this.fission$inRemoveDelegate = false;
+        }
     }
+
+    @org.spongepowered.asm.mixin.Unique
+    private boolean fission$inRemoveDelegate;
 
     @Override
     public void remove(final Entity.RemovalReason reason, org.bukkit.event.entity.EntityRemoveEvent.@Nullable Cause eventCause) {
