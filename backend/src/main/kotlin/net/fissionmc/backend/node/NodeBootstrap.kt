@@ -40,6 +40,8 @@ object NodeBootstrap {
     /** This backend's node id (`node.id`), set once the world is ready. */
     @JvmStatic @Volatile var nodeId: String = ""
 
+    private var combinedClientCfg: net.fissionmc.master.client.ClientConfig? = null
+
     @Volatile private var started = false
 
     /** A new master link after the first one (reconnect): route its messages, then tell the listeners. */
@@ -51,7 +53,13 @@ object NodeBootstrap {
 
     @JvmStatic
     fun start(universe: Path, levelName: String) {
-        val cfg = NodeConfig.load(Path.of("fission.properties").toAbsolutePath())
+        val file = Path.of("fission.yml").toAbsolutePath()
+        // missing file: the commented default (standalone), written once; unknown keys and wrong types stop the server with the key path
+        if (net.fissionmc.net.FissionConfig.writeDefaultIfMissing(file, NodeBootstrap::class.java.getResourceAsStream("/fission.backend.default.yml")!!.readBytes().toString(Charsets.UTF_8))) log.info("No fission.yml: wrote the commented default to $file")
+        val root = net.fissionmc.net.FissionConfig.load(file)
+        val cfg = NodeConfig.from(root, file.parent)
+        if (cfg.mode == NodeMode.COMBINED) combinedClientCfg = net.fissionmc.master.client.ClientConfig.from(root)
+        root.finish()
         if (cfg.mode == NodeMode.STANDALONE) return
         require(net.fissionmc.net.world.WorldFiles.safeRelative(levelName)) { "level-name '$levelName' is not usable for node sync" }
         val dest = universe.resolve(levelName).toAbsolutePath().normalize()
@@ -111,11 +119,11 @@ object NodeBootstrap {
         val relay = net.fissionmc.master.PlayerRelay(registry)
         registry.addListener(relay.listener)
         val onMessage: (RegisteredNode, NodeMessage) -> Unit = { n, m -> if (!relay.handle(n, m)) hub.handle(n, m) }
-        // clients connect to the master half of this JVM when client.* is configured in fission.properties (client.enabled=false turns it off)
+        // clients connect to the master half of this JVM when client.* is configured in fission.yml (client.enabled=false turns it off)
         var csRef: net.fissionmc.master.client.ClientServer? = null
         closeables += net.fissionmc.master.MasterStatsPublisher(registry, relay, { csRef?.onlinePlayers ?: 0 })
-        val clientCfg = net.fissionmc.master.client.ClientConfig.load(Path.of("fission.properties").toAbsolutePath())
-        if (clientCfg.enabled && java.nio.file.Files.readAllLines(Path.of("fission.properties").toAbsolutePath()).any { it.trim().startsWith("client.listen") }) {
+        val clientCfg = combinedClientCfg ?: net.fissionmc.master.client.ClientConfig()
+        if (clientCfg.enabled && clientCfg.listenGiven) {
             val cs = net.fissionmc.master.client.ClientServer(clientCfg, relay = relay, log = { log.info(it) }).start()
             csRef = cs
             closeables += cs

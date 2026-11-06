@@ -3,31 +3,46 @@ package net.fissionmc.master
 import io.netty.buffer.Unpooled
 import net.fissionmc.master.region.RegionMap
 import net.fissionmc.protocol.*
-import java.util.Properties
+
 import kotlin.test.*
 
 class RegionMapTest {
-    private fun props(vararg kv: String) = Properties().apply { kv.toList().chunked(2).forEach { setProperty(it[0], it[1]) } }
+    private fun cfg(yaml: String) = net.fissionmc.net.FissionConfig.parse(yaml)
+    private fun dims(vararg rules: String) = "regions:\n  dimensions:\n" + rules.joinToString("\n") { "    $it" }
     private val ow = "minecraft:overworld"
-    private fun split() = RegionMap.parse(props("regions.overworld", "min,min,0,max:backend-a;0,min,max,max:backend-b", "regions.the_nether", "*:backend-a", "regions.default", "backend-a"))
+    private val splitYaml = """
+        regions:
+          default: backend-a
+          dimensions:
+            overworld:
+              - { area: [min, min, 0, max], owner: backend-a }
+              - { area: [0, min, max, max], owner: backend-b }
+            the_nether:
+              - { owner: backend-a }
+    """.trimIndent()
+    private fun split() = RegionMap.parse(cfg(splitYaml))
 
     @Test fun `lookup follows the rectangles, the star rule and the default`() {
         val m = split()
         assertEquals("backend-a", m.owner(ow, -1, 500)); assertEquals("backend-b", m.owner(ow, 0, 500)); assertEquals("backend-b", m.owner(ow, 30_000_000, -30_000_000))
         assertEquals("backend-a", m.owner("minecraft:the_nether", 123, 456)); assertEquals("backend-a", m.owner("minecraft:the_end", 1, 1), "default owner for the rest")
-        assertTrue(m.enabled); assertFalse(RegionMap.parse(Properties()).enabled); assertNull(RegionMap.OFF.owner(ow, 0, 0))
+        assertTrue(m.enabled); assertFalse(RegionMap.parse(cfg("")).enabled); assertNull(RegionMap.OFF.owner(ow, 0, 0))
     }
 
     @Test fun `a map that leaves a hole or overlaps is refused with the place`() {
-        val hole = assertFailsWith<IllegalArgumentException> { RegionMap.parse(props("regions.overworld", "min,min,0,max:backend-a;100,min,max,max:backend-b")) }
+        val hole = assertFailsWith<IllegalArgumentException> { RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, 0, max], owner: backend-a }", "  - { area: [100, min, max, max], owner: backend-b }"))) }
         assertTrue(hole.message!!.contains("nobody owns"), hole.message)
-        val overlap = assertFailsWith<IllegalArgumentException> { RegionMap.parse(props("regions.overworld", "min,min,100,max:backend-a;0,min,max,max:backend-b")) }
+        val overlap = assertFailsWith<IllegalArgumentException> { RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, 100, max], owner: backend-a }", "  - { area: [0, min, max, max], owner: backend-b }"))) }
         assertTrue(overlap.message!!.contains("overlap"), overlap.message)
-        val badNumber = assertFailsWith<Exception> { RegionMap.parse(props("regions.overworld", "min,min,x,max:backend-a")) }
-        assertNotNull(badNumber)
-        assertFailsWith<IllegalArgumentException> { RegionMap.parse(props("regions.overworld", "min,min,0:backend-a")) }
+        // malformed rules name the key path
+        val badNumber = assertFailsWith<net.fissionmc.net.ConfigException> { RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, x, max], owner: backend-a }"))) }
+        assertTrue(badNumber.message!!.contains("regions.dimensions.overworld[0].area[2]"), badNumber.message)
+        val short = assertFailsWith<net.fissionmc.net.ConfigException> { RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, 0], owner: backend-a }"))) }
+        assertTrue(short.message!!.contains("four values"), short.message)
+        val noOwner = assertFailsWith<net.fissionmc.net.ConfigException> { RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, max, max] }"))) }
+        assertTrue(noOwner.message!!.contains(".owner"), noOwner.message)
         // a 2x2 grid is fine
-        val grid = RegionMap.parse(props("regions.overworld", "min,min,0,0:a;0,min,max,0:b;min,0,0,max:c;0,0,max,max:d"))
+        val grid = RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, 0, 0], owner: a }", "  - { area: [0, min, max, 0], owner: b }", "  - { area: [min, 0, 0, max], owner: c }", "  - { area: [0, 0, max, max], owner: d }")))
         assertEquals(listOf("a", "b", "c", "d"), listOf(grid.owner(ow, -1, -1), grid.owner(ow, 1, -1), grid.owner(ow, -1, 1), grid.owner(ow, 1, 1)))
     }
 

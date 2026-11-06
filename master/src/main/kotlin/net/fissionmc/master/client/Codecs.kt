@@ -110,7 +110,7 @@ class CipherEncoder(private val cipher: Cipher) : ChannelOutboundHandlerAdapter(
 }
 
 /**
- * Debug (`debug.dump-client-stream=<dir>` in fission.properties): writes every byte exchanged with each client to
+ * Debug (`debug: dump-client-stream: <dir>` in fission.yml): writes every byte exchanged with each client to
  * `<dir>/client-<n>-s2c.bin` (server to client) and `-c2s.bin`. Offline mode only (online mode sees encrypted bytes).
  * A backend replays an s2c file through vanilla's client decoders: `gradlew :backend:run -PcheckStream=<file>`.
  */

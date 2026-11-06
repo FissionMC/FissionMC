@@ -10,7 +10,7 @@ import java.nio.file.Path
 import java.util.UUID
 
 /**
- * Dev tool (`debug.relay-probe=true` in fission.properties): attaches a fake client to every backend that joins and logs the
+ * Dev tool (`debug: relay-probe: true` in fission.yml): attaches a fake client to every backend that joins and logs the
  * frames the backend sends back (varint packet id + size). Proves the virtual connection works without a real client.
  *
  * With `debug.record-limbo=<dir>` the fake client also answers the known-packs request like a vanilla client and RECORDS the

@@ -1,0 +1,20 @@
+# FissionMC backend configuration (fission.yml). Written by the backend when the file is missing.
+# YAML: a `#` after a space starts a comment, so quote texts that contain it. Unknown keys and wrong types stop the server at start and name the key path.
+# Relative paths are relative to this file. The backend's vanilla settings stay in server.properties.
+
+node:
+  mode: standalone             # standalone (plain single server) | backend | combined
+  # id: backend-1              # this backend's id (the master's regions and /fission send use it)
+  # master: "127.0.0.1:25600"  # backend: where the master listens
+  # master-public: "<base64>"  # backend: the master's public key (printed by the master / gradlew :master:nodeKeys)
+  # security: true             # Ed25519 authentication (keep on outside tests)
+  # key: fission-node.key      # this node's key file (created if missing)
+  # listen: "127.0.0.1:25600"  # combined: TCP listener for more backends
+  # authorized: fission-authorized.keys   # combined: allowed backends
+  # world-root: .              # combined: worlds the master half serves
+
+# combined mode only: the master half's client listener (same keys as the master's client: section)
+# client:
+#   listen: "0.0.0.0:25565"
+#   online-mode: true
+#   enabled: true

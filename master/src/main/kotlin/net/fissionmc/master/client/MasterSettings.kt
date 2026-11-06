@@ -1,12 +1,14 @@
 package net.fissionmc.master.client
 
 import java.nio.file.Files
+import net.fissionmc.net.ConfigException
+import net.fissionmc.net.ConfigSection
+import net.fissionmc.net.FissionConfig
 import java.nio.file.Path
-import java.util.Properties
 import java.util.UUID
 
 /**
- * Chat settings (`chat.*` keys of the master's fission.properties).
+ * Chat settings (the `chat:` section of the master's fission.yml).
  * Syntax `chat.format.syntax=minimessage|legacy` (see [net.fissionmc.master.chat.ChatTemplate]); placeholders `{name} {displayname} {uuid} {serverid} {backend} {message}`.
  */
 data class ChatSettings(
@@ -34,7 +36,7 @@ data class ChatSettings(
 
 /**
  * The master's admins, keyed by UUID (admin == operator level 4 on every backend, and who may use the master's own commands).
- * Sources: `admin.players=<uuid>,...` in fission.properties (static, removable only by editing the file) and `admins.txt` next to it (lines
+ * Sources: `admin: players: [<uuid>, ...]` in fission.yml (static, removable only by editing the file) and `admins.txt` next to it (lines
  * `uuid name`, written by `/fission admin add` and by name binding). NAMES are only a bootstrap: a name entry (in either file) is bound to the UUID of the
  * first player who logs in with that name (if [bindNames]); the pair is persisted in admins.txt, a WARN line is logged, and from then on only the UUID
  * counts. In online mode the UUID is authenticated, so binding once is safe; in offline mode (`client.online-mode=false`) the UUID derives from
@@ -77,7 +79,7 @@ class AdminStore(
 
     fun add(uuid: UUID, name: String) { uuids[uuid] = name; pendingNames.remove(name.lowercase()); persist() }
 
-    /** Removes a runtime admin. False if it is not one (or is a static entry of fission.properties). */
+    /** Removes a runtime admin. False if it is not one (or is a static entry of fission.yml). */
     fun remove(uuid: UUID): Boolean { val r = uuids.remove(uuid) != null; if (r) persist(); return r }
     fun uuidByName(name: String): UUID? = uuids.entries.firstOrNull { it.value.equals(name, ignoreCase = true) }?.key
 
@@ -127,7 +129,7 @@ class Announcements(private val s: AnnouncementSettings) {
     val local: Boolean get() = s.localEnabled
 }
 
-/** Everything the master reads from fission.properties besides the node and client listener keys. */
+/** Everything the master reads from fission.yml besides the node and client listener keys. */
 data class MasterSettings(
     val chat: ChatSettings = ChatSettings(),
     val adminStore: AdminStore = AdminStore(),
@@ -141,32 +143,35 @@ data class MasterSettings(
     fun isAdmin(uuid: UUID?): Boolean = adminStore.isAdmin(uuid)
 
     companion object {
-        fun parse(p: Properties, adminsFile: Path? = null, log: (String) -> Unit = {}): MasterSettings {
-            fun get(k: String) = p.getProperty(k)?.trim()?.takeIf { it.isNotEmpty() }
+        /**
+         * Reads the master's sections of [root]: `chat`, `messages`, `admin`, `travel` and `regions.margin` (every key documented in fission.default.yml). The caller runs
+         * `root.finish()` once all readers are done, which reports unknown keys with their path.
+         */
+        fun from(root: ConfigSection, adminsFile: Path? = null, log: (String) -> Unit = {}): MasterSettings {
             val d = ChatSettings()
-            fun raw(k: String, def: String) = p.getProperty(k)?.takeIf { it.isNotBlank() || k.endsWith("prefix") || k.endsWith("suffix") } ?: def
+            val c = root.section("chat"); val fmt = c.section("format"); val g = c.section("global"); val l = c.section("local")
+            val default = c.string("default", "local").lowercase()
+            if (default != "local" && default != "global") throw ConfigException("chat.default: expected local or global, got '$default'")
+            val syntax = fmt.string("syntax", d.syntax).lowercase()
+            if (syntax != "minimessage" && syntax != "legacy") throw ConfigException("chat.format.syntax: expected minimessage or legacy, got '$syntax'")
+            val m = root.section("messages"); val join = m.section("join"); val leave = m.section("leave"); val sw = m.section("switch"); val loc = m.section("local")
+            val admin = root.section("admin")
             return MasterSettings(
                 chat = ChatSettings(
-                    defaultGlobal = (get("chat.default") ?: "local").lowercase() == "global",
-                    syntax = (get("chat.format.syntax") ?: d.syntax).lowercase().also { require(it == "minimessage" || it == "legacy") { "chat.format.syntax must be minimessage or legacy, not '$it'" } },
-                    format = raw("chat.global.format", d.format), localFormat = raw("chat.local.format", d.localFormat), prefix = raw("chat.global.prefix", ""), suffix = raw("chat.global.suffix", ""),
-                    allowColors = (get("chat.global.allow-colors") ?: "false").lowercase() == "true",
-                    maxLength = get("chat.global.max-length")?.toInt() ?: d.maxLength,
-                    timeoutMs = get("chat.global.timeout-ms")?.toLong() ?: d.timeoutMs,
+                    defaultGlobal = default == "global", syntax = syntax,
+                    format = g.string("format", d.format), localFormat = l.string("format", d.localFormat), prefix = g.string("prefix", ""), suffix = g.string("suffix", ""),
+                    allowColors = g.bool("allow-colors", false), maxLength = g.int("max-length", d.maxLength), timeoutMs = g.long("timeout-ms", d.timeoutMs),
                 ),
-                regionMargin = get("regions.margin")?.toIntOrNull()?.coerceIn(0, 128) ?: 8,
-                petRadius = get("travel.pet-radius")?.toIntOrNull()?.coerceIn(0, 128) ?: 24,
+                regionMargin = root.section("regions").int("margin", 8).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
+                petRadius = root.section("travel").int("pet-radius", 24).also { if (it !in 0..128) throw ConfigException("travel.pet-radius: expected 0-128, got $it") },
                 messages = AnnouncementSettings(
-                    joinGlobal = (get("messages.join.global") ?: "true").lowercase() != "false", leaveGlobal = (get("messages.leave.global") ?: "true").lowercase() != "false",
-                    joinFormat = p.getProperty("messages.join.format")?.trim() ?: "", leaveFormat = p.getProperty("messages.leave.format")?.trim() ?: "",
-                    switchEnabled = (get("messages.switch.enabled") ?: "false").lowercase() == "true",
-                    switchFormat = p.getProperty("messages.switch.format")?.trim()?.takeIf { it.isNotEmpty() } ?: "{name} moved to {backend}",
-                    localEnabled = (get("messages.local.enabled") ?: "false").lowercase() == "true",
+                    joinGlobal = join.bool("global", true), leaveGlobal = leave.bool("global", true), joinFormat = join.string("format", ""), leaveFormat = leave.string("format", ""),
+                    switchEnabled = sw.bool("enabled", false), switchFormat = sw.string("format", "{name} moved to {backend}"), localEnabled = loc.bool("enabled", false),
                 ),
-                adminStore = AdminStore(adminsFile, (get("admin.players") ?: "").split(','), (get("admin.bind-names") ?: "true").lowercase() != "false", log),
+                adminStore = AdminStore(adminsFile, admin.stringList("players").flatMap { it.split(',') }, admin.bool("bind-names", true), log),
             )
         }
-        fun load(file: Path, log: (String) -> Unit = {}): MasterSettings =
-            parse(Properties().also { p -> if (Files.isRegularFile(file)) Files.newBufferedReader(file).use(p::load) }, file.toAbsolutePath().resolveSibling("admins.txt"), log)
+
+        fun load(file: Path, log: (String) -> Unit = {}): MasterSettings = from(FissionConfig.load(file), file.toAbsolutePath().resolveSibling("admins.txt"), log)
     }
 }

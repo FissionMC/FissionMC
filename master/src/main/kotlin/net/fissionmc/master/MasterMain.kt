@@ -6,34 +6,35 @@ import net.fissionmc.master.client.ClientConfig
 import net.fissionmc.master.client.ClientServer
 import java.nio.file.Path
 
-/** Standalone master process: `fission.properties` with node.mode=master, node.listen, node.authorized, node.world-root. */
+/** Standalone master process: `fission.yml` with node.mode master, node.listen, node.authorized, node.world-root (every key: fission.default.yml). */
 fun main(args: Array<String>) {
-    val cfg = NodeConfig.load(Path.of(args.firstOrNull() ?: "fission.properties"))
-    require(cfg.masterProcess) { "fission.properties must set node.mode=master" }
+    val configFile = Path.of(args.firstOrNull() ?: "fission.yml").toAbsolutePath()
+    if (FissionConfig.writeDefaultIfMissing(configFile, MasterMainResources.defaultConfig())) println("[master] no ${configFile.fileName}: wrote the commented default to $configFile")
+    // every section is read up front; an unknown key, a wrong type or an invalid region map stops the master with the key path
+    val mc = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } } catch (e: IllegalArgumentException) {
+        println("[master] CONFIG ERROR, master not started: ${e.message}"); System.err.println("[master] CONFIG ERROR, master not started: ${e.message}"); kotlin.system.exitProcess(2)
+    }
+    val cfg = mc.node; val regions = mc.regions; val clientCfg = mc.client; val settings = mc.settings; val ghostZone = mc.ghostZone; val stripChunks = mc.borderStrip
+    val chunkAuthorityOn = mc.chunkAuthority; val chunkDeterministic = mc.chunkDeterministic; val leaseSeconds = mc.leaseSeconds; val statsSeconds = mc.chunkStatsSeconds
+    val chunkStoreDir = mc.chunkStoreDir; val playerDataDir = mc.playerDataDir
+    val dbgPackets = mc.debugPackets; val dbgDump = mc.debugDumpClientStream; val dbgRelayProbe = mc.debugRelayProbe; val dbgRecordLimbo = mc.debugRecordLimbo
     val listen = cfg.listen!!
     val transport = NettyTransport(NodeSupport.masterNode(MC_VERSION), security = NodeSupport.masterSecurity(cfg))
     val registry = NodeRegistry()
     val hub = ReplicationHub()
     registry.addListener(hub.listener)
     val relay = PlayerRelay(registry)
-    val propsEarly = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
-    relay.playerData = PlayerDataStore(Path.of(propsEarly.getProperty("playerdata.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "playerdata"), { println(it) })
+    relay.playerData = PlayerDataStore(Path.of(playerDataDir), { println(it) })
     registry.addListener(relay.listener)
-    // static regions: a malformed or incomplete map stops the master
-    val regionProps = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
-    val regions = try { net.fissionmc.master.region.RegionMap.parse(regionProps) } catch (e: Exception) { System.err.println("[master] REGIONS CONFIG ERROR, master not started: ${e.message}"); println("[master] REGIONS CONFIG ERROR, master not started: ${e.message}"); kotlin.system.exitProcess(2) }
     relay.regions = regions
-    val ghostZone = regionProps.getProperty("regions.ghost-zone")?.trim()?.toIntOrNull()?.coerceIn(1, 64) ?: 12
-    val stripChunks = regionProps.getProperty("regions.border-strip")?.trim()?.toIntOrNull() ?: 1
     if (regions.enabled) { println("[master] regions on:"); regions.describe().forEach { println("[master]   $it") }; registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { node.link.send(net.fissionmc.protocol.RegionMap(node.info.nodeId, regions.toRules())) } }) ; java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "regions-resend").also { it.isDaemon = true } }.scheduleWithFixedDelay({ registry.all.filter { it.link.isOpen }.forEach { n -> n.link.send(net.fissionmc.protocol.RegionMap(n.info.nodeId, regions.toRules())) } }, 5, 5, java.util.concurrent.TimeUnit.SECONDS) }
     // chunk authority: the master is the canonical store of chunk data
-    val chunkProps = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
-    val chunks = if ((chunkProps.getProperty("chunk.authority") ?: "true").trim().lowercase() != "false") {
-        val det = (chunkProps.getProperty("chunk.authority.deterministic") ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    val chunks = if (chunkAuthorityOn) {
+        val det = chunkDeterministic
         val timer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "chunk-authority").also { it.isDaemon = true } }
-        val store = net.fissionmc.master.chunk.FileChunkStore(Path.of(chunkProps.getProperty("chunkstore.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "chunkstore")) { println(it) }
-        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, (chunkProps.getProperty("chunk.lease-seconds")?.trim()?.toLongOrNull() ?: 60L) * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }).also { a ->
-            val every = chunkProps.getProperty("chunk.stats-interval")?.trim()?.toLongOrNull() ?: 30L
+        val store = net.fissionmc.master.chunk.FileChunkStore(Path.of(chunkStoreDir)) { println(it) }
+        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, leaseSeconds * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }).also { a ->
+            val every = statsSeconds
             var last = ""
             timer.scheduleWithFixedDelay({ val l = a.statsLine(); if (l != last) { last = l; println(l) } }, every, every, java.util.concurrent.TimeUnit.SECONDS)
             registry.addListener(a.listener)
@@ -51,8 +52,6 @@ fun main(args: Array<String>) {
     })
     println("[master] event log epoch ${hub.epoch}")
     println("[master] listening on ${listen.host}:${listen.port}, worlds in ${cfg.worldRoot}")
-    val clientCfg = ClientConfig.load(Path.of(args.firstOrNull() ?: "fission.properties"))
-    val settings = net.fissionmc.master.client.MasterSettings.load(Path.of(args.firstOrNull() ?: "fission.properties")) { println("[master] $it") }
     if (settings.adminStore.any && !clientCfg.onlineMode)
         println("[master] WARN admins exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as an admin's name (and is then bound to it first if the admin has not logged in yet). Use online mode outside development.")
     // local chat format (chat.local.format): pushed to the backends on join, on every attach and every 5 s (a first send can precede the backend's handlers)
@@ -64,11 +63,14 @@ fun main(args: Array<String>) {
     val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = settings).start() else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })
-    val props = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
-    props.getProperty("debug.dump-client-stream")?.let { System.setProperty("fission.dump-client-stream", it) }
-    if (props.getProperty("debug.packets") == "true") System.setProperty("fission.debug.packets", "1")
-    if (props.getProperty("debug.relay-probe") == "true")
-        registry.addListener(RelayProbe(relay, props.getProperty("debug.record-limbo")?.let { Path.of(it) }))
+    dbgDump?.let { System.setProperty("fission.dump-client-stream", it) }
+    if (dbgPackets) System.setProperty("fission.debug.packets", "1")
+    if (dbgRelayProbe) registry.addListener(RelayProbe(relay, dbgRecordLimbo?.let { Path.of(it) }))
     Runtime.getRuntime().addShutdownHook(Thread { chunks?.let { println(it.statsLine()) }; stats.close(); clients?.close(); master.close(); transport.close() })
     Thread.currentThread().join()
+}
+
+/** The commented default `fission.yml` the master writes when the file is missing (`master/src/main/resources/fission.default.yml`). */
+object MasterMainResources {
+    fun defaultConfig(): String = MasterMainResources::class.java.getResourceAsStream("/fission.default.yml")!!.readBytes().toString(Charsets.UTF_8)
 }

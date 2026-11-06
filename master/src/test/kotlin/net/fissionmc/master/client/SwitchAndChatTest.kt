@@ -6,7 +6,7 @@ import net.fissionmc.packets.FissionPacketEventsAPI
 import net.fissionmc.packets.Side
 import net.fissionmc.protocol.*
 import net.kyori.adventure.text.format.NamedTextColor
-import java.util.Properties
+import net.fissionmc.net.FissionConfig
 import kotlin.test.*
 
 class SwitchAndChatTest {
@@ -151,10 +151,11 @@ class SwitchAndChatTest {
     }
 
     @Test fun `settings parse chat keys and defaults`() {
-        val p = Properties().apply { setProperty("chat.default", "global"); setProperty("chat.global.format", "{name}: {message}"); setProperty("chat.global.allow-colors", "true"); setProperty("chat.global.max-length", "40") }
-        val m = MasterSettings.parse(p)
+        val m = MasterSettings.from(FissionConfig.parse("chat:\n  default: global\n  global: { format: \"{name}: {message}\", allow-colors: true, max-length: 40 }"))
         assertTrue(m.chat.defaultGlobal); assertEquals("{name}: {message}", m.chat.format); assertTrue(m.chat.allowColors); assertEquals(40, m.chat.maxLength)
-        assertFalse(MasterSettings.parse(Properties()).chat.defaultGlobal); assertEquals("\\<{name}> {message}", MasterSettings.parse(Properties()).chat.globalTemplate())
+        val none = MasterSettings.from(FissionConfig.parse(""))
+        assertFalse(none.chat.defaultGlobal); assertEquals("\\<{name}> {message}", none.chat.globalTemplate()); assertEquals("minimessage", none.chat.syntax)
+        assertEquals("legacy", MasterSettings.from(FissionConfig.parse("chat: { format: { syntax: legacy } }")).chat.syntax)
     }
 
     @Test fun `admins are keyed by uuid, a name only bootstraps once and then grants nothing`() {
@@ -180,7 +181,7 @@ class SwitchAndChatTest {
         assertFalse(off.bindOnLogin("Bob", java.util.UUID(1, 1))); assertFalse(off.isAdmin(java.util.UUID(1, 1)))
         val s = AdminStore(file); val u = java.util.UUID(3, 4)
         s.add(u, "Carol"); assertTrue(AdminStore(file).isAdmin(u)); assertFalse(AdminStore(file).isAdmin(java.util.UUID(3, 5)))
-        val m = MasterSettings.parse(Properties().apply { setProperty("admin.players", u.toString()) })
+        val m = MasterSettings.from(FissionConfig.parse("admin: { players: [\"$u\"] }"))
         assertTrue(m.isAdmin(u)); assertFalse(m.isAdmin(null))
     }
 

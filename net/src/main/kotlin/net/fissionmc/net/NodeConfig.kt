@@ -13,18 +13,20 @@ enum class NodeMode {
 }
 
 /**
- * Node settings from a `fission.properties` file:
+ * Node settings, the `node:` section of `fission.yml`:
  * ```
- * node.mode=standalone|backend|combined|master   # master = master-only process (see :master:run)
- * node.id=backend-1
- * node.master=host:port            # backend: where the master listens
- * node.listen=host:port            # master/combined: TCP listener for backends (optional in combined)
- * node.key=fission-node.key        # this node's Ed25519 key file (created if missing)
- * node.master-public=<base64>      # backend: the master's public key
- * node.authorized=fission-authorized.keys   # master: "nodeId base64pubkey" per line
- * node.security=on|off             # default on for TCP
- * node.world-root=.                # master: directory holding the worlds it serves
+ * node:
+ *   mode: backend            # standalone | backend | combined | master (master = master-only process, see :master:run)
+ *   id: backend-1
+ *   master: "host:port"      # backend: where the master listens
+ *   listen: "host:port"      # master/combined: TCP listener for backends (optional in combined)
+ *   key: fission-node.key    # this node's Ed25519 key file (created if missing)
+ *   master-public: <base64>  # backend: the master's public key
+ *   authorized: fission-authorized.keys   # master: "nodeId base64pubkey" per line
+ *   security: true           # default true for TCP
+ *   world-root: .            # master: directory holding the worlds it serves
  * ```
+ * (every key documented in `fission.default.yml` / `fission.backend.default.yml`)
  */
 data class NodeConfig(
     val mode: NodeMode,
@@ -39,33 +41,35 @@ data class NodeConfig(
     val worldRoot: Path,
 ) {
     companion object {
-        fun load(file: Path): NodeConfig {
-            val p = java.util.Properties()
-            if (Files.isRegularFile(file)) Files.newBufferedReader(file).use(p::load)
-            fun get(k: String) = p.getProperty(k)?.trim()?.takeIf { it.isNotEmpty() }
-            fun addr(k: String) = get(k)?.let {
+        /** Parses the file and reads only the `node:` section (no unknown-key check: the caller owns the whole tree; see [from]). */
+        fun load(file: Path): NodeConfig = from(FissionConfig.load(file), file.toAbsolutePath().parent ?: Path.of(".").toAbsolutePath())
+
+        /** Reads the `node:` section of [root]; [dir] is what the relative paths (key files, world root) are relative to. */
+        fun from(root: ConfigSection, dir: Path): NodeConfig {
+            val n = root.section("node")
+            fun addr(k: String) = n.optString(k)?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 val i = it.lastIndexOf(':')
-                require(i > 0) { "$k must be host:port, got '$it'" }
-                NodeAddress.Tcp(it.substring(0, i), it.substring(i + 1).toInt())
+                if (i <= 0) throw ConfigException("node.$k: expected host:port, got '$it'")
+                NodeAddress.Tcp(it.substring(0, i), it.substring(i + 1).toIntOrNull() ?: throw ConfigException("node.$k: the port of '$it' is not a number"))
             }
-            val modeText = (get("node.mode") ?: "standalone").lowercase()
+            fun text(k: String) = n.optString(k)?.trim()?.takeIf { it.isNotEmpty() }
+            val modeText = (text("mode") ?: "standalone").lowercase()
             val master = modeText == "master"
             val mode = if (master) NodeMode.STANDALONE else NodeMode.entries.firstOrNull { it.name.equals(modeText, true) }
-                ?: error("node.mode must be standalone, backend, combined or master, got '$modeText'")
-            val dir = file.toAbsolutePath().parent ?: Path.of(".").toAbsolutePath()
+                ?: throw ConfigException("node.mode: expected standalone, backend, combined or master, got '$modeText'")
             return NodeConfig(
-                mode, master, get("node.id") ?: "backend-1", addr("node.master"), addr("node.listen"),
-                dir.resolve(get("node.key") ?: "fission-node.key"), get("node.master-public"),
-                dir.resolve(get("node.authorized") ?: "fission-authorized.keys"),
-                (get("node.security") ?: "on").lowercase() != "off",
-                dir.resolve(get("node.world-root") ?: "."),
+                mode, master, text("id") ?: "backend-1", addr("master"), addr("listen"),
+                dir.resolve(text("key") ?: "fission-node.key"), text("master-public"),
+                dir.resolve(text("authorized") ?: "fission-authorized.keys"),
+                n.bool("security", true),
+                dir.resolve(text("world-root") ?: "."),
             ).also { it.validate() }
         }
     }
 
     private fun validate() {
-        if (mode == NodeMode.BACKEND) require(master != null) { "node.mode=backend needs node.master=host:port" }
-        if (mode == NodeMode.BACKEND && security) require(masterPublic != null) { "node.mode=backend needs node.master-public (or node.security=off)" }
-        if (masterProcess) require(listen != null) { "node.mode=master needs node.listen=host:port" }
+        if (mode == NodeMode.BACKEND && master == null) throw ConfigException("node.master: mode backend needs host:port")
+        if (mode == NodeMode.BACKEND && security && masterPublic == null) throw ConfigException("node.master-public: mode backend needs the master's public key (or node.security: false)")
+        if (masterProcess && listen == null) throw ConfigException("node.listen: mode master needs host:port")
     }
 }

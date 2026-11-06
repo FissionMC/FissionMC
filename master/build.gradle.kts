@@ -5,6 +5,7 @@ dependencies {
     // MiniMessage for the chat templates: the SAME line as the adventure the master already uses (PacketEvents' patched 4.26.1). The backend (via project(":master")) resolves
     // this module to paper-api's 5.x like it does adventure-api, so there is still exactly one copy on the backend class path (never add it to :backend/:craft).
     implementation("net.kyori:adventure-text-minimessage:4.26.1")
+    implementation("org.yaml:snakeyaml:2.2")   // fission.yml (the backend gets snakeyaml from paper-api's configurate-yaml; Gradle keeps one version)
     testImplementation(kotlin("test"))
 }
 
@@ -15,13 +16,13 @@ tasks.withType<Test>().configureEach { useJUnitPlatform(); systemProperty("fissi
 
 tasks.register<JavaExec>("run") {
     group = "fission"
-    description = "Runs the standalone master (reads run-master/fission.properties)"
+    description = "Runs the standalone master (reads run-master/fission.yml)"
     dependsOn("classes")
     dependsOn(adventurePatch)
     classpath = files(adventurePatch) + sourceSets["main"].runtimeClasspath
     mainClass = "net.fissionmc.master.MasterMainKt"
     workingDir = rootProject.file("run-master").also { it.mkdirs() }
-    args("fission.properties")
+    args("fission.yml")
 }
 
 // ./gradlew :master:nodeKeys -Pkeyfile=run-a/fission-node.key -Pnode=backend-a [-Pauthorized=run-master/fission-authorized.keys]

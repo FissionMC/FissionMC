@@ -27,7 +27,7 @@ object MasterCommands {
     }
 
     /**
-     * `/fission admin add|remove <player>`: edits the admin set, which is keyed by UUID (admins.txt next to fission.properties). Admin = operator level 4
+     * `/fission admin add|remove <player>`: edits the admin set, which is keyed by UUID (admins.txt next to fission.yml). Admin = operator level 4
      * on every backend. `add` needs the player online (its UUID is resolved from the name); `remove` takes an online name, a name recorded in admins.txt or a uuid.
      */
     private fun admin(s: ClientSession, server: ClientServer, args: List<String>) {
@@ -44,7 +44,7 @@ object MasterCommands {
         } else if (store.remove(uuid)) {
             s.tell(Component.text("${online?.playerName ?: who} is no admin any more.", NamedTextColor.GRAY))
         } else {
-            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in admin.players of fission.properties: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
+            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in admin: players of fission.yml: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
         }
         server.log("[master] ${s.playerName}: admin $action $who ($uuid)")
         online?.pushPermission()
@@ -54,7 +54,7 @@ object MasterCommands {
     private fun regions(s: ClientSession, server: ClientServer) {
         if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
         val map = server.relay?.regions
-        if (map == null || !map.enabled) { s.tell(Component.text("Regions are off: every backend owns everything (set regions.* in fission.properties).", NamedTextColor.GRAY)); return }
+        if (map == null || !map.enabled) { s.tell(Component.text("Regions are off: every backend owns everything (add a regions: section to fission.yml).", NamedTextColor.GRAY)); return }
         val owner = map.owner(s.lastDimension, s.lastX, s.lastZ)
         s.tell(Component.text("You are at ${s.lastDimension} ${s.lastX}, ${s.lastZ}: owner ${owner ?: "nobody"}, on ${s.currentNodeId}.", NamedTextColor.GRAY))
         map.describe().forEach { s.tell(Component.text("  $it", NamedTextColor.DARK_GRAY)) }
