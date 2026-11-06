@@ -54,6 +54,33 @@ class PlayerRelayTest {
         }
     }
 
+    @Test fun `master stats survive the wire and format`() {
+        val st = MasterStats(1234L, 3, 2, 3, 120, 480, 20_480, 1_048_576, 150, 2048, 12,
+            listOf(NodeStat("backend-a", 2, 1500, true), NodeStat("backend-b", 1, 2_250, false)))
+        val reg = MessageRegistry.core().registerPlayerMessages()
+        val b = Unpooled.buffer(); reg.encode(st, b); assertEquals(st, reg.decode(b)); assertEquals(0, b.readableBytes())
+        val lines = st.lines()
+        assertEquals("master: 3 clients, 2 backends, 3 relayed players", lines[0])
+        assertTrue(lines[1].contains("in 120 frames/s 20 KiB/s") && lines[1].contains("out 480 frames/s 1024 KiB/s"), lines[1])
+        assertEquals("master jvm: heap 150 / 2048 MB, cpu 12%", lines[2])
+        assertEquals("link backend-a: 2 players, rtt 1.50 ms", lines[3])
+        assertEquals("link backend-b: 1 players, rtt 2.25 ms, SATURATED", lines[4])
+        val md = st.metadata()
+        assertEquals("3", md["fission.master.clients"]); assertEquals("150/2048", md["fission.master.heapMb"])
+        assertEquals("players=2 rttMs=1.50 writable=true", md["fission.link.backend-a"])
+    }
+
+    @Test fun `relay counts frames and players per backend`() {
+        val (reg, links) = registryWith("b1", "b2")
+        val relay = PlayerRelay(reg)
+        val id1 = relay.attach(FakeClient("one"))!!; relay.attach(FakeClient("two"))
+        relay.toBackend(id1, ByteArray(100)); relay.toBackend(id1, ByteArray(50))
+        relay.handle(reg["b1"]!!, PlayerPacketToClient(id1, ByteArray(10)))
+        assertEquals(2, relay.framesIn.get()); assertEquals(150, relay.bytesIn.get())
+        assertEquals(1, relay.framesOut.get()); assertEquals(10, relay.bytesOut.get())
+        assertEquals(mapOf("b1" to 1, "b2" to 1), relay.playersByNode())
+    }
+
     @Test fun `no backend means no attach`() {
         assertNull(PlayerRelay(NodeRegistry()).attach(FakeClient("a")))
     }

@@ -46,6 +46,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** The client reported ServerboundPlayerLoaded (ClientPacketListener.notifyPlayerLoaded): its level is up, reconfiguring is safe. */
     private var clientLoaded = false
     private var graceOver = false
+    /**
+     * The latest ServerboundClientInformation payload (view distance, skin parts, main hand, chat settings...). Vanilla's client sends it once when
+     * it connects (configuration, which the master answered itself) and again only when an option changes in play; it does NOT resend it for the
+     * reconfiguration after StartConfiguration (ClientPacketListener.broadcastClientInformation). The backend's new player would keep
+     * ClientInformation.createDefault() (view distance 2 = about 3 chunks), so the master replays it as the first configuration frame.
+     */
+    private var clientInfoPayload: ByteArray? = null
     private var relayId: Long? = null
     private var hostName = ""
     private var tap: net.fissionmc.packets.PacketTap? = null
@@ -178,6 +185,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             val st = user.decoderState   // PacketEvents' internal listener advances the user's state while the event is fired
             val event = EventCreationUtil.createReceiveEvent(channel, user, null, buf, false)
             if (!net.fissionmc.packets.PacketBus.fireReceive(event)) return   // a listener cancelled it
+            if (event.packetType == PacketType.Configuration.Client.CLIENT_SETTINGS || event.packetType == PacketType.Play.Client.CLIENT_SETTINGS) {
+                val all = ByteArray(buf.writerIndex()); buf.getBytes(0, all)
+                val idLen = VarInts.size(Limbo.idOf(all)); clientInfoPayload = all.copyOfRange(idLen, all.size)
+            }
             if (System.getProperty("fission.debug.packets") != null) server.log("[client] $username <- $st ${event.packetType}")
             when (st) {
                 ConnectionState.HANDSHAKING -> onHandshake(event)
@@ -340,6 +351,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (mode == Mode.AWAIT_ACK) {
             if (e.packetType == PacketType.Play.Client.CONFIGURATION_ACK) {
                 user.decoderState = ConnectionState.CONFIGURATION; user.encoderState = ConnectionState.CONFIGURATION
+                // first frame of the backend's configuration: the client's real options (config-state ClientInformation has packet id 0)
+                clientInfoPayload?.let { p -> val f = ByteArray(1 + p.size); System.arraycopy(p, 0, f, 1, p.size); relayId?.let { id -> server.relay?.toBackend(id, f) } }
                 mode = Mode.RELAY
                 while (pendingFromBackend.isNotEmpty()) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(pendingFromBackend.poll()))
                 channel.flush()

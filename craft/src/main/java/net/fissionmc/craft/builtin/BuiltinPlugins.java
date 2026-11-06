@@ -28,19 +28,31 @@ public final class BuiltinPlugins {
     public static final String PACKETEVENTS_YML = "name: packetevents\nversion: 2.0.0-fission\nmain: " + MAIN
         + "\napi-version: '1.13'\nauthor: FissionMC\ndescription: Built-in PacketEvents API (core-fed)\nload: STARTUP\n";
 
+    public static final String FISSION_MAIN = "net.fissionmc.builtin.FissionMain";
+    public static final String FISSION_YML = "name: fission\nversion: 0.1.0\nmain: " + FISSION_MAIN
+        + "\napi-version: '1.13'\nauthor: FissionMC\ndescription: FissionMC master and relay status\nload: STARTUP\n"
+        + "commands:\n  fission:\n    description: FissionMC master and relay status\n    usage: /fission status\n    permission: fission.status\n"
+        + "permissions:\n  fission.status:\n    default: op\n";
+
     public static void register() throws IOException {
         Path dir = Path.of(".fission-builtin");
         Files.createDirectories(dir);
-        Path jar = dir.resolve("packetevents.jar");
+        List<Path> jars = List.of(
+            write(dir.resolve("packetevents.jar"), PACKETEVENTS_YML, MAIN, PacketEventsPlugin.class),
+            write(dir.resolve("fission.jar"), FISSION_YML, FISSION_MAIN, FissionPlugin.class));
+        EntrypointUtil.registerProvidersFromSource(PluginFlagProviderSource.INSTANCE, jars);
+    }
+
+    private static Path write(Path jar, String yml, String main, Class<?> target) throws IOException {
         try (OutputStream out = Files.newOutputStream(jar); JarOutputStream j = new JarOutputStream(out)) {
             j.putNextEntry(new JarEntry("plugin.yml"));
-            j.write(PACKETEVENTS_YML.getBytes(StandardCharsets.UTF_8));
+            j.write(yml.getBytes(StandardCharsets.UTF_8));
             j.closeEntry();
-            j.putNextEntry(new JarEntry(MAIN.replace('.', '/') + ".class"));
-            j.write(mainClass(MAIN, PacketEventsPlugin.class.getName().replace('.', '/')));
+            j.putNextEntry(new JarEntry(main.replace('.', '/') + ".class"));
+            j.write(mainClass(main, target.getName().replace('.', '/')));
             j.closeEntry();
         }
-        EntrypointUtil.registerProvidersFromSource(PluginFlagProviderSource.INSTANCE, List.of(jar));
+        return jar;
     }
 
     /** {@code class MAIN extends JavaPlugin { onLoad() { target.load(this); } onEnable() { target.enable(this); } }} */

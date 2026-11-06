@@ -31,6 +31,10 @@ fun main(args: Array<String>) {
         c.setCompression(c.expect(PacketType.Login.Server.SET_COMPRESSION) { WrapperLoginServerSetCompression(it) }.threshold)
         c.skip(PacketType.Login.Server.LOGIN_SUCCESS)
         c.send(WrapperLoginClientLoginSuccessAck()); c.setState(ConnectionState.CONFIGURATION)
+        // like the real client: its options (view distance 12) go out right after login, in the first configuration only
+        c.send(com.github.retrooper.packetevents.wrapper.configuration.client.WrapperConfigClientSettings("en_us", 12,
+            com.github.retrooper.packetevents.wrapper.configuration.client.WrapperConfigClientSettings.ChatVisibility.FULL, true, 127.toByte(),
+            com.github.retrooper.packetevents.protocol.player.HumanoidArm.RIGHT, false, true))
         var n = 0
         val deadline = System.nanoTime() + 40_000_000_000L   // a healthy session never goes silent (keepalives): stop after 40 s
         while (System.nanoTime() < deadline) {
@@ -43,6 +47,9 @@ fun main(args: Array<String>) {
                 PacketType.Play.Server.SYSTEM_CHAT_MESSAGE -> { if (sentAt != 0L && tJoin != 0L) { rtts += (now - sentAt) / 1e6; sentAt = 0 }
                     if (tLoaded == 0L) { tLoaded = now; c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerLoaded()) } }   // ClientPacketListener.notifyPlayerLoaded
                 PacketType.Play.Server.CONFIGURATION_START -> { c.send(WrapperPlayClientConfigurationAck()); c.setState(ConnectionState.CONFIGURATION) }
+                PacketType.Play.Server.UPDATE_VIEW_DISTANCE -> if (tJoin != 0L) println("[clientprobe] VIEWDIST radius=${com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUpdateViewDistance(c.lastEvent!!).viewDistance}")
+                PacketType.Play.Server.UPDATE_SIMULATION_DISTANCE -> if (tJoin != 0L) println("[clientprobe] SIMDIST ${com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUpdateSimulationDistance(c.lastEvent!!).getSimulationDistance()}")
+                PacketType.Configuration.Server.PLUGIN_MESSAGE -> if (tJoin != 0L || tLoaded != 0L) println("[clientprobe] BRAND/plugin message in configuration after handoff")
                 PacketType.Play.Server.JOIN_GAME -> if (tJoin == 0L && tLoaded != 0L) { tJoin = now; joinedAt = now }
                 PacketType.Play.Server.CHUNK_DATA -> if (tJoin != 0L) { chunks++; if (tFirstChunk == 0L) tFirstChunk = now; tLastChunk = now }
                 else -> {}

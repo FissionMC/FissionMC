@@ -108,10 +108,12 @@ class TestClient(port: Int) : AutoCloseable {
     }
     /** Reads frames until one of [type] arrives (the recorded configuration contains frames the test does not care about). */
     fun skipUntil(type: PacketTypeCommon): Int { var n = 0; while (true) { val ev = readEvent(); n++; if (ev.packetType == type) return n } }
+    /** The event of the last [readAny] (null if PacketEvents could not map the id). */
+    var lastEvent: com.github.retrooper.packetevents.event.PacketSendEvent? = null
     /** Reads one frame with PacketEvents; returns its type (null if PacketEvents cannot map the id) and id. */
     fun readAny(): Pair<PacketTypeCommon?, Int> {
         val body = readBody(); val id = VarInts.tryRead(Unpooled.wrappedBuffer(body))!!
-        return try { EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(body), false).packetType to id } catch (t: Throwable) { null to id }
+        return try { val ev = EventCreationUtil.createSendEvent(channel, user, null, Unpooled.wrappedBuffer(body), false); lastEvent = ev; ev.packetType to id } catch (t: Throwable) { lastEvent = null; null to id }
     }
     /** True if the server sends nothing for [ms] milliseconds. */
     fun silentFor(ms: Int): Boolean { sock.soTimeout = ms; return try { readVarInt(); false } catch (_: java.net.SocketTimeoutException) { true } finally { sock.soTimeout = 10_000 } }

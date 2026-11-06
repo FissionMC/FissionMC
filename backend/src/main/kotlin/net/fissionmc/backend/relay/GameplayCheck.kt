@@ -37,6 +37,18 @@ object GameplayCheck {
         log.info("[fission] gameplay: server avg tick ${"%.2f".format(server.averageTickTimeNanos / 1e6)} ms (50 ms budget), tickCount ${server.tickCount}")
         log.info("[fission] gameplay: ${p.plainTextName} mode=${p.gameMode.gameModeForPlayer} invulnerableAbility=${p.abilities.invulnerable} mayBuild=${p.abilities.mayBuild} health=${p.health} invulnerableTime=${p.invulnerableTime} op=${server.playerList.isOp(p.nameAndId())}")
 
+        // spark + /fission status: the extra platform metadata spark would write into a report, and the status lines
+        runCatching {
+            val cs = org.bukkit.Bukkit.getServer() as org.bukkit.craftbukkit.CraftServer
+            val sparksFly = cs.spark
+            val f = sparksFly.javaClass.getDeclaredField("spark").also { it.isAccessible = true }
+            val plugin = f.get(sparksFly)
+            val md = plugin.javaClass.getMethod("createExtraMetadataProvider").invoke(plugin) as me.lucko.spark.paper.common.platform.MetadataProvider
+            log.info("[fission] spark extra platform metadata: " + md.export())
+        }.onFailure { log.warning("[fission] spark metadata check failed: $it") }
+        log.info("[fission] /fission status would print: " + net.fissionmc.craft.builtin.FissionStatus.provider.get())
+        log.info("[fission] server brand: ${server.serverModName}, view-distance ${server.playerList.viewDistance}, player requested ${p.requestedViewDistance()}")
+
         // 2. break the block below the player
         val below = BlockPos(p.blockPosition().x + 2, p.blockPosition().y, p.blockPosition().z)
         level.setBlock(below, net.minecraft.world.level.block.Blocks.DIRT.defaultBlockState(), 3)   // dirt drops itself without a tool

@@ -33,6 +33,13 @@ class PlayerRelay(private val registry: NodeRegistry) {
 
     val attached: Int get() = bindings.size
 
+    // relay counters for MasterStats (client -> backend = "in")
+    val framesIn = java.util.concurrent.atomic.AtomicLong(); val bytesIn = java.util.concurrent.atomic.AtomicLong()
+    val framesOut = java.util.concurrent.atomic.AtomicLong(); val bytesOut = java.util.concurrent.atomic.AtomicLong()
+
+    /** Relayed players per backend node id. */
+    fun playersByNode(): Map<String, Int> = bindings.values.groupingBy { it.node.info.nodeId }.eachCount()
+
     /** Attaches [client] to a live backend; returns the player id, or null if no backend is alive. */
     fun attach(client: RelayClient): Long? {
         val live = registry.all.filter { it.link.isOpen }.sortedBy { it.info.nodeId }
@@ -50,7 +57,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** Client frame towards the backend. Returns false when the link is saturated (caller should stop reading the client). */
     fun toBackend(id: Long, frame: ByteArray): Boolean {
         val b = bindings[id] ?: return true
-        b.node.link.send(PlayerPacketToBackend(id, frame))
+        b.node.link.send(PlayerPacketToBackend(id, frame)); framesIn.incrementAndGet(); bytesIn.addAndGet(frame.size.toLong())
         return b.node.link.isWritable
     }
 
@@ -64,7 +71,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
 
     fun handle(node: RegisteredNode, msg: NodeMessage): Boolean {
         when (msg) {
-            is PlayerPacketToClient -> bindings[msg.playerId]?.takeIf { it.node === node }?.client?.deliver(msg.bytes)
+            is PlayerPacketToClient -> { framesOut.incrementAndGet(); bytesOut.addAndGet(msg.bytes.size.toLong()); bindings[msg.playerId]?.takeIf { it.node === node }?.client?.deliver(msg.bytes) }
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detached(msg.reason) }
             else -> return false
         }

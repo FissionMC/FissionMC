@@ -80,7 +80,9 @@ object PlayerRelayBackend {
     }
 
     @JvmStatic fun attach() {
+        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { net.fissionmc.backend.node.MasterInfo.lines() }
         NodeBootstrap.addMessageHandler { m ->
+            if (m is MasterStats) net.fissionmc.backend.node.MasterInfo.onStats(m)
             if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }
         }
         enabled = true
