@@ -113,10 +113,17 @@ data class PlayerPermission(val playerId: Long, val uuidHigh: Long, val uuidLow:
  */
 data class PlayerPermissionReport(val uuidHigh: Long, val uuidLow: Long, val level: Int) : NodeMessage
 
+/**
+ * Master -> backend (id 70), sent before every [PlayerAttach]: whether this backend announces joins and leaves of relayed players itself (vanilla
+ * messages, `messages.local.enabled=true` at the master). False (default): the master announces them network-wide and the backend stays silent
+ * (the Join/Quit events still fire for plugins, their message is cleared).
+ */
+data class AnnouncementMode(val local: Boolean) : NodeMessage
+
 /** Largest player data blob accepted on the wire (a player file is a few KiB; ender chests and big inventories reach some hundred). */
 const val MAX_PLAYER_DATA = 4 * 1024 * 1024
 
-/** Registers player relay messages (ids 48-63; 48-61 used). Ids are wire format: never reuse one. */
+/** Registers player relay messages (ids 48-63 and 70; 48-61 and 70 used). Ids are wire format: never reuse one. */
 fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerAttach>(48, { m, b ->
         b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.name, 64).writeVarInt(m.protocol)
@@ -153,6 +160,7 @@ fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerDataFlush>(59, { m, b -> b.writeLong(m.playerId) }, { b -> PlayerDataFlush(b.readLong()) })
     .register<PlayerPermission>(60, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermission(b.readLong(), b.readLong(), b.readLong(), b.readVarInt()) })
     .register<PlayerPermissionReport>(61, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermissionReport(b.readLong(), b.readLong(), b.readVarInt()) })
+    .register<AnnouncementMode>(70, { m, b -> b.writeBoolean(m.local) }, { b -> AnnouncementMode(b.readBoolean()) })
     .register<PlayerPacketToBackend>(49, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToBackend(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerPacketToClient>(50, { m, b -> b.writeLong(m.playerId).writeByteArray(m.bytes) }, { b -> PlayerPacketToClient(b.readLong(), b.readByteArray(MAX_PLAYER_FRAME)) })
     .register<PlayerDetach>(51, { m, b -> b.writeLong(m.playerId).writeString(m.reason, 256) }, { b -> PlayerDetach(b.readLong(), b.readString(256)) })

@@ -46,6 +46,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** Relayed players per backend node id. */
     fun playersByNode(): Map<String, Int> = bindings.values.groupingBy { it.node.info.nodeId }.eachCount()
 
+    /** `messages.local.enabled` (set by the client server): the backends announce joins and leaves themselves. */
+    @Volatile var localAnnouncements: Boolean = false
+
     /** The permission level the master grants a player on every backend (4 for admins); set by the client server, which owns the admin set. */
     @Volatile var grantedLevel: (net.fissionmc.master.client.PlayerProfile) -> Int = { 0 }
 
@@ -85,6 +88,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
         val id = ids.getAndIncrement()
         val p = client.profile
         bindings[id] = Binding(id, node, client)
+        node.link.send(AnnouncementMode(localAnnouncements))
         node.link.send(PlayerPermission(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, grantedLevel(p)))   // before the attach: the join already sees the operator level
         playerData?.let { store ->   // the stored data goes first, the backend loads it when it creates the player
             val data = store.read(p.uuid)

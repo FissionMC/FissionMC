@@ -726,7 +726,7 @@ public abstract class PlayerListMixin {
 
         final net.kyori.adventure.text.Component jm = playerJoinEvent.joinMessage();
 
-        if (jm != null && !jm.equals(net.kyori.adventure.text.Component.empty())) { // Paper - Adventure
+        if (jm != null && !jm.equals(net.kyori.adventure.text.Component.empty()) && !net.fissionmc.backend.relay.LocalAnnouncements.suppress(player.getUUID())) { // Paper - Adventure; FissionMC: relayed players are announced by the master
             joinMessage = io.papermc.paper.adventure.PaperAdventure.asVanilla(jm); // Paper - Adventure
             this.server.getPlayerList().broadcastSystemMessage(joinMessage, false); // Paper - Adventure
         }
@@ -937,7 +937,7 @@ public abstract class PlayerListMixin {
         // This removes the scoreboard (and player reference) for the specific player in the manager
         this.cserver.getScoreboardManager().removePlayer(player.getBukkitEntity());
         // CraftBukkit end
-        return playerQuitEvent.quitMessage(); // Paper - Adventure
+        return net.fissionmc.backend.relay.LocalAnnouncements.suppress(player.getUUID()) ? null : playerQuitEvent.quitMessage(); // Paper - Adventure; FissionMC: relayed players are announced by the master
     }
 
     @Shadow @Final private Map<UUID, net.minecraft.stats.ServerStatsCounter> stats;

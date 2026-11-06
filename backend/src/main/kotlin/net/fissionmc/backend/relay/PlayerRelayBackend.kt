@@ -85,6 +85,7 @@ object PlayerRelayBackend {
             if (m is MasterStats) net.fissionmc.backend.node.MasterInfo.onStats(m)
             if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)
             if (m is ChunkData || m is ChunkAbsent || m is ChunkStored || m is ChunkAvailable) net.fissionmc.backend.chunk.ChunkAuthorityBackend.onMessage(m)
+            if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)
             if (m is PlayerPermission || m is PlayerDetach) PermissionBackend.onMessage(m, serverRef)
             if (m is PlayerData || m is PlayerDataFlush || m is PlayerAttach || m is PlayerDetach) PlayerDataBackend.onMessage(m, serverRef)
             if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }

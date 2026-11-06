@@ -34,6 +34,7 @@ class ClientServer(
     val settings: MasterSettings = MasterSettings(),
 ) : Closeable {
     /** Global chat (needs the relay). */
+    init { relay?.localAnnouncements = settings.announcements.local }
     init { relay?.grantedLevel = { p -> if (settings.isAdmin(p.uuid)) 4 else 0 } }
     /** Global chat (needs the relay). */
     val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
@@ -59,6 +60,9 @@ class ClientServer(
         log("[master] clients: ${config.host}:$port, online-mode=${config.onlineMode}, compression=${config.compressionThreshold}")
         return this
     }
+
+    /** An announcement line for everybody who is playing on a backend (limbo players get nothing, like chat). */
+    fun announce(line: net.kyori.adventure.text.Component?) { if (line != null) allSessions().forEach { it.tell(line) } }
 
     /** Sessions that are playing on a backend right now (global chat audience). */
     fun allSessions(): List<ClientSession> = sessions.values.toList()

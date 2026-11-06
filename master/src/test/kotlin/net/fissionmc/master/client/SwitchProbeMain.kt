@@ -132,6 +132,8 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
     }
     fun command(cmd: String) = c.send(WrapperPlayClientChatCommandUnsigned(cmd))
 
+    fun joinLines(from: Int = 0) = events.toList().drop(from).count { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE && it.bodyHas("multiplayer.player.joined") }
+    fun leaveLines(from: Int = 0) = events.toList().drop(from).count { it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE && it.bodyHas("multiplayer.player.left") }
     fun sysTexts(from: Int = 0) = events.drop(from).mapNotNull { if (it.type == PacketType.Play.Server.SYSTEM_CHAT_MESSAGE) it.text else null }
     fun playerChats(from: Int = 0, containing: String? = null) = events.drop(from).filter { it.type == PacketType.Play.Server.CHAT_MESSAGE && (containing == null || it.bodyHas(containing)) }
     fun close() { stop = true; Files.write(Path.of(outDir, "$fileTag-s2c.bin"), c.received.toByteArray()); c.close() }
@@ -161,6 +163,8 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     val b = newBot("ProbeB")
     check("B reaches a backend", await(60_000) { b.logins >= 2 }, "logins=${b.logins}")
     quiet(1500)
+    // --- network announcements: exactly one join line per login, from the master only (the backends stay silent)
+    check("announcements: A saw exactly one 'joined' line for B (and its own), none from a backend", a.joinLines() == 2, "joined lines at A: ${a.joinLines()}")
     // --- the command tree has /chat with its three children
     val tree = a.events.lastOrNull { it.type == PacketType.Play.Server.DECLARE_COMMANDS }
     check("/chat global|local|toggle is in the relayed command tree", tree != null && listOf("chat", "global", "local", "toggle").all { w -> tree.bodyHas(String(byteArrayOf(w.length.toByte())) + w) })
@@ -299,6 +303,8 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     markA = a.events.size; quiet(1500); a.command("seed")
     check("admin: still operator level 4 after the move to the other backend", await(8000) { timeAnswer(a, markA) })
     quiet(1500)
+    // --- announcements: backend switches announced nothing, the reconnect below announces once each way
+    val joinsBefore = a.joinLines(); val leavesBefore = a.leaveLines()
     // --- master-owned player data: position and inventory follow a /fission send and survive a reconnect
     fun console(node: String, cmd: String) { println("[probe] CONSOLE $node $cmd"); System.out.flush(); readlnOrNull() }
     fun near(p: DoubleArray?, x: Double, z: Double) = p != null && Math.abs(p[0] - x) < 0.01 && Math.abs(p[2] - z) < 0.01
@@ -319,6 +325,9 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     check("data: the reconnect has the right Login flow (limbo, backend, Respawn)", b2.startConfigs == 0)
     worldOk(b2, "reconnected B", 30)
 
+    val gotJoin = await(5000) { a.joinLines() >= joinsBefore + 1 }
+    check("announcements: /fission send and the move to the other backend produced no join/leave lines; B's disconnect exactly one 'left', its reconnect one 'joined'",
+        gotJoin && a.joinLines() == joinsBefore + 1 && a.leaveLines() == leavesBefore + 1, "joins ${a.joinLines()} (was $joinsBefore), leaves ${a.leaveLines()} (was $leavesBefore)")
     val before = a.logins; val mk = a.events.size
     println("[probe] PHASE1-DONE")
     System.out.flush()

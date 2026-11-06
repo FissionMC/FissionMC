@@ -62,6 +62,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private var graceTask: ScheduledFuture<*>? = null
     /** Waiting for the old backend to save the player before the new one is attached. */
     private var switchPending = false
+    /** The network join line was sent (once per login: moving between backends, or back from the limbo, is not a join). */
+    private var announcedJoin = false
+
+    private fun announceArrival(backend: String?, fromBackend: String?) {
+        if (!announcedJoin) { announcedJoin = true; server.announce(server.settings.announcements.join(playerName, backend)) }
+        else if (fromBackend != null && backend != null) server.announce(server.settings.announcements.switched(playerName, backend))
+    }
     private val cleanup = SwitchCleanup({ f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }, { server.log("[client $playerName] $it") })
     /** Keepalive ids the CURRENT backend sent and the client has not answered yet (a stale answer for a previous backend must not reach this one). */
     private val backendKeepAlives = java.util.ArrayDeque<Long>()
@@ -122,6 +129,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     override fun channelInactive(ctx: ChannelHandlerContext) {
         keepAlive?.cancel(false)
+        if (announcedJoin && registered) { announcedJoin = false; server.unregister(this); registered = false; server.announce(server.settings.announcements.leave(playerName, currentNodeId)) }
         relayId?.let { server.relay?.detach(it, "client left") }
         switching?.let { server.relay?.detach(it.id, "client left") }
         if (registered) server.unregister(this)
@@ -286,6 +294,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** The new backend's Login arrived: leave the old binding, clean up what a new level does not reset, hand the client the Login. */
     private fun completeSwitch(sw: Switch, login: ByteArray) {
         val old = relayId
+        val currentNodeIdBefore = currentNodeId
         relayId = sw.id; currentNodeId = sw.nodeId; switching = null
         if (old != null) server.relay?.detach(old, "switched to ${sw.nodeId}")
         keepAlive?.cancel(false); keepAlive = null
@@ -302,6 +311,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         // a second Login keeps the old LocalPlayer (bound to the old level): Respawn makes the client build a new one (see RespawnFrames)
         runCatching { RespawnFrames.fromLogin(login) }.onSuccess { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }.onFailure { server.log("[client $playerName] no Respawn after the Login: $it") }
         channel.flush()
+        announceArrival(sw.nodeId, if (old != null) currentNodeIdBefore else null)
         server.log("[client] $playerName now on ${sw.nodeId} (Login entity id $selfEntityId, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, ${cleanupFrames.size} cleanup frames)")
     }
 
@@ -550,6 +560,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 // first frame of the backend's configuration: the client's real options (config-state ClientInformation has packet id 0)
                 clientInfoPayload?.let { p -> val f = ByteArray(1 + p.size); System.arraycopy(p, 0, f, 1, p.size); relayId?.let { id -> server.relay?.toBackend(id, f) } }
                 mode = Mode.RELAY
+                announceArrival(currentNodeId, null)
                 while (pendingFromBackend.isNotEmpty()) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(pendingFromBackend.poll()))
                 channel.flush()
             }

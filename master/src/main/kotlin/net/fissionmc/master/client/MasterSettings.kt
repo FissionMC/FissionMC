@@ -81,11 +81,52 @@ class AdminStore(
     }
 }
 
+/**
+ * `messages.*` keys: who announces joins and leaves. Default: the master, network wide, once per login (not per backend switch), with vanilla's own
+ * translatable lines. `messages.local.enabled=true` hands the announcements back to each backend (vanilla per-backend messages) and the master stays silent.
+ */
+data class AnnouncementSettings(
+    val joinGlobal: Boolean = true, val leaveGlobal: Boolean = true,
+    /** Empty = vanilla's `multiplayer.player.joined` / `.left` (yellow translatable). Otherwise `&` codes with {name} {displayname} {backend}. */
+    val joinFormat: String = "", val leaveFormat: String = "",
+    val switchEnabled: Boolean = false, val switchFormat: String = "{name} moved to {backend}",
+    val localEnabled: Boolean = false,
+)
+
+/** Chooses the announcement lines (pure, unit tested). Null = say nothing. */
+class Announcements(private val s: AnnouncementSettings) {
+    private val legacy = net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.builder().character('&').hexColors().build()
+
+    private fun render(template: String, name: String, backend: String?): net.kyori.adventure.text.Component {
+        var c: net.kyori.adventure.text.Component = legacy.deserialize(template)
+        fun rep(token: String, value: String) { c = c.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder().matchLiteral(token).replacement(net.kyori.adventure.text.Component.text(value)).build()) }
+        rep("{name}", name); rep("{displayname}", name); rep("{backend}", backend ?: "")
+        return c
+    }
+
+    private fun vanilla(key: String, name: String) = net.kyori.adventure.text.Component.translatable(key, net.kyori.adventure.text.format.NamedTextColor.YELLOW, net.kyori.adventure.text.Component.text(name))
+
+    fun join(name: String, backend: String?): net.kyori.adventure.text.Component? =
+        if (s.localEnabled || !s.joinGlobal) null else if (s.joinFormat.isEmpty()) vanilla("multiplayer.player.joined", name) else render(s.joinFormat, name, backend)
+
+    fun leave(name: String, backend: String?): net.kyori.adventure.text.Component? =
+        if (s.localEnabled || !s.leaveGlobal) null else if (s.leaveFormat.isEmpty()) vanilla("multiplayer.player.left", name) else render(s.leaveFormat, name, backend)
+
+    /** A move between backends: only when asked for, and never together with local announcements. */
+    fun switched(name: String, toBackend: String): net.kyori.adventure.text.Component? =
+        if (s.localEnabled || !s.switchEnabled) null else render(s.switchFormat, name, toBackend)
+
+    /** The backends announce themselves (vanilla per backend). */
+    val local: Boolean get() = s.localEnabled
+}
+
 /** Everything the master reads from fission.properties besides the node and client listener keys. */
 data class MasterSettings(
     val chat: ChatSettings = ChatSettings(),
     val adminStore: AdminStore = AdminStore(),
+    val messages: AnnouncementSettings = AnnouncementSettings(),
 ) {
+    val announcements: Announcements by lazy { Announcements(messages) }
     fun isAdmin(uuid: UUID?): Boolean = adminStore.isAdmin(uuid)
 
     companion object {
@@ -100,6 +141,13 @@ data class MasterSettings(
                     allowColors = (get("chat.global.allow-colors") ?: "false").lowercase() == "true",
                     maxLength = get("chat.global.max-length")?.toInt() ?: d.maxLength,
                     timeoutMs = get("chat.global.timeout-ms")?.toLong() ?: d.timeoutMs,
+                ),
+                messages = AnnouncementSettings(
+                    joinGlobal = (get("messages.join.global") ?: "true").lowercase() != "false", leaveGlobal = (get("messages.leave.global") ?: "true").lowercase() != "false",
+                    joinFormat = p.getProperty("messages.join.format")?.trim() ?: "", leaveFormat = p.getProperty("messages.leave.format")?.trim() ?: "",
+                    switchEnabled = (get("messages.switch.enabled") ?: "false").lowercase() == "true",
+                    switchFormat = p.getProperty("messages.switch.format")?.trim()?.takeIf { it.isNotEmpty() } ?: "{name} moved to {backend}",
+                    localEnabled = (get("messages.local.enabled") ?: "false").lowercase() == "true",
                 ),
                 adminStore = AdminStore(adminsFile, (get("admin.players") ?: "").split(','), (get("admin.bind-names") ?: "true").lowercase() != "false", log),
             )
