@@ -86,6 +86,24 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
      */
     val isAdmin: Boolean get() = server.settings.isAdmin(uuid) || backendLevel >= 4
 
+    // ---- static regions: a player that walks into another backend's region is moved there
+    @Volatile var lastDimension: String = ""; @Volatile var lastX = 0; @Volatile var lastZ = 0
+    private var lastRegionSwitchNanos = 0L
+
+    override fun playerMoved(dimension: String, x: Int, z: Int) { channel.eventLoop().execute {
+        lastDimension = dimension; lastX = x; lastZ = z
+        val regions = server.relay?.regions ?: return@execute
+        if (!regions.enabled || mode != Mode.RELAY || switching != null || switchPending) return@execute
+        if (System.nanoTime() - lastRegionSwitchNanos < 3_000_000_000L) return@execute   // just arrived: let the new backend settle
+        val cur = currentNodeId ?: return@execute
+        val target = regions.ownerWithHysteresis(dimension, x, z, cur, server.settings.regionMargin) ?: return@execute
+        if (target == cur) return@execute
+        if (server.relay?.liveNodeIds()?.contains(target) != true) return@execute   // the owner is not connected: stay where it is
+        lastRegionSwitchNanos = System.nanoTime()
+        server.log("[regions] $playerName at $dimension $x,$z leaves $cur for $target")
+        startSwitch(target) { why -> server.log("[regions] $playerName: cannot move to $target: $why") }
+    } }
+
     /** The master's admin set changed: tell the player's backend (it resends the command tree, which the master patches again). */
     fun pushPermission() { channel.eventLoop().execute {
         val id = relayId ?: return@execute; val u = uuid ?: return@execute

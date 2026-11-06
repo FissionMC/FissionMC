@@ -19,13 +19,20 @@ fun main(args: Array<String>) {
     val propsEarly = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
     relay.playerData = PlayerDataStore(Path.of(propsEarly.getProperty("playerdata.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "playerdata"), { println(it) })
     registry.addListener(relay.listener)
+    // static regions: a malformed or incomplete map stops the master
+    val regionProps = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
+    val regions = try { net.fissionmc.master.region.RegionMap.parse(regionProps) } catch (e: Exception) { System.err.println("[master] REGIONS CONFIG ERROR, master not started: ${e.message}"); println("[master] REGIONS CONFIG ERROR, master not started: ${e.message}"); kotlin.system.exitProcess(2) }
+    relay.regions = regions
+    val ghostZone = regionProps.getProperty("regions.ghost-zone")?.trim()?.toIntOrNull()?.coerceIn(1, 64) ?: 12
+    val stripChunks = regionProps.getProperty("regions.border-strip")?.trim()?.toIntOrNull() ?: 1
+    if (regions.enabled) { println("[master] regions on:"); regions.describe().forEach { println("[master]   $it") }; registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { node.link.send(net.fissionmc.protocol.RegionMap(node.info.nodeId, regions.toRules())) } }) ; java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "regions-resend").also { it.isDaemon = true } }.scheduleWithFixedDelay({ registry.all.filter { it.link.isOpen }.forEach { n -> n.link.send(net.fissionmc.protocol.RegionMap(n.info.nodeId, regions.toRules())) } }, 5, 5, java.util.concurrent.TimeUnit.SECONDS) }
     // chunk authority: the master is the canonical store of chunk data
     val chunkProps = java.util.Properties().also { pr -> java.nio.file.Files.newBufferedReader(Path.of(args.firstOrNull() ?: "fission.properties")).use(pr::load) }
     val chunks = if ((chunkProps.getProperty("chunk.authority") ?: "true").trim().lowercase() != "false") {
         val det = (chunkProps.getProperty("chunk.authority.deterministic") ?: "").split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         val timer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "chunk-authority").also { it.isDaemon = true } }
         val store = net.fissionmc.master.chunk.FileChunkStore(Path.of(chunkProps.getProperty("chunkstore.dir")?.trim()?.takeIf { it.isNotEmpty() } ?: "chunkstore")) { println(it) }
-        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, (chunkProps.getProperty("chunk.lease-seconds")?.trim()?.toLongOrNull() ?: 60L) * 1000, deterministic = { d -> "true" in det || d in det }).also { a ->
+        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, (chunkProps.getProperty("chunk.lease-seconds")?.trim()?.toLongOrNull() ?: 60L) * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }).also { a ->
             val every = chunkProps.getProperty("chunk.stats-interval")?.trim()?.toLongOrNull() ?: 30L
             var last = ""
             timer.scheduleWithFixedDelay({ val l = a.statsLine(); if (l != last) { last = l; println(l) } }, every, every, java.util.concurrent.TimeUnit.SECONDS)

@@ -17,6 +17,10 @@ class ChunkAuthority(
     private val timer: ScheduledExecutorService, private val log: (String) -> Unit = {}, private val leaseMs: Long = 60_000,
     /** Worlds whose generator is deterministic and feature-free (void, flat): absent chunks need no lease, every backend generates them identically. */
     private val deterministic: (String) -> Boolean = { false },
+    /** Static regions: who generates a chunk (null = everybody, the first requester takes the lease). */
+    private val generationOwner: (dimension: String, x: Int, z: Int) -> String? = { _, _, _ -> null },
+    /** Static regions: may the non-owner [requester] wait for the owner to generate this chunk (a player of the requester can see it: a ghost chunk)? Else the requester generates it locally and does not keep it. */
+    private val ownerGenerates: (requester: String, dimension: String, x: Int, z: Int) -> Boolean = { _, _, _, _ -> true },
 ) {
     private class Lease(val node: String, var expiresAt: Long)
     private class Waiter(val node: RegisteredNode, val reqId: Long)
@@ -30,10 +34,10 @@ class ChunkAuthority(
 
     // counters for the log / tests
     val requests = AtomicLong(); val served = AtomicLong(); val leasesGranted = AtomicLong(); val parked = AtomicLong(); val leaseExpired = AtomicLong()
-    val pushesAccepted = AtomicLong(); val pushesRejected = AtomicLong(); val bytesIn = AtomicLong(); val bytesOut = AtomicLong()
+    val generateJobs = AtomicLong(); val pushesNotOwner = AtomicLong(); val pushesAccepted = AtomicLong(); val pushesRejected = AtomicLong(); val bytesIn = AtomicLong(); val bytesOut = AtomicLong()
 
     fun statsLine(): String = "[chunks] store ${store.count()} blobs; requests ${requests.get()} served ${served.get()} leases ${leasesGranted.get()} parked ${parked.get()} expired ${leaseExpired.get()}; " +
-        "pushes accepted ${pushesAccepted.get()} rejected ${pushesRejected.get()}; bytes in ${bytesIn.get()} out ${bytesOut.get()}"
+        "pushes accepted ${pushesAccepted.get()} rejected ${pushesRejected.get()}; bytes in ${bytesIn.get()} out ${bytesOut.get()}; generate jobs ${generateJobs.get()} pushes refused (not the owner) ${pushesNotOwner.get()}"
 
     fun handle(node: RegisteredNode, msg: NodeMessage): Boolean {
         when (msg) {
@@ -50,6 +54,18 @@ class ChunkAuthority(
         val have = store.get(key)
         if (have != null) { send(node, have, m.reqId); return }
         if (m.peek || m.kind != ChunkKind.CHUNK || deterministic(m.dimension)) { node.link.send(ChunkAbsent(m.reqId, false)); return }   // entities/poi are created with the chunk, deterministic worlds are generated locally: no lease
+        val genOwner = generationOwner(m.dimension, m.x, m.z)?.takeIf { registry[it]?.link?.isOpen == true }   // an owner that is not connected cannot generate: the requester does
+        if (genOwner != null && genOwner != node.info.nodeId && !ownerGenerates(node.info.nodeId, m.dimension, m.x, m.z)) { node.link.send(ChunkAbsent(m.reqId, false)); return }   // far from any border: local, unkept
+        if (genOwner != null && genOwner != node.info.nodeId) {
+            // somebody else owns this chunk: park the request, the owner generates it (GenerateChunk) and its push serves everybody who waits
+            synchronized(lock) {
+                parked.incrementAndGet()
+                val first = waiting[key].isNullOrEmpty() && leases[key] == null
+                waiting.computeIfAbsent(key) { ArrayList() } += Waiter(node, m.reqId)
+                if (first) { generateJobs.incrementAndGet(); log("[chunks] generate ${key.dimension} ${key.x},${key.z} -> $genOwner (wanted by ${node.info.nodeId})"); registry[genOwner]?.link?.send(GenerateChunk(key.dimension, key.x, key.z)) }
+            }
+            return
+        }
         synchronized(lock) {
             val now = System.currentTimeMillis()
             val l = leases[key]
@@ -90,6 +106,10 @@ class ChunkAuthority(
         bytesIn.addAndGet(m.bytes.size.toLong())
         synchronized(lock) { progress[node.info.nodeId] = System.currentTimeMillis() }
         val key = ChunkKey(m.dimension, m.kind, m.x, m.z)
+        if (m.kind == ChunkKind.CHUNK) generationOwner(m.dimension, m.x, m.z)?.takeIf { it != node.info.nodeId && registry[it]?.link?.isOpen == true }?.let { owner ->
+            // regions: only the generation owner writes a chunk (a neighbour may have advanced it in memory to finish its own border features: its copy is not kept)
+            pushesRejected.incrementAndGet(); pushesNotOwner.incrementAndGet(); node.link.send(ChunkStored(m.dimension, m.kind, m.x, m.z, false, store.get(key)?.version ?: 0L)); return
+        }
         val r = store.put(key, m.status, m.baseVersion, m.bytes, node.info.nodeId)
         if (r.accepted) pushesAccepted.incrementAndGet() else pushesRejected.incrementAndGet()
         node.link.send(ChunkStored(m.dimension, m.kind, m.x, m.z, r.accepted, r.version))

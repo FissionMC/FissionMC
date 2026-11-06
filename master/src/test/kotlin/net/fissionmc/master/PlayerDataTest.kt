@@ -116,7 +116,7 @@ class PlayerDataTest {
         val p = String(plain, Charsets.ISO_8859_1)
         assertTrue(p.contains("chat") && !p.contains("fission") && !p.contains("ask_server"))
         // node count: 2 + chat(4) + fission(3) + two arguments(2) + admin add/remove (5) for admins
-        assertEquals(2 + 14, Unpooled.wrappedBuffer(admin).also { VarInts.tryRead(it) }.let { VarInts.tryRead(it)!! })
+        assertEquals(2 + 15, Unpooled.wrappedBuffer(admin).also { VarInts.tryRead(it) }.let { VarInts.tryRead(it)!! })
         assertEquals(0, admin.last().toInt())
     }
 

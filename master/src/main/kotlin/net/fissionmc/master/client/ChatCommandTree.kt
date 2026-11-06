@@ -33,7 +33,7 @@ object ChatCommandTree {
         require(count in 1..100_000)
         val out = Unpooled.buffer(frame.size + 64)
         out.writeBytes(frame, 0, node0Start - VarInts.size(count))      // packet id
-        VarInts.write(out, count + (if (admin) 14 else 4))
+        VarInts.write(out, count + (if (admin) 15 else 4))
         // root with one more child: the new `chat` literal (index = old count)
         out.writeByte(flags); VarInts.write(out, n + (if (admin) 2 else 1)); children.forEach { VarInts.write(out, it) }; VarInts.write(out, count)
         if (admin) VarInts.write(out, count + 4)       // `fission` (admins only)
@@ -46,7 +46,7 @@ object ChatCommandTree {
         literal("global", true, IntArray(0)); literal("local", true, IntArray(0)); literal("toggle", true, IntArray(0))
         if (admin) {
             // fission (+4) -> send (+5) -> <player> (+7) -> <backend> (+8) ; status (+6) ; admin (+9) -> add (+10) -> <player> (+12) , remove (+11) -> <player> (+13)
-            literal("fission", true, intArrayOf(count + 5, count + 6, count + 9))
+            literal("fission", true, intArrayOf(count + 5, count + 6, count + 9, count + 14))
             literal("send", false, intArrayOf(count + 7)); literal("status", true, IntArray(0))
             fun argument(name: String, executable: Boolean, kids: IntArray) {
                 out.writeByte(2 or 16 or (if (executable) 4 else 0)); VarInts.write(out, kids.size); kids.forEach { VarInts.write(out, it) }
@@ -57,6 +57,7 @@ object ChatCommandTree {
             argument("player", false, intArrayOf(count + 8)); argument("backend", true, IntArray(0))
             literal("admin", false, intArrayOf(count + 10, count + 11)); literal("add", false, intArrayOf(count + 12)); literal("remove", false, intArrayOf(count + 13))
             argument("player", true, IntArray(0)); argument("player", true, IntArray(0))
+            literal("regions", true, IntArray(0))
         }
         out.writeByte(0)                                                  // root index
         return ByteArray(out.readableBytes()).also { out.readBytes(it) }

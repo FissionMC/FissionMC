@@ -16,6 +16,8 @@ interface RelayClient {
     fun deliver(frame: ByteArray)
     /** The permission level (0-4) the player's current backend reports for it (join, /op, /deop). */
     fun backendPermission(level: Int) {}
+    /** The player's backend reports where the player is now (block x/z in [dimension]); used for region border crossings. */
+    fun playerMoved(dimension: String, x: Int, z: Int) {}
     /** Like [deliver], but says which binding (player id of an [PlayerRelay.attach]) the frame came from; a client with two bindings (backend switch) overrides this. */
     fun deliverFrom(bindingId: Long, frame: ByteArray) = deliver(frame)
     /** Like [detached], for a client that may hold two bindings at once. */
@@ -32,7 +34,7 @@ interface RelayClient {
  * client sessions and backends over the node link. Frames are opaque here; PacketEvents listeners (P3) hook in at the client session.
  */
 class PlayerRelay(private val registry: NodeRegistry) {
-    private class Binding(val id: Long, val node: RegisteredNode, val client: RelayClient)
+    private class Binding(val id: Long, val node: RegisteredNode, val client: RelayClient) { @Volatile var dim: String = ""; @Volatile var x = 0; @Volatile var z = 0; @Volatile var known = false }
     private val ids = AtomicLong(1)
     private val bindings = ConcurrentHashMap<Long, Binding>()
     private val rr = java.util.concurrent.atomic.AtomicInteger()
@@ -45,6 +47,13 @@ class PlayerRelay(private val registry: NodeRegistry) {
 
     /** Relayed players per backend node id. */
     fun playersByNode(): Map<String, Int> = bindings.values.groupingBy { it.node.info.nodeId }.eachCount()
+
+    /** Is a player of [nodeId] within [chunks] chunks (Chebyshev) of chunk ([cx],[cz]) in [dimension]? (positions come from the backends' PlayerPosition reports; a player whose position is not known yet counts as near) */
+    fun playerNear(nodeId: String, dimension: String, cx: Int, cz: Int, chunks: Int): Boolean =
+        bindings.values.any { b -> b.node.info.nodeId == nodeId && (!b.known || b.dim == dimension) && (!b.known || (Math.abs((b.x shr 4) - cx) <= chunks && Math.abs((b.z shr 4) - cz) <= chunks)) }
+
+    /** Static regions (null/off = every backend owns everything). */
+    @Volatile var regions: net.fissionmc.master.region.RegionMap = net.fissionmc.master.region.RegionMap.OFF
 
     /** `travel.pet-radius` (blocks, 0 = pets stay): which tamed pets travel with a player that is flushed for a move. */
     @Volatile var petRadius: Int = 24
@@ -100,6 +109,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
         val p = client.profile
         bindings[id] = Binding(id, node, client)
         node.link.send(AnnouncementMode(localAnnouncements))
+        if (regions.enabled) node.link.send(net.fissionmc.protocol.RegionMap(node.info.nodeId, regions.toRules()))   // the join-time send can arrive before the backend's handlers exist
         node.link.send(PlayerPermission(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, grantedLevel(p)))   // before the attach: the join already sees the operator level
         playerData?.let { store ->   // the stored data goes first, the backend loads it when it creates the player
             val data = store.read(p.uuid)
@@ -149,6 +159,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
             is GlobalChatResult -> chatResultHandler?.invoke(msg)
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
+            is PlayerPosition -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.let { it.dim = msg.dimension; it.x = msg.x; it.z = msg.z; it.known = true; it.client.playerMoved(msg.dimension, msg.x, msg.z) } }
+            is EntityHandover -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // owner -> new owner, as is
+            is EntityHandoverAck -> registry[msg.origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned))
             is PlayerFileSave -> playerData?.onFileSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.kind, msg.bytes)
             is PlayerFlushed -> playerData?.flushed(java.util.UUID(msg.uuidHigh, msg.uuidLow))
             is EntityTransfer -> { val u = java.util.UUID(msg.playerHigh, msg.playerLow); if (msg.blobs.isEmpty()) pendingEntities.remove(u) else pendingEntities[u] = Pending(node.info.nodeId, msg) }

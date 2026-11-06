@@ -13,6 +13,7 @@ object MasterCommands {
             "fission" -> when (parts.getOrNull(1)?.lowercase()) {
                 "send" -> { send(session, server, parts.drop(2)); true }
                 "admin" -> { admin(session, server, parts.drop(2)); true }
+                "regions" -> { regions(session, server); true }
                 else -> false
             }
             else -> false
@@ -49,6 +50,16 @@ object MasterCommands {
         online?.pushPermission()
     }
 
+    /** `/fission regions`: the owner at the player's position and the map. */
+    private fun regions(s: ClientSession, server: ClientServer) {
+        if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
+        val map = server.relay?.regions
+        if (map == null || !map.enabled) { s.tell(Component.text("Regions are off: every backend owns everything (set regions.* in fission.properties).", NamedTextColor.GRAY)); return }
+        val owner = map.owner(s.lastDimension, s.lastX, s.lastZ)
+        s.tell(Component.text("You are at ${s.lastDimension} ${s.lastX}, ${s.lastZ}: owner ${owner ?: "nobody"}, on ${s.currentNodeId}.", NamedTextColor.GRAY))
+        map.describe().forEach { s.tell(Component.text("  $it", NamedTextColor.DARK_GRAY)) }
+    }
+
     private fun send(s: ClientSession, server: ClientServer, args: List<String>) {
         if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
         if (args.size != 2) { s.tell(Component.text("Usage: /fission send <player> <backend>", NamedTextColor.RED)); return }
@@ -56,6 +67,8 @@ object MasterCommands {
         server.log("[master] ${s.playerName} sends ${target.playerName} to ${args[1]}")
         target.startSwitch(args[1]) { why -> s.tell(Component.text("Cannot send ${target.playerName} to ${args[1]}: $why", NamedTextColor.RED)) }
         s.tell(Component.text("Sending ${target.playerName} to ${args[1]}...", NamedTextColor.GRAY))
+        val map = server.relay?.regions
+        if (map != null && map.enabled) { val o = map.owner(target.lastDimension, target.lastX, target.lastZ); if (o != null && o != args[1]) s.tell(Component.text("Note: ${target.playerName} stands in ${o}'s region, regions will move it back.", NamedTextColor.YELLOW)) }
     }
 
     /**

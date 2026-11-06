@@ -127,6 +127,8 @@ data class MasterSettings(
     val messages: AnnouncementSettings = AnnouncementSettings(),
     /** `travel.pet-radius` */
     val petRadius: Int = 24,
+    /** `regions.margin` blocks of hysteresis at a region border (default 8). */
+    val regionMargin: Int = 8,
 ) {
     val announcements: Announcements by lazy { Announcements(messages) }
     fun isAdmin(uuid: UUID?): Boolean = adminStore.isAdmin(uuid)
@@ -144,6 +146,7 @@ data class MasterSettings(
                     maxLength = get("chat.global.max-length")?.toInt() ?: d.maxLength,
                     timeoutMs = get("chat.global.timeout-ms")?.toLong() ?: d.timeoutMs,
                 ),
+                regionMargin = get("regions.margin")?.toIntOrNull()?.coerceIn(0, 128) ?: 8,
                 petRadius = get("travel.pet-radius")?.toIntOrNull()?.coerceIn(0, 128) ?: 24,
                 messages = AnnouncementSettings(
                     joinGlobal = (get("messages.join.global") ?: "true").lowercase() != "false", leaveGlobal = (get("messages.leave.global") ?: "true").lowercase() != "false",

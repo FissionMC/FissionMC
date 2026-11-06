@@ -62,11 +62,11 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] Replicated vs local table: block changes + entity removals replicate; everything else local (physics noise is replicated as block changes, see docs)
 
 ## M6 Regions and presence
-- [ ] Static region grid, tick ownership
-- [ ] Player presence broadcast
-- [ ] Edge/ghost chunks
-- [ ] Player + entity handoff across borders (client never reconnects; master re-routes its packets)
-- [ ] Cross-border interactions (explosions, fluids, pathing)
+- [x] Static region grid, tick ownership (`regions.*` in fission.properties, validated at master start; ghost chunks are not ticked/spawned in)
+- [~] Player presence broadcast (backends report player positions to the master, 2 block granularity; not broadcast to other players/backends)
+- [~] Edge/ghost chunks (ghost chunks reach the client from the non-owner, block changes replicate into them; foreign entities in view and cross-border block updates missing)
+- [~] Player + entity handoff across borders (player: seamless switch with hysteresis, pets/riders travel; items/xp/mobs handed over with ack; projectiles, leashes, vehicles not)
+- [ ] Cross-border interactions (explosions, fluids, pathing, redstone, block entities)
 - [ ] Dynamic region assignment
 
 ## M7 Craft layer depth

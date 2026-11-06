@@ -75,6 +75,9 @@ object TravelBackend {
     private fun encode(tag: CompoundTag): ByteArray { val o = ByteArrayOutputStream(); DataOutputStream(DeflaterOutputStream(o)).use { NbtIo.write(tag, it) }; return o.toByteArray() }
     private fun decode(b: ByteArray): CompoundTag = DataInputStream(InflaterInputStream(b.inputStream()).buffered()).use { NbtIo.read(it, NbtAccounter.unlimitedHeap()) }
 
+    /** Serialized form of [e] for a handover or transfer (null when it cannot be saved or is too big). */
+    fun blobFor(kind: Int, e: Entity): EntityBlob? = blob(kind, e)
+
     private fun blob(kind: Int, e: Entity): EntityBlob? {
         val out = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, e.level().registryAccess())
         if (!e.saveAsPassenger(out)) return null
@@ -154,6 +157,18 @@ object TravelBackend {
             if (level.noCollision(ent)) return
         }
         ent.setPos(player.x, player.y, player.z)
+    }
+
+    /** Region handover: spawn the entities exactly where their NBT says (they crossed a border), discard a stale copy with the same uuid. Returns the spawned uuids (high/low pairs). */
+    fun spawnAt(level: net.minecraft.server.level.ServerLevel, blobs: List<EntityBlob>): List<Long> {
+        val spawned = ArrayList<Long>()
+        for (b in blobs) try {
+            level.getEntity(UUID(b.uuidHigh, b.uuidLow))?.let { if (it !is ServerPlayer) it.discard() }
+            val input = TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), decode(b.bytes))
+            val e = EntityType.loadEntityRecursive(input, level, EntitySpawnReason.LOAD, EntityProcessor { ent -> if (level.addWithUUID(ent)) ent else null }) ?: continue
+            for (x in listOf(e) + e.indirectPassengers) { spawned += x.uuid.mostSignificantBits; spawned += x.uuid.leastSignificantBits }
+        } catch (t: Throwable) { log.warning("[fission] handover spawn failed: $t") }
+        return spawned
     }
 
     // ---------------------------------------------------------------- old backend: remove after the ack

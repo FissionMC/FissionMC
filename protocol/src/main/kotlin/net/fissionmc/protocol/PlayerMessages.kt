@@ -140,7 +140,7 @@ data class PlayerFlushed(val uuidHigh: Long, val uuidLow: Long) : NodeMessage
 
 /** An entity that travels with a player: [kind] 0 = pet (owned by the player), 1 = rider on the player; [bytes] = zlib(NbtIo.write(entity NBT incl. its own passengers)). */
 class EntityBlob(val kind: Int, val uuidHigh: Long, val uuidLow: Long, val bytes: ByteArray)
-object EntityBlobKind { const val PET = 0; const val RIDER = 1 }
+object EntityBlobKind { const val PET = 0; const val RIDER = 1; /** an entity that left its owner's region (spawned where its NBT says) */ const val HANDOVER = 2 }
 
 /**
  * Entities travelling with player ([playerHigh],[playerLow]) (id 74). Backend -> master on a flush (collected on the old backend), master -> backend before the
