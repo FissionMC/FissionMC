@@ -10,23 +10,61 @@ permissions:
 
 jobs:
   sync:
+    if: github.repository == 'FissionMC/FissionMC'
     runs-on: ubuntu-latest
+    env:
+      REPORT: ${{ runner.temp }}/upstream-status.txt
     steps:
       - uses: actions/checkout@v4
+
       - name: Status
-        run: python3 scripts/upstream.py status | tee status.txt
+        run: python3 scripts/upstream.py status | tee "$REPORT"
+
       - name: Re-vendor PacketEvents
         run: python3 scripts/upstream.py update packetevents
-      - name: Open or update PR
-        env:
-          GH_TOKEN: ${{ github.token }}
+
+      - name: Push sync branch
+        id: push
         run: |
-          if [ -z "$(git status --porcelain)" ]; then echo "up to date"; exit 0; fi
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "up to date" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git config user.name "fission-bot"
           git config user.email "fission-bot@users.noreply.github.com"
           git checkout -B upstream-sync
           git add -A
           git commit -qm "sync packetevents"
-          git push -f origin upstream-sync
-          gh pr create --base main --head upstream-sync --title "Upstream sync" \
-            --body "$(cat status.txt)" || gh pr edit upstream-sync --body "$(cat status.txt)"
+          # Same content as the branch already on origin: nothing new to push.
+          if git fetch -q origin upstream-sync 2>/dev/null && git diff --quiet origin/upstream-sync HEAD; then
+            echo "upstream-sync already contains this update" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            git push -f origin upstream-sync
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update PR
+        if: steps.push.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            cat "$REPORT"
+            echo
+            echo "If upstream's mappings/ changed, regenerate packetevents/resources first (see upstream/packetevents-resources.md)."
+          } > "$RUNNER_TEMP/pr-body.txt"
+          if gh pr create --base main --head upstream-sync --title "Upstream sync" --body-file "$RUNNER_TEMP/pr-body.txt"; then
+            :
+          elif gh pr view upstream-sync >/dev/null 2>&1; then
+            gh pr edit upstream-sync --body-file "$RUNNER_TEMP/pr-body.txt"
+          else
+            # Repo setting "Allow GitHub Actions to create and approve pull requests" is off, or no PR can be opened.
+            # The branch is pushed; point at it instead of failing the job.
+            {
+              echo "### Upstream sync branch is ready"
+              echo "A pull request could not be created automatically."
+              echo "Open one: https://github.com/${GITHUB_REPOSITORY}/compare/main...upstream-sync"
+              echo "To let the bot open PRs: Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests."
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
