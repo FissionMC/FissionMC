@@ -12,13 +12,14 @@ jobs:
   sync:
     if: github.repository == 'FissionMC/FissionMC'
     runs-on: ubuntu-latest
-    env:
-      REPORT: ${{ runner.temp }}/upstream-status.txt
     steps:
       - uses: actions/checkout@v4
 
+      # The runner context is not available in job-level env, so the report path is exported from a step.
       - name: Status
-        run: python3 scripts/upstream.py status | tee "$REPORT"
+        run: |
+          echo "REPORT=$RUNNER_TEMP/upstream-status.txt" >> "$GITHUB_ENV"
+          python3 scripts/upstream.py status | tee "$RUNNER_TEMP/upstream-status.txt"
 
       - name: Re-vendor PacketEvents
         run: python3 scripts/upstream.py update packetevents
