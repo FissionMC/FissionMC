@@ -6,7 +6,7 @@
 type = "vendor"
 repo = "https://github.com/retrooper/packetevents.git"
 branch = "2.0"
-pinned = "4b766e86de98f5ec2a6c7ceb68cbedfac5f83bb6"
+pinned = "3e4e42ea9b8f2a6145a35c7fb80b618343266807"
 paths = { "api" = "packetevents/api", "netty-common" = "packetevents/netty-common", "LICENSE" = "packetevents/LICENSE" }
 
 [paper]
