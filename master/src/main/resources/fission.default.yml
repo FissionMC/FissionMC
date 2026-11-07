@@ -53,6 +53,8 @@ messages:
 switch:
   mode: seamless               # seamless = the client keeps its level and player when the new backend's level is the same (no Login/Respawn, no "Loading terrain" screen);
                                # login = always Login + Respawn. A different dimension/seed/flags falls back to the login path automatically (logged with the reason).
+  fresh-position: true         # at the end of a switch the new backend gets the client's REAL position (its latest movement packets) instead of the one saved when the switch started:
+                               # without it a fast player is snapped back by speed x switch duration. false = the old behaviour.
 
 # World settings owned by the master: the clocks (/time), weather, game rules, difficulty, world border, world spawn and default game mode are the
 # same on every backend. A change made on any backend (a command, a plugin, sleeping) is sent to the master and then to the others; the master ticks the clocks and the weather and

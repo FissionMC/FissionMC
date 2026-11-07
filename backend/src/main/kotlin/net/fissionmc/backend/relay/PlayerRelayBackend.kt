@@ -87,6 +87,7 @@ object PlayerRelayBackend {
             if (m is ChunkData || m is ChunkAbsent || m is ChunkStored || m is ChunkAvailable) net.fissionmc.backend.chunk.ChunkAuthorityBackend.onMessage(m)
             if (m is PlayerFile || m is EntityTransfer || m is EntityRemove) TravelBackend.onMessage(m, serverRef)
             if (m is RegionMap || m is GenerateChunk || m is EntityHandover) RegionsBackend.onMessage(m, serverRef)
+            if (m is PlayerMoveTo) serverRef?.let { srv -> srv.execute { srv.playerList.getPlayer(java.util.UUID(m.uuidHigh, m.uuidLow))?.connection?.teleport(m.x, m.y, m.z, m.yaw, m.pitch) } }   // position hand-off: where the client really is
             if (m is ChatFormat) LocalChatBackend.onMessage(m)
             if (m is WorldSettingsState || m is WorldSettingApply) WorldSettingsBackend.onMessage(m)
             if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)

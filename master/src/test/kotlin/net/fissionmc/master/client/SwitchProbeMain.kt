@@ -84,6 +84,14 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
     val respawns = java.util.concurrent.atomic.AtomicInteger(); val bundleDelimiters = java.util.concurrent.atomic.AtomicInteger(); val removePackets = java.util.concurrent.atomic.AtomicInteger()
     val forgotten = java.util.concurrent.atomic.AtomicInteger()
     @Volatile var selfId = -1
+    /** Moving client for the snap-back measurements: blocks per tick along x/y/z (null = standing still) and the distance of every position the server FORCED on it while moving. */
+    @Volatile var moveV: DoubleArray? = null
+    val snaps = CopyOnWriteArrayList<Double>()
+    /** Absolute join milestones (ns), for the phase table printed at the end: login success, each Login/Respawn, each PlayerLoaded sent, the first position after a Login/Respawn. */
+    val marks = CopyOnWriteArrayList<Pair<String, Long>>()
+    private val t0 = System.nanoTime()
+    fun mark(n: String) { marks += n to System.nanoTime() }
+    fun markTable(): String = marks.joinToString(", ") { (n, t) -> "$n +${(t - t0) / 1_000_000} ms" }
     val loadedAfterChunks = CopyOnWriteArrayList<Boolean>()   // per Login: PlayerLoaded was sent only once the player's own chunk was there
 
     /** ClientPacketListener.notifyPlayerLoaded: the level is ready once the chunk at the player's position is loaded (LevelLoadTracker). */
@@ -91,7 +99,7 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
         val p = pos ?: return; val set = chunkSets.lastOrNull() ?: return
         if (holdLoaded || loadedSent) return
         val key = (Math.floor(p[0] / 16).toLong() shl 32) or (Math.floor(p[2] / 16).toLong() and 0xffffffffL)
-        if (key in set) { loadedSent = true; loadedAfterChunks += true; c.send(WrapperPlayClientPlayerLoaded()) }
+        if (key in set) { loadedSent = true; loadedAfterChunks += true; mark("loaded-sent"); c.send(WrapperPlayClientPlayerLoaded()) }
     }
 
     fun connect(): Bot {
@@ -99,7 +107,7 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
         c.send(WrapperHandshakingClientHandshake(777, "localhost", port, ConnectionIntention.LOGIN)); c.setState(ConnectionState.LOGIN)
         c.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, name, null, UUID.nameUUIDFromBytes("OfflinePlayer:$name".toByteArray())))
         c.setCompression(c.expect(PacketType.Login.Server.SET_COMPRESSION) { WrapperLoginServerSetCompression(it) }.threshold)
-        c.skip(PacketType.Login.Server.LOGIN_SUCCESS)
+        c.skip(PacketType.Login.Server.LOGIN_SUCCESS); mark("login-success")
         c.send(WrapperLoginClientLoginSuccessAck()); c.setState(ConnectionState.CONFIGURATION)
         c.send(com.github.retrooper.packetevents.wrapper.configuration.client.WrapperConfigClientSettings("en_us", 10,
             com.github.retrooper.packetevents.wrapper.configuration.client.WrapperConfigClientSettings.ChatVisibility.FULL, true, 127.toByte(),
@@ -107,9 +115,18 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
         Thread({ run() }, "bot-$name").also { it.isDaemon = true }.start()
         // LocalPlayer.sendPosition each client tick: a status-only packet every tick while standing still on the ground (the periodic full position is left out: two in one server tick are a kick)
         Thread({
-            var tick = 0
+            var tick = 0L
             try { while (!stop) { Thread.sleep(50); tick++
                 val p = pos ?: continue; if (!loadedSent) continue
+                val v = moveV
+                if (v != null) {   // a moving client: it keeps going, whatever the backends are doing (this is what a real client does while a switch runs)
+                    val np = doubleArrayOf(p[0] + v[0], p[1] + v[1], p[2] + v[2]); pos = np
+                    val mb = Unpooled.buffer(); VarInts.write(mb, net.fissionmc.master.seamless.PlayPacketIds.s("MovePlayerPos")); mb.writeDouble(np[0]); mb.writeDouble(np[1]); mb.writeDouble(np[2]); mb.writeByte(0)
+                    c.sendRaw(ByteArray(mb.readableBytes()).also { mb.readBytes(it) })   // hand built (id, x y z, flags): the PacketEvents wrapper of the 26.3 position packet is not verified
+                    // the server resets "a position packet was received this tick" only on ServerboundClientTickEnd (ServerGamePacketListenerImpl.handleClientTickEnd): a second position packet without it is a kick ("Invalid move player packet"); the vanilla client ends every tick
+                    c.sendRaw(byteArrayOf(net.fissionmc.master.seamless.PlayPacketIds.s("ClientTickEnd").toByte()))
+                    continue
+                }
                 val loc = com.github.retrooper.packetevents.protocol.world.Location(p[0], p[1], p[2], look[0], look[1])
                 c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying(false, false, true, loc))
             } } catch (_: Throwable) {}
@@ -128,13 +145,13 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
                     PacketType.Play.Server.CONFIGURATION_START -> { startConfigs++; c.send(WrapperPlayClientConfigurationAck()); c.setState(ConnectionState.CONFIGURATION) }
                     PacketType.Play.Server.SYSTEM_CHAT_MESSAGE -> text = runCatching { ChatFormatter.plain(WrapperPlayServerSystemChatMessage(c.lastEvent!!).message) }.getOrNull()
                     PacketType.Play.Server.KEEP_ALIVE -> c.send(WrapperPlayClientKeepAlive(Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readLong()))
-                    PacketType.Play.Server.JOIN_GAME -> { timings += LoadTiming("login", System.nanoTime()); selfId = Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readInt(); entities.clear(); entityUuids.clear(); logins++; loginIndexes += events.size; chunkSets += java.util.concurrent.ConcurrentHashMap.newKeySet<Long>(); pos = null; loadedSent = false; positionPackets.set(0); teleportIds.clear() }
-                    PacketType.Play.Server.RESPAWN -> { respawns.incrementAndGet(); timings += LoadTiming("respawn", System.nanoTime()) }
+                    PacketType.Play.Server.JOIN_GAME -> { mark("Login"); timings += LoadTiming("login", System.nanoTime()); selfId = Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readInt(); entities.clear(); entityUuids.clear(); logins++; loginIndexes += events.size; chunkSets += java.util.concurrent.ConcurrentHashMap.newKeySet<Long>(); pos = null; loadedSent = false; positionPackets.set(0); teleportIds.clear() }
+                    PacketType.Play.Server.RESPAWN -> { mark("Respawn"); respawns.incrementAndGet(); timings += LoadTiming("respawn", System.nanoTime()) }
                     PacketType.Play.Server.BUNDLE -> bundleDelimiters.incrementAndGet()
                     PacketType.Play.Server.SPAWN_ENTITY -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val eid = VarInts.tryRead(b)!!; entityUuids[eid] = java.util.UUID(b.readLong(), b.readLong()); entities[eid] = VarInts.tryRead(b)!! }
                     PacketType.Play.Server.DESTROY_ENTITIES -> { removePackets.incrementAndGet(); val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); repeat(VarInts.tryRead(b)!!) { val rid = VarInts.tryRead(b)!!; entities.remove(rid); entityUuids.remove(rid) } }
                     PacketType.Play.Server.UNLOAD_CHUNK -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val p = b.readLong(); chunkSets.lastOrNull()?.remove((p and 0xFFFFFFFFL shl 32) or (p ushr 32)); forgotten.incrementAndGet() }
-                    PacketType.Play.Server.CHANGE_GAME_STATE -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); if (b.readUnsignedByte().toInt() == 13) timings.lastOrNull()?.let { if (it.chunksStartNs == 0L) it.chunksStartNs = System.nanoTime() } }
+                    PacketType.Play.Server.CHANGE_GAME_STATE -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); if (b.readUnsignedByte().toInt() == 13) timings.lastOrNull()?.let { if (it.chunksStartNs == 0L) { it.chunksStartNs = System.nanoTime(); mark("chunks-start") } } }
                     PacketType.Play.Server.CHUNK_DATA -> {
                         val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val x = b.readInt(); val z = b.readInt()
                         timings.lastOrNull()?.arrival?.putIfAbsent((x.toLong() shl 32) or (z.toLong() and 0xffffffffL), System.nanoTime())
@@ -148,8 +165,9 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
                         val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val tp = VarInts.tryRead(b)!!
                         val p = doubleArrayOf(b.readDouble(), b.readDouble(), b.readDouble()); b.skipBytes(24)
                         val yaw = b.readFloat(); val pitch = b.readFloat()
+                        if (moveV != null) pos?.let { o -> snaps += Math.sqrt((o[0] - p[0]) * (o[0] - p[0]) + (o[1] - p[1]) * (o[1] - p[1]) + (o[2] - p[2]) * (o[2] - p[2])) }
                         pos = p; look = floatArrayOf(yaw, pitch); positionPackets.incrementAndGet(); teleportIds += tp
-                        timings.lastOrNull()?.let { if (it.playerKey == Long.MIN_VALUE) { it.playerKey = (Math.floor(p[0] / 16).toLong() shl 32) or (Math.floor(p[2] / 16).toLong() and 0xffffffffL); it.positionNs = System.nanoTime() } }
+                        timings.lastOrNull()?.let { if (it.playerKey == Long.MIN_VALUE) { mark("first-position"); it.playerKey = (Math.floor(p[0] / 16).toLong() shl 32) or (Math.floor(p[2] / 16).toLong() and 0xffffffffL); it.positionNs = System.nanoTime() } }
                         // 26.3: ServerboundAcceptTeleportation carries the client's position and rotation (the server applies them)
                         c.send(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm(tp, p[0], p[1], p[2], yaw, pitch))
                         maybeLoaded()
@@ -189,7 +207,7 @@ fun main(args: Array<String>) {
     try { scenario(port, bots) } catch (t: Throwable) { println("[probe] FAIL scenario aborted: $t"); t.printStackTrace(System.out); failures++ }
     bots.forEach { b -> check("${b.name}: no StartConfiguration after the initial configuration", b.startConfigs == 0, "${b.startConfigs}"); check("${b.name}: connection stayed healthy", b.failed == null, b.failed?.toString() ?: "") }
     bots.forEach { runCatching { it.close() } }
-    bots.forEach { b -> b.timings.forEach { println("[probe] TIMING ${b.name} ${it.summary()}") } }
+    bots.forEach { b -> b.timings.forEach { println("[probe] TIMING ${b.name} ${it.summary()}") }; println("[probe] JOIN ${b.name}: ${b.markTable()}") }
     println("[probe] DONE failures=$failures")
     exitProcess(if (failures == 0) 0 else 1)
 }

@@ -74,7 +74,7 @@ object RegionProbe {
 
         // ---- the inventory, a pet, a platform and a test crop set up on backend-a around the player (pet radius 24: the wolf follows)
         run("a", "give ProbeA minecraft:diamond 7")
-        for (n in listOf("a", "b")) run(n, "forceload add -64 -32 64 32")
+        for (n in listOf("a", "b")) run(n, "forceload add -112 -48 112 48")
         // a stone platform at y 99 over the whole walk (the wolf and the items need ground); retried until the forceloaded chunks are there on both backends
         for (n in listOf("a", "b")) check("setup: platform on backend-$n", await(240_000) { val o = run(n, "fill -60 99 -3 60 99 10 minecraft:stone"); o.contains("Successfully filled") || o.contains("blocks filled") || o.contains("Changed") || o.contains("No blocks were filled") }.also { quiet(500) })
         for (n in listOf("a", "b")) run(n, "fill -60 100 -3 60 106 10 minecraft:air")
@@ -93,10 +93,11 @@ object RegionProbe {
         val ghostPlayerChunks = chunkCount { it >= 0 }
         mk = a.events.size
         // the world clock is master-owned: add time on A (day stays day: night mobs would kill the test pet), the player crosses to B and must find the same time there (the new backend applied the master's state before it ticked)
-        run("a", "time add 3000"); quiet(2500)
+        run("a", "time set minecraft:day"); quiet(1500); run("a", "time add 3000"); quiet(2500)
         fun statusMinutes(node: String): Int { val line = run(node, "fission status").lines().lastOrNull { it.contains("world settings (master owned") } ?: return -1; val m = Regex("day (\\d+) (\\d+):(\\d+)").find(line) ?: return -1; return m.groupValues[1].toInt() * 1440 + m.groupValues[2].toInt() * 60 + m.groupValues[3].toInt() }
         val timeA0 = statusMinutes("a"); val timeB0 = statusMinutes("b")
         check("world settings: /time add 3000 on backend-a is the same time on backend-b before the switch (A $timeA0 B $timeB0 minutes)", timeA0 > 0 && Math.abs(timeA0 - timeB0) <= 2)
+        run("a", "execute at ProbeA run tp @e[type=minecraft:wolf,tag=rwolf,limit=1] ~ ~ ~"); quiet(600)   // the pet walks slowly behind a teleporting player: bring it within the pet radius so the test is deterministic
         val timePackets0 = a.events.count { it.type == PacketType.Play.Server.TIME_UPDATE }
         tp(9.5, 4.5)
         val entBefore = a.entities.size; val bundlesBefore = a.bundleDelimiters.get(); val removesBefore = a.removePackets.get(); val forgottenBefore = a.forgotten.get()
@@ -185,6 +186,25 @@ object RegionProbe {
         check("handover back (b -> a): the pig is on backend-a again, once", await(25_000) { count(run("a", "execute if entity @e[type=minecraft:pig,tag=hpig]")) == 1 && !passes(run("b", "execute if entity @e[type=minecraft:pig,tag=hpig]")) })
         val u2 = run("a", "data get entity @e[type=minecraft:pig,tag=hpig,limit=1] UUID")
         check("handover: same UUID before and after", u1.contains("[I;") && Regex("\\[I;[^\\]]*\\]").find(u1)?.value == Regex("\\[I;[^\\]]*\\]").find(u2)?.value, "$u1 | $u2")
+
+        // ---- fast crossings: the client keeps moving through the whole switch (what a real client does). The distance the server forces it back by (PlayerPosition packets while moving) is the snap.
+        fun settleOnOwner(x: Double) { tp(x, 4.5); await(60_000) { near(a.pos, x, 4.5) }; quiet(4500) }
+        fun crossing(label: String, perTick: Double, startX: Double, endX: Double, maxSnap: Double, send: Pair<Double, String>? = null) {
+            settleOnOwner(startX)
+            val sw0 = switches(); a.snaps.clear(); a.moveV = doubleArrayOf(perTick, 0.0, 0.0)
+            var sent = false
+            val reached = await(60_000) { val x = a.pos?.get(0) ?: startX; if (send != null && !sent && x >= send.first) { sent = true; a.command("fission send ProbeA ${send.second}") }; x >= endX }
+            quiet(4000)   // the switch may still be running: the client keeps moving until it is over
+            a.moveV = null; quiet(1500)
+            val worst = a.snaps.maxOrNull() ?: 0.0; val total = a.snaps.sum()
+            println("[probe] SNAP $label: speed ${"%.1f".format(perTick * 20)} m/s, ${switches() - sw0} switch(es), ${a.snaps.size} forced position(s), worst ${"%.2f".format(worst)} blocks, total ${"%.2f".format(total)}")
+            check("fast crossing $label: reached the end (${a.pos?.toList()?.map { "%.1f".format(it) }}) with at least one switch", reached && switches() > sw0)
+            check("fast crossing $label: the server never forces the moving client back by more than $maxSnap blocks (worst ${"%.2f".format(worst)}, ${a.snaps.size} corrections)", worst < maxSnap)
+        }
+        crossing("sprint 5.6 m/s over x=0", 0.28, -30.0, 40.0, 1.0)
+        crossing("flying 12 m/s over x=0", 0.6, -40.0, 60.0, 1.5)
+        crossing("elytra 30 m/s over x=0", 1.5, -80.0, 100.0, 2.5)
+        crossing("sprint 5.6 m/s with /fission send", 0.28, -40.0, -10.0, 1.0, send = -25.0 to "backend-b")
 
         // ---- cleanup of the test world (the platform is in the user's worlds)
         for (n in listOf("a", "b")) { run(n, "kill @e[tag=hpig]"); run(n, "kill @e[tag=hitem]"); run(n, "kill @e[tag=rwolf]"); run(n, "fill -60 99 -3 60 106 10 minecraft:air"); run(n, "setblock 24 101 0 minecraft:air"); run(n, "setblock -24 101 0 minecraft:air") }
