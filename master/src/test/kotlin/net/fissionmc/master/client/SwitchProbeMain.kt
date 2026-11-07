@@ -482,6 +482,16 @@ private fun scenario(port: Int, bots: MutableList<Bot>) {
     check("travel: the boat is gone from the source", !passes(runConsole("b", "execute if entity @e[type=minecraft:oak_boat,tag=boaty]")))
     runConsole("a", "ride ProbeB dismount"); runConsole("a", "gamemode creative ProbeB"); cleanTestWorld(); runConsole("a", "save-all flush"); runConsole("b", "save-all flush")
 
+    // --- cold first entry: the saved position is in terrain nobody has generated (tp far away, leave at once, come back); the master's [join] line shows where the time went
+    val cold = newBot("ProbeD")
+    if (await(60_000) { cold.logins >= 2 && cold.loadedSent }) {
+        runConsole("a", "tp ProbeD 40300 100 40300"); runConsole("b", "tp ProbeD 40300 100 40300")
+        await(20_000) { (cold.pos?.get(0) ?: 0.0) > 40_000 }
+        cold.close(); quiet(3000)   // the backend saves the player at the disconnect, the master keeps the file
+        val cold2 = Bot("ProbeD", port, false, "ProbeD2").also { bots += it }.connect()
+        check("cold join: ProbeD enters a backend at never visited terrain", await(120_000) { cold2.logins >= 2 && cold2.loadedSent }, "logins=${cold2.logins}")
+        cold2.close(); quiet(1500)   // gone before the survival kick for floating over ungenerated ground and before the backend-b crash of phase 2
+    } else check("cold join: ProbeD joined", false)
     val before = a.logins; val mk = a.events.size
     println("[probe] PHASE1-DONE")
     System.out.flush()

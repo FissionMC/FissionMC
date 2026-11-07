@@ -16,6 +16,8 @@ class PositionTracker(private val clockNanos: () -> Long = System::nanoTime) {
     class Pos(val x: Double, val y: Double, val z: Double, val yaw: Float, val pitch: Float, val vx: Double, val vy: Double, val vz: Double)
 
     @Volatile var known = false; private set
+    /** The client sent a position packet since the last server teleport: only then can it be anywhere but where the backend last put it. */
+    @Volatile var moved = false; private set
     private var x = 0.0; private var y = 0.0; private var z = 0.0; private var yaw = 0f; private var pitch = 0f
     private var vx = 0.0; private var vy = 0.0; private var vz = 0.0
     private var lastNanos = 0L
@@ -43,7 +45,7 @@ class PositionTracker(private val clockNanos: () -> Long = System::nanoTime) {
             // a teleport (a jump of more than 16 blocks per tick) is not momentum
             if (dx * dx + dy * dy + dz * dz < 256.0) { vx = dx; vy = dy; vz = dz } else { vx = 0.0; vy = 0.0; vz = 0.0 }
         }
-        x = nx; y = ny; z = nz; lastNanos = now; known = true
+        x = nx; y = ny; z = nz; lastNanos = now; known = true; moved = true
     }
 
     /** The latest position, extrapolated by [extraTicks] ticks of the estimated velocity (the time the hand-off needs to reach the client), or null before the first movement packet. */
@@ -56,7 +58,7 @@ class PositionTracker(private val clockNanos: () -> Long = System::nanoTime) {
     fun teleported(nx: Double, ny: Double, nz: Double, nyaw: Float, npitch: Float, rel: Int = 0) {
         x = if (rel and 1 != 0) x + nx else nx; y = if (rel and 2 != 0) y + ny else ny; z = if (rel and 4 != 0) z + nz else nz
         yaw = if (rel and 8 != 0) yaw + nyaw else nyaw; pitch = if (rel and 16 != 0) pitch + npitch else npitch
-        vx = 0.0; vy = 0.0; vz = 0.0; lastNanos = clockNanos(); known = true
+        vx = 0.0; vy = 0.0; vz = 0.0; lastNanos = clockNanos(); known = true; moved = false
     }
 
     /** The player was teleported by a server (spawn, respawn, a command): movement history before is no momentum. */

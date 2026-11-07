@@ -48,6 +48,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** The client reported ServerboundPlayerLoaded (ClientPacketListener.notifyPlayerLoaded): its level is up, reconfiguring is safe. */
     private var clientLoaded = false
     private var graceOver = false
+    /** Phase timing of the first entry (limbo, first backend); logged once as a `[join]` line. */
+    private var join: JoinTiming? = null
     /**
      * The latest ServerboundClientInformation payload (view distance, skin parts, main hand, chat settings...). Vanilla's client sends it once when
      * it connects (configuration, which the master answered itself) and again only when an option changes in play; it does NOT resend it for the
@@ -64,6 +66,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val buffer = ArrayList<ByteArray>(); var gotPosition = false; var timeout: ScheduledFuture<*>? = null
         /** Position hand-off: the first chunk batch is complete, the master told the new backend where the client really is (PlayerMoveTo), and its answering PlayerPosition arrived. */
         var batchDone = false; var sawBatch = false; var moveSent = false; var freshPosition = false
+        /** First entry (limbo): the backend's Login arrived before the limbo client said it is loaded; it and the frames behind it (in [buffer]) wait for [releaseHeld]. */
+        var heldLogin: ByteArray? = null
     }
     private var switching: Switch? = null
     // ---- seamless switching (no Login/Respawn between same-level backends)
@@ -220,9 +224,9 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         } else if (state == ConnectionState.PLAY && id == pPlayerPosition) net.fissionmc.master.seamless.PositionFrames.observeTeleport(rewritten, posTracker)   // the client was teleported (spawn, /tp, a switch): that is where it is now
         val frame = toClient(patched) ?: return
         if (state == ConnectionState.PLAY) {
+            join?.let { j -> if (id == pPlayerPosition) j.positionSent() else if (id == pBatchFinished) j.chunkBatch() }
             cleanup.observe(frame); clientView.observe(frame)
             if (id == pBatchFinished) batchOutstanding++
-            join?.let { j -> if (id == pPlayerPosition) j.positionSent() else if (id == pBatchFinished) j.chunkBatch() }
             if (id == PlayIds.keepAliveS2C && frame.size >= 9) { backendKeepAlives.add(java.nio.ByteBuffer.wrap(PlayIds.payload(frame)).long); while (backendKeepAlives.size > 8) backendKeepAlives.poll() }
             if (id == PlayIds.commands) { val patched = ChatCommandTree.patch(frame, isAdmin, server.log); if (patched != null) { writeRelay(patched); return } }
         }
@@ -299,9 +303,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (mode == Mode.LIMBO && user.decoderState != ConnectionState.PLAY) return@execute
         if (switching != null || switchPending) { report("a switch is already running"); return@execute }
         if (mode == Mode.LIMBO) {
-            // Vanilla's client only accepts the second Login once it finished loading the first level it got (the real-client failure
-            // happened when StartConfiguration followed the limbo burst immediately); a client that never says so is moved after a grace period.
-            if (!clientLoaded && !graceOver) { report("the player is still loading the limbo"); return@execute }
+            // The backend's configuration starts at once (it takes 0.2-1 s and overlaps with the client loading the limbo); only its Login waits until the limbo client said it is
+            // loaded (the real-client failure happened when StartConfiguration followed the limbo burst immediately), or the grace period is over: see onSwitchFrame / releaseHeld.
         } else if (mode != Mode.RELAY || tracker.clientState != ConnectionState.PLAY || tracker.serverState != ConnectionState.PLAY) { report("the player is busy"); return@execute }
         if (nodeId != null && nodeId == currentNodeId) { report("already on $nodeId"); return@execute }
         // leaving a backend: it saves the player first, so the next backend starts from the player's latest state (position, inventory, ...)
@@ -319,7 +322,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val id = server.relay?.attach(this, nodeId)
         if (id == null) { report(if (nodeId == null) "no backend is alive" else "backend $nodeId is not connected"); return }
         val node = server.relay!!.nodeIdOf(id) ?: "?"
-        switching = Switch(id, node)
+        switching = Switch(id, node); join?.attached()
         // the client's real options go first, like in the first configuration of a fresh vanilla connection
         clientInfoPayload?.let { p -> server.relay?.toBackend(id, PlayIds.frame(0, p)) }
         server.log("[client] $playerName -> backend $node (player $id), seamless")
@@ -339,10 +342,12 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 else tell("Could not move to ${sw.nodeId}: ${r.abort}")
                 return
             }
-            if (r.finished) sw.inPlay = true
+            if (r.finished) { sw.inPlay = true; join?.configDone() }
             return
         }
+        if (sw.heldLogin != null) { sw.buffer += frame; if (sw.buffer.size > 20_000) releaseHeld(sw); return }
         if (sw.login != null) { bufferForTransplant(sw, frame); return }
+        if (Limbo.idOf(frame) == PlayIds.login) join?.backendLogin()
         if (Limbo.idOf(frame) != PlayIds.login) { server.log("[client $playerName] dropped play frame ${Limbo.idOf(frame)} from ${sw.nodeId} before its Login"); return }
         // seamless: the client keeps its level and player when the new backend's level is the same one
         val cur = currentSpawn; val parsed = runCatching { net.fissionmc.master.seamless.SpawnInfo.parse(frame) }.getOrNull()
@@ -358,8 +363,20 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             sw.timeout = channel.eventLoop().schedule({ if (switching === sw) { server.log("[client $playerName] transplant to ${sw.nodeId}: no complete first chunk batch within 4 s, taking over with what arrived"); completeTransplant(sw) } }, 4, TimeUnit.SECONDS)
             return
         }
+        if (mode == Mode.LIMBO && !clientLoaded && !graceOver) { sw.heldLogin = frame; return }   // the limbo client is still loading: hold the Login (and what follows) back
         server.log("[switch] $playerName -> ${sw.nodeId}: Login+Respawn path because $why")
         completeSwitch(sw, frame)
+    }
+
+    /** The limbo client is loaded (or the grace period is over): forward the held Login, Respawn and everything the backend sent behind it. */
+    private fun releaseHeld(sw: Switch) {
+        val login = sw.heldLogin ?: return
+        if (switching !== sw) return
+        sw.heldLogin = null
+        val held = sw.buffer.toList(); sw.buffer.clear()
+        server.log("[switch] $playerName -> ${sw.nodeId}: Login+Respawn path because the client is in the limbo (first entry); the Login was held until the limbo client was loaded, ${held.size} frames behind it")
+        completeSwitch(sw, login)
+        held.forEach { deliverRelay(it) }
     }
 
     /** The new backend's stream after its Login, held back until the first chunk batch is complete (or 4 s). */
@@ -445,7 +462,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         cleanupFrames.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
         selfEntityId = if (login.size >= 5) java.nio.ByteBuffer.wrap(PlayIds.payload(login)).int else -1
         idMap.start(selfEntityId); clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
-        if (freshPosition && posTracker.known && old != null) {   // Login+Respawn path: the new backend's PlayerPosition frames show the client's real position and momentum, and the backend moves its player there
+        if (freshPosition && posTracker.known && posTracker.moved && old != null) {   // Login+Respawn path: the new backend's PlayerPosition frames show the client's real position and momentum, and the backend moves its player there
             patchPositions = 2
             val p = posTracker.latest(1.5); val u = uuid
             if (p != null && u != null) server.relay?.sendTo(sw.id, net.fissionmc.protocol.PlayerMoveTo(u.mostSignificantBits, u.leastSignificantBits, p.x, p.y, p.z, p.yaw, p.pitch))
@@ -457,6 +474,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         runCatching { RespawnFrames.fromLogin(login) }.onSuccess { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }.onFailure { server.log("[client $playerName] no Respawn after the Login: $it") }
         channel.flush()
         announceArrival(sw.nodeId, if (old != null) currentNodeIdBefore else null)
+        join?.let { j -> j.loginForwarded(); channel.eventLoop().schedule({ if (join === j) { server.log(j.line(playerName, sw.nodeId)); join = null } }, 20, TimeUnit.SECONDS) }
         server.log("[client] $playerName now on ${sw.nodeId} (Login entity id $selfEntityId, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, ${cleanupFrames.size} cleanup frames)")
     }
 
@@ -487,6 +505,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 val bytes = ByteArray(buf.readableBytes()); buf.readBytes(bytes)
                 val id = relayId
                 if (tracker.clientState == ConnectionState.PLAY && interceptClient(bytes)) return
+                join?.let { j -> if (j.isForwarded && tracker.packetId(bytes) == PlayIds.playerLoaded) { j.playerLoaded(); server.log(j.line(playerName, currentNodeId)); join = null } }
                 posTracker.observe(bytes)
                 val tapped = fromClient(bytes)
                 val out = if (seamless && tapped != null) rewriter.toBackend(tapped) else tapped
@@ -643,7 +662,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     private fun finishAuth(p: PlayerProfile) {
-        prof = p
+        prof = p; join = JoinTiming()
         if (!server.register(this, p)) { disconnect("You are already connected"); return }
         registered = true
         server.settings.adminStore.bindOnLogin(p.name, p.uuid)   // bootstrap: a name entry in the admin list becomes this uuid
@@ -688,9 +707,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val withRespawn = if (before.isEmpty()) frames else listOf(frames[0], RespawnFrames.fromLogin(frames[0])) + frames.drop(1)
         Limbo.sendRaw(channel, before + withRespawn)
         selfEntityId = Limbo.ENTITY_ID; idMap.start(Limbo.ENTITY_ID); clientView.reset(); currentSpawn = null; batchOutstanding = 0; staleBatchAcks = 0
-        server.log("[client] $playerName joined limbo")
+        server.log("[client] $playerName joined limbo"); join?.limboJoined()
+        tryAttach()   // the backend's configuration overlaps with the client loading the limbo
         graceTask?.cancel(false)
-        graceTask = channel.eventLoop().schedule({ graceOver = true; tryAttach() }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
+        graceTask = channel.eventLoop().schedule({ graceOver = true; if (!clientLoaded) join?.limboLoaded(true); tryAttach(); switching?.let { releaseHeld(it) } }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
         lastKeepAliveAck = System.nanoTime()
         keepAlive?.cancel(false)
         keepAlive = channel.eventLoop().scheduleAtFixedRate({
@@ -714,12 +734,12 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             }
             return
         }
-        if (e.packetType == PacketType.Play.Client.PLAYER_LOADED && !clientLoaded) { clientLoaded = true; tryAttach() }
+        if (e.packetType == PacketType.Play.Client.PLAYER_LOADED && !clientLoaded) { clientLoaded = true; join?.limboLoaded(false); tryAttach(); channel.eventLoop().execute { switching?.let { releaseHeld(it) } } }
         if (e.packetType == PacketType.Play.Client.KEEP_ALIVE) {
             WrapperPlayClientKeepAlive(e); lastKeepAliveAck = System.nanoTime()
         }
         // everything else is ignored in limbo (movement, chat, settings...)
     }
 
-    companion object { const val PROTOCOL = 777; var LOAD_GRACE_SECONDS = 10L }
+    companion object { const val PROTOCOL = 777; var LOAD_GRACE_SECONDS = 5L }
 }
