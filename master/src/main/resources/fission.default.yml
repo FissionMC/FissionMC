@@ -54,6 +54,21 @@ switch:
   mode: seamless               # seamless = the client keeps its level and player when the new backend's level is the same (no Login/Respawn, no "Loading terrain" screen);
                                # login = always Login + Respawn. A different dimension/seed/flags falls back to the login path automatically (logged with the reason).
 
+# World settings owned by the master: the clocks (/time), weather, game rules, difficulty, world border, world spawn and default game mode are the
+# same on every backend. A change made on any backend (a command, a plugin, sleeping) is sent to the master and then to the others; the master ticks the clocks and the weather and
+# broadcasts the state every sync-interval-ticks (backends adopt small drifts without a jump). The state is saved as world-settings.txt next to this file; on the very first start the
+# first backend that connects seeds it from its world. Turn single categories off to leave them per backend.
+world-settings:
+  enabled: true
+  time: true                   # every world clock (day time, rate, paused) and the game time
+  weather: true                # rain / thunder and their timers
+  gamerules: true             # all game rules (advance_time, mob_griefing, ...)
+  difficulty: true             # difficulty and its lock
+  border: true                 # the world border of every dimension (center, size, damage, warning, a running lerp)
+  spawn: true                  # the world spawn point
+  gamemode: true               # the default game mode
+  sync-interval-ticks: 20      # how often the master broadcasts the whole state (20 = every second)
+
 # Pets and riders travel with a player who switches backend
 travel:
   pet-radius: 24               # blocks, 0 = pets stay

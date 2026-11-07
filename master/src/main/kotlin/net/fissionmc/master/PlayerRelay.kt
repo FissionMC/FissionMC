@@ -52,6 +52,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
     fun playerNear(nodeId: String, dimension: String, cx: Int, cz: Int, chunks: Int): Boolean =
         bindings.values.any { b -> b.node.info.nodeId == nodeId && (!b.known || b.dim == dimension) && (!b.known || (Math.abs((b.x shr 4) - cx) <= chunks && Math.abs((b.z shr 4) - cz) <= chunks)) }
 
+    /** The master-owned world settings (clocks, weather, game rules ...), set by the master main. */
+    @Volatile var worldSettings: net.fissionmc.master.worldsettings.WorldSettingsHub? = null
+
     /** `chat.local.format` + syntax, pushed to the backends (null until the master has read its settings). */
     @Volatile var chatFormat: net.fissionmc.protocol.ChatFormat? = null
 
@@ -173,6 +176,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
                 val u = java.util.UUID(msg.playerHigh, msg.playerLow); val origin = awaitingAck.remove(u)
                 if (origin != null && msg.spawned.isNotEmpty()) registry[origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned))
             }
+            is net.fissionmc.protocol.WorldSettingsHello, is net.fissionmc.protocol.WorldSettingChange -> worldSettings?.onMessage(node, msg)
             is PlayerDataSave -> playerData?.onSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.nbt)
             else -> return false
         }

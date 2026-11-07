@@ -60,6 +60,12 @@ fun main(args: Array<String>) {
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { node.link.send(chatFormat) } })
     java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "chat-format-resend").also { it.isDaemon = true } }
         .scheduleWithFixedDelay({ registry.all.filter { it.link.isOpen }.forEach { n -> n.link.send(chatFormat) } }, 5, 5, java.util.concurrent.TimeUnit.SECONDS)
+    // master-owned world settings (clocks, weather, game rules, difficulty, border, spawn):
+    if (mc.worldSettings.enabled) {
+        val ws = net.fissionmc.master.worldsettings.WorldSettingsHub(registry, net.fissionmc.master.worldsettings.WorldSettingsModel(mc.worldSettings), configFile.resolveSibling("world-settings.txt")) { println(it) }
+        relay.worldSettings = ws
+        Runtime.getRuntime().addShutdownHook(Thread { ws.close() })
+    }
     val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = settings).start() else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })

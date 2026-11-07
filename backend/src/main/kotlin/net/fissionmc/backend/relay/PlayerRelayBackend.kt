@@ -80,7 +80,7 @@ object PlayerRelayBackend {
     }
 
     @JvmStatic fun attach() {
-        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}") + net.fissionmc.backend.node.MasterInfo.lines() }
+        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}", WorldSettingsBackend.summary()) + net.fissionmc.backend.node.MasterInfo.lines() }
         NodeBootstrap.addMessageHandler { m ->
             if (m is MasterStats) net.fissionmc.backend.node.MasterInfo.onStats(m)
             if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)
@@ -88,11 +88,13 @@ object PlayerRelayBackend {
             if (m is PlayerFile || m is EntityTransfer || m is EntityRemove) TravelBackend.onMessage(m, serverRef)
             if (m is RegionMap || m is GenerateChunk || m is EntityHandover) RegionsBackend.onMessage(m, serverRef)
             if (m is ChatFormat) LocalChatBackend.onMessage(m)
+            if (m is WorldSettingsState || m is WorldSettingApply) WorldSettingsBackend.onMessage(m)
             if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)
             if (m is PlayerPermission || m is PlayerDetach) PermissionBackend.onMessage(m, serverRef)
             if (m is PlayerData || m is PlayerDataFlush || m is PlayerAttach || m is PlayerDetach) PlayerDataBackend.onMessage(m, serverRef)
             if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }
         }
+        NodeBootstrap.addConnectListener { WorldSettingsBackend.onReconnect() }
         enabled = true
         log.info("[fission] player relay enabled")
     }
@@ -115,6 +117,7 @@ object PlayerRelayBackend {
         GlobalChatBackend.setServer(server)
         PlayerDataBackend.tick(server)
         TravelBackend.tick(server)
+        WorldSettingsBackend.tick(server)
         RegionsBackend.tick(server)
         net.fissionmc.backend.chunk.ChunkAuthorityBackend.tick(server)
         LimboCheck.once(server)

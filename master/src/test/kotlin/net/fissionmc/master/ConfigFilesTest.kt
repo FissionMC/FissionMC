@@ -19,6 +19,16 @@ class ConfigFilesTest {
         assertTrue(c.node.masterProcess); assertEquals(25600, c.node.listen!!.port); assertEquals(25565, c.client.port)
         assertFalse(c.regions.enabled); assertEquals("minimessage", c.settings.chat.syntax); assertEquals(24, c.settings.petRadius)
         assertTrue(c.chunkAuthority); assertEquals(60L, c.leaseSeconds); assertEquals("chunkstore", c.chunkStoreDir)
+        assertEquals(setOf("time", "weather", "gamerules", "difficulty", "border", "spawn", "gamemode"), c.worldSettings.categories); assertEquals(20, c.worldSettings.syncIntervalTicks)
+    }
+
+    @Test fun `world settings categories can be switched off and are validated`() {
+        val c = master("node: { mode: master, listen: \"127.0.0.1:1\" }\nworld-settings: { weather: false, gamerules: false, sync-interval-ticks: 10 }")
+        assertEquals(setOf("time", "difficulty", "border", "spawn", "gamemode"), c.worldSettings.categories); assertEquals(10, c.worldSettings.syncIntervalTicks)
+        assertTrue(master("node: { mode: master, listen: \"127.0.0.1:1\" }\nworld-settings: { enabled: false }").worldSettings.categories.isEmpty())
+        val e = assertFailsWith<ConfigException> { master("node: { mode: master, listen: \"127.0.0.1:1\" }\nworld-settings: { sync-interval-ticks: 0 }") }
+        assertTrue(e.message!!.contains("world-settings.sync-interval-ticks"), e.message)
+        assertFailsWith<ConfigException> { master("node: { mode: master, listen: \"127.0.0.1:1\" }\nworld-settings: { tme: true }") }.let { assertTrue(it.message!!.contains("world-settings.tme")) }
     }
 
     @Test fun `the commented examples of the default parse once uncommented`() {

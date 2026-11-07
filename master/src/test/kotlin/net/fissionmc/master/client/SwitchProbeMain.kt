@@ -80,6 +80,7 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
     val timings = CopyOnWriteArrayList<LoadTiming>()
     // what a seamless transplant must keep right: entities the client holds (id -> entity type), respawns, bundles, forgotten chunks
     val entities = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+    val entityUuids = java.util.concurrent.ConcurrentHashMap<Int, java.util.UUID>()
     val respawns = java.util.concurrent.atomic.AtomicInteger(); val bundleDelimiters = java.util.concurrent.atomic.AtomicInteger(); val removePackets = java.util.concurrent.atomic.AtomicInteger()
     val forgotten = java.util.concurrent.atomic.AtomicInteger()
     @Volatile var selfId = -1
@@ -127,11 +128,11 @@ class Bot(val name: String, private val port: Int, private val holdLoaded: Boole
                     PacketType.Play.Server.CONFIGURATION_START -> { startConfigs++; c.send(WrapperPlayClientConfigurationAck()); c.setState(ConnectionState.CONFIGURATION) }
                     PacketType.Play.Server.SYSTEM_CHAT_MESSAGE -> text = runCatching { ChatFormatter.plain(WrapperPlayServerSystemChatMessage(c.lastEvent!!).message) }.getOrNull()
                     PacketType.Play.Server.KEEP_ALIVE -> c.send(WrapperPlayClientKeepAlive(Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readLong()))
-                    PacketType.Play.Server.JOIN_GAME -> { timings += LoadTiming("login", System.nanoTime()); selfId = Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readInt(); entities.clear(); logins++; loginIndexes += events.size; chunkSets += java.util.concurrent.ConcurrentHashMap.newKeySet<Long>(); pos = null; loadedSent = false; positionPackets.set(0); teleportIds.clear() }
+                    PacketType.Play.Server.JOIN_GAME -> { timings += LoadTiming("login", System.nanoTime()); selfId = Unpooled.wrappedBuffer(body).also { VarInts.tryRead(it) }.readInt(); entities.clear(); entityUuids.clear(); logins++; loginIndexes += events.size; chunkSets += java.util.concurrent.ConcurrentHashMap.newKeySet<Long>(); pos = null; loadedSent = false; positionPackets.set(0); teleportIds.clear() }
                     PacketType.Play.Server.RESPAWN -> { respawns.incrementAndGet(); timings += LoadTiming("respawn", System.nanoTime()) }
                     PacketType.Play.Server.BUNDLE -> bundleDelimiters.incrementAndGet()
-                    PacketType.Play.Server.SPAWN_ENTITY -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val eid = VarInts.tryRead(b)!!; b.skipBytes(16); entities[eid] = VarInts.tryRead(b)!! }
-                    PacketType.Play.Server.DESTROY_ENTITIES -> { removePackets.incrementAndGet(); val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); repeat(VarInts.tryRead(b)!!) { entities.remove(VarInts.tryRead(b)!!) } }
+                    PacketType.Play.Server.SPAWN_ENTITY -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val eid = VarInts.tryRead(b)!!; entityUuids[eid] = java.util.UUID(b.readLong(), b.readLong()); entities[eid] = VarInts.tryRead(b)!! }
+                    PacketType.Play.Server.DESTROY_ENTITIES -> { removePackets.incrementAndGet(); val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); repeat(VarInts.tryRead(b)!!) { val rid = VarInts.tryRead(b)!!; entities.remove(rid); entityUuids.remove(rid) } }
                     PacketType.Play.Server.UNLOAD_CHUNK -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); val p = b.readLong(); chunkSets.lastOrNull()?.remove((p and 0xFFFFFFFFL shl 32) or (p ushr 32)); forgotten.incrementAndGet() }
                     PacketType.Play.Server.CHANGE_GAME_STATE -> { val b = Unpooled.wrappedBuffer(body); VarInts.tryRead(b); if (b.readUnsignedByte().toInt() == 13) timings.lastOrNull()?.let { if (it.chunksStartNs == 0L) it.chunksStartNs = System.nanoTime() } }
                     PacketType.Play.Server.CHUNK_DATA -> {

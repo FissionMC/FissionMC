@@ -92,12 +92,22 @@ object RegionProbe {
         check("border view: chunks of the other side (cx >= 0) were received while the player was on backend-a at x<=6.5", chunkCount { it >= 0 } > 20, "chunks with cx>=0: ${chunkCount { it >= 0 }}")
         val ghostPlayerChunks = chunkCount { it >= 0 }
         mk = a.events.size
+        // the world clock is master-owned: add time on A (day stays day: night mobs would kill the test pet), the player crosses to B and must find the same time there (the new backend applied the master's state before it ticked)
+        run("a", "time add 3000"); quiet(2500)
+        fun statusMinutes(node: String): Int { val line = run(node, "fission status").lines().lastOrNull { it.contains("world settings (master owned") } ?: return -1; val m = Regex("day (\\d+) (\\d+):(\\d+)").find(line) ?: return -1; return m.groupValues[1].toInt() * 1440 + m.groupValues[2].toInt() * 60 + m.groupValues[3].toInt() }
+        val timeA0 = statusMinutes("a"); val timeB0 = statusMinutes("b")
+        check("world settings: /time add 3000 on backend-a is the same time on backend-b before the switch (A $timeA0 B $timeB0 minutes)", timeA0 > 0 && Math.abs(timeA0 - timeB0) <= 2)
+        val timePackets0 = a.events.count { it.type == PacketType.Play.Server.TIME_UPDATE }
         tp(9.5, 4.5)
         val entBefore = a.entities.size; val bundlesBefore = a.bundleDelimiters.get(); val removesBefore = a.removePackets.get(); val forgottenBefore = a.forgotten.get()
         val selfBefore = a.selfId
         check("border: crossing x=9.5 completes exactly one switch", await(60_000) { switches() == baseSw + 1 }, "switches=${switches()}")
         check("seamless: NO new Login and NO Respawn for the same-level switch (the client keeps its level and player, no loading screen)", a.logins == baseLogins && a.respawns.get() == baseRespawns, "logins=${a.logins} (was $baseLogins), respawns=${a.respawns.get()} (was $baseRespawns)")
         check("seamless: the old backend's entities were removed in the cut-over (RemoveEntities) inside a bundle", await(10_000) { a.removePackets.get() > removesBefore && a.bundleDelimiters.get() >= bundlesBefore + 2 }, "removes ${a.removePackets.get() - removesBefore}, bundle delimiters ${a.bundleDelimiters.get() - bundlesBefore}")
+        check("world settings: the switch sent the client the new backend's time (a TIME_UPDATE after the cut-over)", await(10_000) { a.events.count { it.type == PacketType.Play.Server.TIME_UPDATE } > timePackets0 })
+        quiet(1500)
+        val timeA1 = statusMinutes("a"); val timeB1 = statusMinutes("b")
+        check("world settings: after the switch both backends still show one time (A $timeA1 B $timeB1; before $timeA0)", timeB1 >= timeA0 && Math.abs(timeA1 - timeB1) <= 2)
         check("seamless: the client's own entity id is unchanged", a.selfId == selfBefore, "${a.selfId} (was $selfBefore)")
         check("border: the player arrives at the same coordinates (9.5, 4.5), no spawn teleport", await(15_000) { near(a.pos, 9.5, 4.5) }, "${a.pos?.toList()}")
         quiet(2500)
@@ -113,12 +123,15 @@ object RegionProbe {
         check("border view: after the switch the client received chunks of a's side (cx < 0) as ghost chunks from backend-b", chunkCount { it < 0 } > 10, "chunks with cx<0: ${chunkCount { it < 0 }}")
 
         // ---- the transplant kept the client's world right: pet entity, ids, chunks, interaction
-        val wolfType = RegionProbe::class.java.getResourceAsStream("/vanilla-scan/entities.txt")!!.bufferedReader().readLines().first { it.startsWith("ENTITY_TYPE ") && it.split(' ')[2] == "wolf" }.split(' ')[1].toInt()
-        check("seamless: the client holds exactly one wolf after the transplant (the pet arrived as a normal AddEntity)", await(20_000) { a.entities.values.count { it == wolfType } == 1 }, "entities ${a.entities.size}, wolves ${a.entities.values.count { it == wolfType }}")
-        val wolfId = a.entities.entries.firstOrNull { it.value == wolfType }?.key ?: -1
+        val petOut = run("b", "data get entity @e[type=minecraft:wolf,tag=rwolf,limit=1] UUID")
+        val ints = Regex("\\[I;([^\\]]*)\\]").find(petOut)!!.groupValues[1].split(',').map { it.trim().toInt() }
+        val petUuid = UUID(((ints[0].toLong() and 0xFFFFFFFFL) shl 32) or (ints[1].toLong() and 0xFFFFFFFFL), ((ints[2].toLong() and 0xFFFFFFFFL) shl 32) or (ints[3].toLong() and 0xFFFFFFFFL))
+        fun petIds() = a.entityUuids.entries.filter { it.value == petUuid }.map { it.key }
+        check("seamless: the client holds exactly one entity with the pet's UUID after the transplant (the pet arrived as a normal AddEntity)", await(20_000) { petIds().size == 1 }, "entities ${a.entities.size}, pet entities ${petIds().size}")
+        val wolfId = petIds().firstOrNull() ?: -1
         check("seamless: the wolf has a master-assigned client id (>= 1000000), not the backend's own", wolfId >= 1_000_000, "id $wolfId")
         quiet(1500)
-        check("seamless: the wolf keeps the same client id (no re-adds) while the player stays", a.entities.entries.firstOrNull { it.value == wolfType }?.key == wolfId)
+        check("seamless: the wolf keeps the same client id (no re-adds) while the player stays", petIds().firstOrNull() == wolfId)
         run("b", "data modify entity @e[type=minecraft:wolf,tag=rwolf,limit=1] Sitting set value 0b")
         run("b", "execute at ProbeA run tp @e[type=minecraft:wolf,tag=rwolf,limit=1] ~1 ~ ~")
         quiet(500)
