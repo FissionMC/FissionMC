@@ -237,9 +237,10 @@ object RegionProbe {
         check("liquids: water placed on a (x=-3) flows across x=0 and is flowing water on b at x=2", await(40_000) { passes(run("b", "execute if block 2 100 3 minecraft:water")) })
         check("liquids: ... and a's ghost copy shows it too", await(10_000) { passes(run("a", "execute if block 2 100 3 minecraft:water")) })
         run("a", "fill -8 100 3 8 100 3 minecraft:air"); run("b", "fill -8 100 3 8 100 3 minecraft:air")
-        run("b", "setblock 1 100 4 minecraft:lava")
-        check("liquids: lava placed on b (x=1) flows across x=0 and is lava on a at x=-1", await(60_000) { passes(run("a", "execute if block -1 100 4 minecraft:lava")) })
-        run("a", "fill -8 100 4 8 100 4 minecraft:air"); run("b", "fill -8 100 4 8 100 4 minecraft:air")
+        run("a", "fill -8 100 0 8 100 10 minecraft:air"); run("b", "fill -8 100 0 8 100 10 minecraft:air"); quiet(4000)
+        run("b", "setblock 1 100 7 minecraft:lava")
+        check("liquids: lava placed on b (x=1) flows across x=0 and is lava on a at x=-1", await(60_000) { passes(run("a", "execute if block -1 100 7 minecraft:lava")) })
+        run("a", "fill -8 100 7 8 100 7 minecraft:air"); run("b", "fill -8 100 7 8 100 7 minecraft:air")
 
         // redstone: wire/lamp lanes cross x=0 in both directions
         for (x in -1..-1) run("a", "setblock $x 100 -2 minecraft:redstone_wire")
@@ -250,6 +251,9 @@ object RegionProbe {
         check("redstone a->b: a redstone block on a powers wire across the border and lights the lamp on b", await(40_000) { passes(run("b", "execute if block 5 100 -2 minecraft:redstone_lamp[lit=true]")) })
         run("a", "setblock -2 100 -2 minecraft:air")
         check("redstone a->b: ... and the lamp goes out again when the block is removed", await(40_000) { passes(run("b", "execute if block 5 100 -2 minecraft:redstone_lamp[lit=false]")) })
+        println("[probe] DIAG lamp b lit=" + passes(run("b", "execute if block 5 100 -2 minecraft:redstone_lamp[lit=true]")) + " ; poking a neighbour of the lamp")
+        run("b", "setblock 5 100 -3 minecraft:stone"); quiet(2000)
+        println("[probe] DIAG lamp b lit after poke=" + passes(run("b", "execute if block 5 100 -2 minecraft:redstone_lamp[lit=true]"))); run("b", "setblock 5 100 -3 minecraft:air")
         fun powers(z: Int) = (-1..4).joinToString(" ") { x -> val n = if (x < 0) "a" else "b"; "$x:" + (0..15).firstOrNull { pw -> passes(run(n, "execute if block $x 100 $z minecraft:redstone_wire[power=$pw]")) } }
         println("[probe] DIAG lane z=-2 after the block was removed: a/b wire powers ${powers(-2)} (a copy of x>=0 on a: " + (0..4).joinToString(" ") { x -> "$x:" + (0..15).firstOrNull { pw -> passes(run("a", "execute if block $x 100 -2 minecraft:redstone_wire[power=$pw]")) } } + ")")
         for (x in -4..-1) run("a", "setblock $x 100 0 minecraft:redstone_wire")
