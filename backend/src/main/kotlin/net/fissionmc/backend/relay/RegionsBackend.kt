@@ -65,6 +65,9 @@ object RegionsBackend {
         return o == you
     }
 
+    @JvmField val pistonsBlocked = java.util.concurrent.atomic.AtomicLong()
+    @JvmStatic fun ownsBlockAt(level: ServerLevel, pos: net.minecraft.core.BlockPos): Boolean = !enabled || ownsBlock(level.dimension().identifier().toString(), pos.x, pos.z)
+
     @JvmStatic fun ownsChunk(level: ServerLevel, cx: Int, cz: Int): Boolean = !enabled || ownsBlock(level.dimension().identifier().toString(), cx * 16 + 8, cz * 16 + 8)
 
     @JvmStatic fun ownsEntity(entity: Entity): Boolean {

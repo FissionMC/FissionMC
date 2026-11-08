@@ -89,7 +89,9 @@ object Replication {
 
     /** Owner side of a "ghost" write: why the block must not go in (an entity of this backend stands there), or null. */
     @JvmStatic fun refusal(level: ServerLevel, pos: BlockPos, state: BlockState): String? {
-        if (state.isAir || level.getBlockState(pos) == state) return null
+        val cur = level.getBlockState(pos)
+        if (state.isAir || cur == state) return null
+        if (!cur.getCollisionShape(level, pos).isEmpty) return null   // already solid here: a shape update of an existing block (fence, wall, stairs) adds no new obstruction
         if (!level.isUnobstructed(state, pos, net.minecraft.world.phys.shapes.CollisionContext.empty())) return "an entity stands in the way"
         return null
     }

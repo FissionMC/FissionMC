@@ -1,6 +1,7 @@
 package net.fissionmc.backend.relay
 
 import net.fissionmc.backend.node.NodeBootstrap
+import net.fissionmc.backend.replication.Replication
 import net.fissionmc.protocol.*
 import net.minecraft.core.BlockPos
 import net.minecraft.core.registries.BuiltInRegistries
@@ -29,8 +30,12 @@ object BorderForwardBackend {
     @JvmField val ticksApplied = java.util.concurrent.atomic.AtomicLong()
     @JvmField val neighborsApplied = java.util.concurrent.atomic.AtomicLong()
     private val inbox = java.util.concurrent.ConcurrentLinkedQueue<BorderForward>()
-    private class Due(val dueTick: Long, val dimension: String, val n: BorderNeighbor)
+    private const val HOLD_TICKS = 100L
+    private class Due(val dueTick: Long, val deadline: Long, val dimension: String, val n: BorderNeighbor)
+    private class DueTick(val deadline: Long, val dimension: String, val t: BorderTick)
     private val pendingNeighbors = ArrayDeque<Due>()
+    private val pendingTicks = ArrayDeque<DueTick>()
+    @JvmField val dropped = java.util.concurrent.atomic.AtomicLong()
     private var serverTicks = 0L
     private var lastDebug = ""
 
@@ -62,15 +67,35 @@ object BorderForwardBackend {
         while (true) {
             val m = inbox.poll() ?: break
             val level = server.allLevels.firstOrNull { it.dimension().identifier().toString() == m.dimension } ?: continue
-            for (t in m.ticks) applyTick(level, t)
-            m.neighbors.forEach { pendingNeighbors.addLast(Due(serverTicks + NEIGHBOR_DELAY, m.dimension, it)) }
-            if (net.fissionmc.net.FissionDebug.on) { val l = "[fission] border: from ${m.origin} ${m.ticks.size} ticks ${m.neighbors.size} neighbour updates (total applied ticks=${ticksApplied.get()} neighbours=${neighborsApplied.get()}, forwarded ticks=${batcher.forwardedTicks} neighbours=${batcher.forwardedNeighbors})"; if (l != lastDebug) { lastDebug = l; log.info(l) } }
+            // forwarded work is a demand in itself: keep the chunk loaded and ticking, and hold the work until it is (it used to be dropped when the owner had no player near the border)
+            val chunks = HashSet<Long>()
+            m.ticks.forEach { chunks += net.minecraft.world.level.ChunkPos.pack(it.x shr 4, it.z shr 4) }
+            m.neighbors.forEach { chunks += net.minecraft.world.level.ChunkPos.pack(it.x shr 4, it.z shr 4) }
+            for (k in chunks) {
+                val cx = net.minecraft.world.level.ChunkPos.getX(k); val cz = net.minecraft.world.level.ChunkPos.getZ(k)
+                if (RegionsBackend.ownsChunk(level, cx, cz)) level.chunkSource.addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL, net.minecraft.world.level.ChunkPos(cx, cz), 2)
+            }
+            m.ticks.forEach { pendingTicks.addLast(DueTick(serverTicks + HOLD_TICKS, m.dimension, it)) }
+            m.neighbors.forEach { pendingNeighbors.addLast(Due(serverTicks + NEIGHBOR_DELAY, serverTicks + HOLD_TICKS, m.dimension, it)) }
+            if (net.fissionmc.net.FissionDebug.on) { val l = "[fission] border: from ${m.origin} ${m.ticks.size} ticks ${m.neighbors.size} neighbour updates (total applied ticks=${ticksApplied.get()} neighbours=${neighborsApplied.get()}, forwarded ticks=${batcher.forwardedTicks} neighbours=${batcher.forwardedNeighbors}, dropped=${dropped.get()})"; if (l != lastDebug) { lastDebug = l; log.info(l) } }
         }
-        while (pendingNeighbors.isNotEmpty() && pendingNeighbors.first().dueTick <= serverTicks) {
+        for (i in 0 until pendingTicks.size) {
+            val d = pendingTicks.removeFirst()
+            val level = server.allLevels.firstOrNull { it.dimension().identifier().toString() == d.dimension } ?: continue
+            val pos = BlockPos(d.t.x, d.t.y, d.t.z)
+            if (!RegionsBackend.ownsChunk(level, pos.x shr 4, pos.z shr 4)) { dropped.incrementAndGet(); continue }   // not ours (a stale message)
+            if (!level.isLoaded(pos)) { if (serverTicks < d.deadline) pendingTicks.addLast(d) else dropped.incrementAndGet(); continue }
+            applyTick(level, d.t)
+        }
+        // a neighbour update waits NEIGHBOR_DELAY ticks and until the block replication has caught up (the block change that caused it travels separately), at most HOLD_TICKS
+        val ready = Replication.idle()
+        for (i in 0 until pendingNeighbors.size) {
             val d = pendingNeighbors.removeFirst()
+            if (d.dueTick > serverTicks || (!ready && serverTicks < d.deadline)) { pendingNeighbors.addLast(d); continue }
             val level = server.allLevels.firstOrNull { it.dimension().identifier().toString() == d.dimension } ?: continue
             val pos = BlockPos(d.n.x, d.n.y, d.n.z)
-            if (!RegionsBackend.ownsChunk(level, pos.x shr 4, pos.z shr 4) || !level.isLoaded(pos)) continue   // not ours (a stale message) or not loaded
+            if (!RegionsBackend.ownsChunk(level, pos.x shr 4, pos.z shr 4)) { dropped.incrementAndGet(); continue }
+            if (!level.isLoaded(pos)) { if (serverTicks < d.deadline) pendingNeighbors.addLast(d) else dropped.incrementAndGet(); continue }
             val id = Identifier.tryParse(d.n.block) ?: continue
             if (!BuiltInRegistries.BLOCK.containsKey(id)) continue
             level.neighborChanged(pos, BuiltInRegistries.BLOCK.getValue(id), null)
@@ -80,7 +105,6 @@ object BorderForwardBackend {
 
     private fun applyTick(level: ServerLevel, t: BorderTick) {
         val pos = BlockPos(t.x, t.y, t.z)
-        if (!RegionsBackend.ownsChunk(level, pos.x shr 4, pos.z shr 4) || !level.isLoaded(pos)) return
         val id = Identifier.tryParse(t.type) ?: return
         val prio = TickPriority.byValue(t.priority)
         if (t.fluid) {
