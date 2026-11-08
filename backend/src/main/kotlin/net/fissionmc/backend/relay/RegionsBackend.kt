@@ -9,6 +9,7 @@ import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.Leashable
 import net.minecraft.world.entity.projectile.Projectile
+import net.minecraft.world.entity.vehicle.VehicleEntity
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Logger
@@ -67,9 +68,26 @@ object RegionsBackend {
 
     @JvmStatic fun ownsEntity(entity: Entity): Boolean {
         if (!enabled || entity is ServerPlayer) return true
+        if (carriesPlayer(entity)) return true
         val level = entity.level() as? ServerLevel ?: return true
         return ownsBlock(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)
     }
+
+    /**
+     * A vehicle (boat, minecart, horse, ...) with a player somewhere in its passenger tree is ticked by the player's backend wherever it is. The player is here, the other side only has a ghost,
+     * and a frozen vehicle under a steering player breaks the vanilla movement checks ("moved too quickly", rubber band) during the hysteresis stretch behind the border.
+     */
+    @JvmStatic fun carriesPlayer(entity: Entity): Boolean {
+        if (entity.passengers.isEmpty()) return false
+        for (p in entity.indirectPassengers) if (p is ServerPlayer) return true
+        return false
+    }
+
+    /** Called when a non-owned entity is skipped: a vehicle that was really ticking here has just rolled/drifted over the border, so the next hand-over pass should not wait a second. */
+    @JvmStatic fun noteSkipped(entity: Entity) {
+        if (entity.tickCount > 0 && entity is VehicleEntity) strayHint = true
+    }
+    @Volatile private var strayHint = false
 
     // ---- generation jobs
     private fun generate(server: MinecraftServer, m: GenerateChunk) {
@@ -99,7 +117,7 @@ object RegionsBackend {
                 link.send(PlayerPosition(p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, p.level().dimension().identifier().toString(), p.blockX, p.blockZ))
             }
         }
-        if (ticks % 20 == 0) handOverStrays(server, link)
+        if (ticks % 20 == 0 || (strayHint && ticks % 4 == 0)) { strayHint = false; handOverStrays(server, link) }
         if (ticks % 100 == 0) {
             val l = "[fission] regions: stats ownedChunkTicks=${ownedChunkTicks.get()} ghostChunkTicksSkipped=${ghostChunkTicksSkipped.get()} ghostEntityTicksSkipped=${ghostEntityTicksSkipped.get()} " +
                 "ghostBlockTicksSkipped=${ghostBlockTicksSkipped.get()} ghostSpawnPassesSkipped=${ghostSpawnPassesSkipped.get()} generateJobs=${generatedCount.get()} handedOver=${handedOverCount.get()} handoversReceived=${receivedCount.get()}"
@@ -114,9 +132,10 @@ object RegionsBackend {
             val dim = level.dimension().identifier().toString()
             val byTarget = HashMap<String, MutableList<net.fissionmc.protocol.EntityBlob>>()
             for (e in level.allEntities) {
-                if (e is ServerPlayer || e.isRemoved || e.tickCount == 0 || e.isPassenger || e.passengers.isNotEmpty() || e is Projectile || handingOver.containsKey(e.uuid)) continue
+                if (e is ServerPlayer || e.isRemoved || e.tickCount == 0 || e.isPassenger || e is Projectile || handingOver.containsKey(e.uuid)) continue
+                if (e.passengers.isNotEmpty() && carriesPlayer(e)) continue   // a player's vehicle follows the player (RootVehicle / mount hint), it is never handed over under him
                 if (e is Leashable && e.isLeashed) continue
-                if (e.type.category == net.minecraft.world.entity.MobCategory.MISC && e !is net.minecraft.world.entity.item.ItemEntity && e !is net.minecraft.world.entity.ExperienceOrb) continue
+                if (e.type.category == net.minecraft.world.entity.MobCategory.MISC && e !is net.minecraft.world.entity.item.ItemEntity && e !is net.minecraft.world.entity.ExperienceOrb && e !is VehicleEntity) continue   // empty boats and minecarts (chest ones with their contents) drift and roll over borders
                 val target = ownerOf(dim, e.blockX, e.blockZ) ?: continue
                 if (target == you) continue
                 val b = TravelBackend.blobFor(EntityBlobKind.HANDOVER, e) ?: continue

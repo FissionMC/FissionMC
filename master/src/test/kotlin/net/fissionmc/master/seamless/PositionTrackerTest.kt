@@ -3,6 +3,7 @@ package net.fissionmc.master.seamless
 import io.netty.buffer.Unpooled
 import net.fissionmc.master.client.VarInts
 import net.fissionmc.protocol.registerPositionMessages
+import net.fissionmc.protocol.registerPlayerMessages
 import kotlin.test.*
 
 class PositionTrackerTest {
@@ -65,5 +66,19 @@ class PositionTrackerTest {
         val reg = net.fissionmc.protocol.MessageRegistry.core().registerPositionMessages()
         val m = net.fissionmc.protocol.PlayerMoveTo(1, 2, 3.5, 64.0, -9.25, 90f, 5f)
         val b = Unpooled.buffer(); reg.encode(m, b); assertEquals(m, reg.decode(b)); assertEquals(0, b.readableBytes())
+    }
+
+    @Test fun `a steering rider is tracked by the vehicle's position so the hand-off moves the vehicle`() {
+        now = 0; t.observe(s("MoveVehicle") { writeDouble(-2.0); writeDouble(64.0); writeDouble(10.0); writeFloat(30f); writeFloat(0f); writeByte(1) })
+        now = 50_000_000; t.observe(s("MoveVehicle") { writeDouble(-1.6); writeDouble(64.0); writeDouble(10.0); writeFloat(30f); writeFloat(0f); writeByte(1) })
+        t.observe(s("MovePlayerRot") { writeFloat(75f); writeFloat(5f); writeByte(0) })   // the rider's look direction does not move the vehicle
+        val p = t.latest()!!; assertEquals(-1.6, p.x, 1e-9); assertEquals(0.4, p.vx, 1e-9); assertEquals(64.0, p.y)
+    }
+
+    @Test fun `a shared vehicle blob survives the wire`() {
+        val reg = net.fissionmc.protocol.MessageRegistry.core().registerPlayerMessages()
+        val m = net.fissionmc.protocol.EntityTransfer(1, 2, listOf(net.fissionmc.protocol.EntityBlob(net.fissionmc.protocol.EntityBlobKind.MOUNT, 5, 6, ByteArray(40) { it.toByte() })))
+        val b = Unpooled.buffer(); reg.encode(m, b); val d = reg.decode(b) as net.fissionmc.protocol.EntityTransfer
+        assertEquals(net.fissionmc.protocol.EntityBlobKind.MOUNT, d.blobs[0].kind); assertContentEquals(m.blobs[0].bytes, d.blobs[0].bytes); assertEquals(3, net.fissionmc.protocol.EntityBlobKind.MOUNT)
     }
 }

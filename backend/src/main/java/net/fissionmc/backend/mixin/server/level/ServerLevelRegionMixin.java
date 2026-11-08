@@ -61,6 +61,7 @@ public abstract class ServerLevelRegionMixin {
     private void fission$ghostEntityTick(Entity entity, CallbackInfo ci) {
         if (!RegionsBackend.ownsEntity(entity)) {
             RegionsBackend.ghostEntityTicksSkipped.incrementAndGet();
+            RegionsBackend.noteSkipped(entity);
             ci.cancel();
         }
     }

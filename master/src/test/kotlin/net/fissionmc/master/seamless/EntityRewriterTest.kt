@@ -126,6 +126,23 @@ class EntityRewriterTest {
         val first = m.toClient(60); m.transplantTo(56)
         val second = m.toClient(60); assertNotEquals(first, second); assertNull(m.toBackend(first))
     }
+    @Test fun `a boat with the player aboard after a transplant maps vehicle and rider, steering packets carry no ids`() {
+        val (m, rw) = mapped()   // client self 7, new backend's own player 55
+        val boat = r(rw.toClient(frame("AddEntity") { v(90); writeBytes(ByteArray(16)); v(14); writeBytes(ByteArray(24)); writeByte(0); writeBytes(ByteArray(3)); v(0) })!!).rv()
+        assertNotEquals(90, boat)
+        val pass = r(rw.toClient(frame("SetPassengers") { v(90); v(2); v(55); v(91) })!!)
+        assertEquals(boat, pass.rv()); assertEquals(2, pass.rv()); assertEquals(7, pass.rv(), "the rider is the client's own entity, not the backend's player id"); assertEquals(m.toClient(91), pass.rv())
+        // the boat's motion packets follow the same mapping
+        assertEquals(boat, r(rw.toClient(frame("MoveMinecartAlongTrack") { v(90); v(0) })!!).rv())
+        assertEquals(boat, r(rw.toClient(frame("TeleportEntity") { v(90); writeBytes(ByteArray(57)) })!!).rv())
+        // steering: ServerboundMoveVehicle and PaddleBoat have no ids and pass through byte for byte
+        val move = sframe("MoveVehicle") { repeat(3) { writeDouble(1.5) }; writeFloat(10f); writeFloat(0f); writeByte(1) }
+        assertContentEquals(move, rw.toBackend(move)); val paddle = sframe("PaddleBoat") { writeBoolean(true); writeBoolean(false) }; assertContentEquals(paddle, rw.toBackend(paddle))
+        // an interaction with the boat (client id) reaches the backend with the boat's id, shifting dismount goes with the player's own id
+        assertEquals(90, r(rw.toBackend(sframe("Interact") { v(boat); v(0) })!!).rv())
+        assertEquals(55, r(rw.toBackend(sframe("PlayerCommand") { v(7); v(0); v(0) })!!).rv())
+    }
+
 }
 
 /** The packet classes of entity-id-fields.txt that are ids (not NOT). */
