@@ -149,8 +149,8 @@ object RegionProbe {
         for (x in listOf(2.5, -3.5, 3.5, -4.5, 1.5, -7.5)) { tp(x, 4.5); quiet(900) }
         quiet(1500)
         check("hysteresis: wiggling between x=-7.5 and 3.5 on b's side causes no switch", switches() == sw1, "switches=${switches()} (was $sw1)")
-        tp(-14.5, 4.5)
-        check("walk back: at x=-14.5 the player returns to backend-a (one more switch, again without Login/Respawn)", await(60_000) { switches() == sw1 + 1 } && await(15_000) { near(a.pos, -14.5, 4.5) } && a.logins == baseLogins && a.respawns.get() == baseRespawns, "switches=${switches()} logins=${a.logins} ${a.pos?.toList()}")
+        tp(-30.5, 4.5)   // the ping-pong guard (30 s after a switch) asks for twice the margin
+        check("walk back: at x=-30.5 the player returns to backend-a (one more switch, again without Login/Respawn)", await(60_000) { switches() == sw1 + 1 } && await(15_000) { near(a.pos, -30.5, 4.5) } && a.logins == baseLogins && a.respawns.get() == baseRespawns, "switches=${switches()} logins=${a.logins} ${a.pos?.toList()}")
         quiet(2500)
         check("walk back: exactly one more switch, no flapping", switches() == sw1 + 1, "switches=${switches()}")
         check("master log: exactly one new 'leaves backend-b for backend-a' line for the way back", moves("backend-b", "backend-a") == baBefore + 1, "${moves("backend-b", "backend-a")} (was $baBefore)")
@@ -233,13 +233,13 @@ object RegionProbe {
         run("a", "setblock 22 100 4 minecraft:air")
 
         // liquids: water flows from a's side into b's chunks (b has no player and no forceload), lava from b's side into a's
-        run("a", "setblock -3 100 6 minecraft:water")
-        check("liquids: water placed on a (x=-3) flows across x=0 and is flowing water on b at x=2", await(40_000) { passes(run("b", "execute if block 2 100 6 minecraft:water")) })
-        check("liquids: ... and a's ghost copy shows it too", await(10_000) { passes(run("a", "execute if block 2 100 6 minecraft:water")) })
-        run("a", "fill -8 100 6 8 100 6 minecraft:air"); run("b", "fill -8 100 6 8 100 6 minecraft:air")
-        run("b", "setblock 1 100 8 minecraft:lava")
-        check("liquids: lava placed on b (x=1) flows across x=0 and is lava on a at x=-1", await(60_000) { passes(run("a", "execute if block -1 100 8 minecraft:lava")) })
-        run("a", "fill -8 100 8 8 100 8 minecraft:air"); run("b", "fill -8 100 8 8 100 8 minecraft:air")
+        run("a", "setblock -3 100 3 minecraft:water")
+        check("liquids: water placed on a (x=-3) flows across x=0 and is flowing water on b at x=2", await(40_000) { passes(run("b", "execute if block 2 100 3 minecraft:water")) })
+        check("liquids: ... and a's ghost copy shows it too", await(10_000) { passes(run("a", "execute if block 2 100 3 minecraft:water")) })
+        run("a", "fill -8 100 3 8 100 3 minecraft:air"); run("b", "fill -8 100 3 8 100 3 minecraft:air")
+        run("b", "setblock 1 100 4 minecraft:lava")
+        check("liquids: lava placed on b (x=1) flows across x=0 and is lava on a at x=-1", await(60_000) { passes(run("a", "execute if block -1 100 4 minecraft:lava")) })
+        run("a", "fill -8 100 4 8 100 4 minecraft:air"); run("b", "fill -8 100 4 8 100 4 minecraft:air")
 
         // redstone: wire/lamp lanes cross x=0 in both directions
         for (x in -1..-1) run("a", "setblock $x 100 -2 minecraft:redstone_wire")
@@ -250,6 +250,8 @@ object RegionProbe {
         check("redstone a->b: a redstone block on a powers wire across the border and lights the lamp on b", await(40_000) { passes(run("b", "execute if block 5 100 -2 minecraft:redstone_lamp[lit=true]")) })
         run("a", "setblock -2 100 -2 minecraft:air")
         check("redstone a->b: ... and the lamp goes out again when the block is removed", await(40_000) { passes(run("b", "execute if block 5 100 -2 minecraft:redstone_lamp[lit=false]")) })
+        fun powers(z: Int) = (-1..4).joinToString(" ") { x -> val n = if (x < 0) "a" else "b"; "$x:" + (0..15).firstOrNull { pw -> passes(run(n, "execute if block $x 100 $z minecraft:redstone_wire[power=$pw]")) } }
+        println("[probe] DIAG lane z=-2 after the block was removed: a/b wire powers ${powers(-2)} (a copy of x>=0 on a: " + (0..4).joinToString(" ") { x -> "$x:" + (0..15).firstOrNull { pw -> passes(run("a", "execute if block $x 100 -2 minecraft:redstone_wire[power=$pw]")) } } + ")")
         for (x in -4..-1) run("a", "setblock $x 100 0 minecraft:redstone_wire")
         for (x in 0..4) run("b", "setblock $x 100 0 minecraft:redstone_wire")
         run("a", "setblock -5 100 0 minecraft:redstone_lamp")
@@ -271,6 +273,7 @@ object RegionProbe {
         check("entities: lit TNT created on a in b's territory is handed over: one copy on b", await(25_000) { count(run("b", "execute if entity @e[type=minecraft:tnt,tag=ttnt]")) == 1 })
         check("entities: ... and none on a", await(25_000) { !passes(run("a", "execute if entity @e[type=minecraft:tnt,tag=ttnt]")) })
         run("b", "kill @e[tag=ttnt]")
+        run("b", "forceload add 100 3"); quiet(3000)
         run("b", "summon minecraft:pig 100 100 3 {Tags:[\"gpig\"],NoAI:1b,PersistenceRequired:1b,NoGravity:1b}")
         run("b", "save-all flush"); quiet(3000)
         run("a", "forceload add 100 3")
@@ -279,7 +282,7 @@ object RegionProbe {
         check("entities: ... and it is a live entity on its owner b", passes(run("b", "execute if entity @e[type=minecraft:pig,tag=gpig]")))
         val dump = run("a", "fission debug entities")
         check("entities: /fission debug entities on a lists no foreign entity", Regex("foreign=(\\d+)").findAll(dump).all { it.groupValues[1] == "0" } && dump.contains("entity ownership on backend-a"), dump.lines().takeLast(6).joinToString(" | "))
-        run("b", "kill @e[tag=gpig]"); run("a", "forceload remove 100 3")
+        run("b", "kill @e[tag=gpig]"); run("a", "forceload remove 100 3"); run("b", "forceload remove 100 3")
         println("[probe] ghost sync counters a: " + run("a", "fission debug ghost-sync").lines().lastOrNull { it.contains("ghost sync:") })
         println("[probe] ghost sync counters b: " + run("b", "fission debug ghost-sync").lines().lastOrNull { it.contains("ghost sync:") })
         for (n in listOf("a", "b")) { run(n, "fill -8 99 -3 30 106 10 minecraft:air") }
