@@ -8,10 +8,27 @@ import java.nio.file.Path
 
 /** Standalone master process: `fission.yml` with node.mode master, node.listen, node.authorized, node.world-root (every key: fission.default.yml). */
 fun main(args: Array<String>) {
+    // any failure while starting must END the process: a dead main thread with live Netty threads is a zombie that ignores the panel's stop
+    try { runMaster(args) } catch (t: Throwable) {
+        println("[master] STARTUP ERROR, master not started: $t"); t.printStackTrace(); kotlin.system.exitProcess(2)
+    }
+}
+
+private fun runMaster(args: Array<String>) {
     // "nogui" / "--nogui" are accepted and ignored so a Minecraft-style launcher line (java -jar server.jar nogui, e.g. a Pterodactyl egg) works; the first other argument is the config file
     val configFile = Path.of(args.firstOrNull { it != "nogui" && !it.startsWith("-") } ?: "fission.yml").toAbsolutePath()
     Banner.print("master", listOf("config ${configFile}", "console: stop, list, help"))
     LogFormat.install()
+    ShutdownWatchdog.install("master", 30)
+    // the console reads from the very start, so `stop` works even while the master is still starting (or stuck binding); the full commands replace this handler at the end
+    val commands = java.util.concurrent.atomic.AtomicReference<(String) -> Unit> { line ->
+        if (line.trim().lowercase().substringBefore(' ') in setOf("stop", "end", "exit", "quit")) { println("[master] stopping"); kotlin.system.exitProcess(0) }
+        else if (line.isNotBlank()) println("[master] still starting: only stop works yet")
+    }
+    Thread({
+        val console = java.io.BufferedReader(java.io.InputStreamReader(System.`in`))
+        while (true) { val line = console.readLine() ?: break; try { commands.get()(line) } catch (e: Exception) { println("[master] console command failed: $e") } }
+    }, "console").also { it.isDaemon = true }.start()
     if (FissionConfig.writeDefaultIfMissing(configFile, MasterMainResources.defaultConfig())) println("[master] no ${configFile.fileName}: wrote the commented default to $configFile")
     // every section is read up front; an unknown key, a wrong type or an invalid region map stops the master with the key path
     val mc = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } } catch (e: IllegalArgumentException) {
@@ -49,7 +66,13 @@ fun main(args: Array<String>) {
         if (m is net.fissionmc.protocol.ChunkRequest) { n.link.send(net.fissionmc.protocol.ChunkAbsent(m.reqId, false)); true } else m is net.fissionmc.protocol.ChunkPush
     } else null
     val pluginServer = net.fissionmc.net.plugins.PluginServer(configFile.parent.toAbsolutePath().resolve(mc.plugins.dir).normalize(), mc.plugins.replicate) { println("[master] $it") }
-    val master = MasterServer(transport, listen, cfg.worldRoot, registry, { n, m -> if (!relay.handle(n, m) && chunks?.handle(n, m) != true && chunkOff?.invoke(n, m) != true) hub.handle(n, m) }, pluginServer).start()
+    val master = MasterServer(transport, listen, cfg.worldRoot, registry, { n, m -> if (!relay.handle(n, m) && chunks?.handle(n, m) != true && chunkOff?.invoke(n, m) != true) hub.handle(n, m) }, pluginServer)
+    // one allocated port for everything (hosting panels): node.listen == client.listen makes the node link share the players' listener
+    val shared = clientCfg.enabled && listen.host == clientCfg.host && listen.port == clientCfg.port
+    if (!shared && clientCfg.enabled && listen.port == clientCfg.port)
+        fail("node.listen (${listen.host}:${listen.port}) and client.listen (${clientCfg.host}:${clientCfg.port}) use the same port with different hosts: write the SAME value in both to share the port, or use two ports")
+    try { master.start(listen = !shared) } catch (e: Exception) { fail("node.listen ${listen.host}:${listen.port} cannot be bound: ${e.message}") }
+    if (shared) println("[master] node links and players share ${listen.host}:${listen.port} (a connection starting with byte 0 is a node link, anything else a Minecraft client)")
     master.registry.addListener(object : NodeRegistry.Listener {
         override fun joined(node: RegisteredNode) = println("[master] ${node.info.nodeId} joined")
         override fun left(node: RegisteredNode, reason: String) = println("[master] ${node.info.nodeId} left: $reason")
@@ -74,7 +97,7 @@ fun main(args: Array<String>) {
         relay.worldSettings = ws
         Runtime.getRuntime().addShutdownHook(Thread { ws.close() })
     }
-    val clients = if (clientCfg.enabled) ClientServer(clientCfg, relay = relay, settings = settings).start() else null
+    val clients = if (clientCfg.enabled) try { ClientServer(clientCfg, relay = relay, settings = settings, nodeAdopt = if (shared) master::adopt else null).start() } catch (e: Exception) { fail("client.listen ${clientCfg.host}:${clientCfg.port} cannot be bound: ${e.message}" + if (e is java.net.BindException || e.cause is java.net.BindException) " (is another process or listener using this port? node.listen and client.listen may use the same port only when the value is identical)" else "") } else null
     registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })
     dbgDump?.let { System.setProperty("fission.dump-client-stream", it) }
@@ -89,7 +112,12 @@ fun main(args: Array<String>) {
         val fresh = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } }
             catch (e: Exception) { println("[master] CONFIG RELOAD FAILED, keeping the running configuration: ${e.message}"); return@ConfigWatcher }
         val applied = mutableListOf<String>()
-        if ("node.listen" in changed) {
+        val sharedNow = fresh.client.enabled && fresh.node.listen?.let { it.host == fresh.client.host && it.port == fresh.client.port } == true
+        if (sharedNow != shared && ("node.listen" in changed || "client.listen" in changed)) {
+            println("[master] port sharing would change (node.listen == client.listen: $shared -> $sharedNow): restart required for node.listen/client.listen")
+            return@ConfigWatcher
+        }
+        if ("node.listen" in changed && !shared) {
             val to = fresh.node.listen
             if (to == null) println("[master] node.listen was removed: restart required") else master.rebind(to)?.let { println("[master] node.listen: cannot listen on ${to.host}:${to.port}: $it (still on ${(master.address as? NodeAddress.Tcp)?.let { a -> "${a.host}:${a.port}" }})") }
                 ?: run { println("[master] backends now connect to ${to.host}:${to.port}"); applied += "node.listen" }
@@ -106,9 +134,7 @@ fun main(args: Array<String>) {
     // the console: a hosting panel (Pterodactyl) sends "stop" to stdin and marks the server running when this line matches `)! For help, type "`
     val startedAt = java.lang.management.ManagementFactory.getRuntimeMXBean().startTime
     println("[master] Done (${"%.3f".format((System.currentTimeMillis() - startedAt) / 1000.0)}s)! For help, type \"help\"")
-    val console = java.io.BufferedReader(java.io.InputStreamReader(System.`in`))
-    while (true) {
-        val line = console.readLine() ?: break    // stdin closed (background run): keep serving
+    commands.set { line ->
         when (line.trim().lowercase().substringBefore(' ')) {
             "" -> {}
             "stop", "end", "exit", "quit" -> { println("[master] stopping"); kotlin.system.exitProcess(0) }
@@ -119,6 +145,9 @@ fun main(args: Array<String>) {
     }
     Thread.currentThread().join()
 }
+
+/** A startup error the operator can act on: one clear line on stdout and stderr, exit status 2 (no stack trace). */
+private fun fail(msg: String): Nothing { println("[master] STARTUP ERROR, master not started: $msg"); System.err.println("[master] STARTUP ERROR, master not started: $msg"); kotlin.system.exitProcess(2) }
 
 /** The commented default `fission.yml` the master writes when the file is missing (`master/src/main/resources/fission.default.yml`). */
 object MasterMainResources {

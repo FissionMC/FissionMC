@@ -115,6 +115,7 @@ object PlayerRelayBackend {
 
     @JvmStatic fun tick(server: MinecraftServer) {
         serverRef = server
+        net.fissionmc.backend.node.WorldSeedUploader.tick()
         GlobalChatBackend.setServer(server)
         PlayerDataBackend.tick(server)
         TravelBackend.tick(server)

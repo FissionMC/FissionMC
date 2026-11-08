@@ -23,6 +23,8 @@ object NodeBootstrap {
     private val log = Logger.getLogger("FissionMC")
     private const val PULL_TIMEOUT_S = 600L
     private const val CONNECT_TIMEOUT_S = 30L
+    private const val SEED_POLL_S = 10L
+    private const val SEED_WAIT_MINUTES = 30L
 
     @Volatile var link: NodeLink? = null; private set
     /** True once a node mode other than standalone is active: only then is there a master to push chunks/player data to (a standalone server must not queue anything for it). */
@@ -68,7 +70,7 @@ object NodeBootstrap {
             val r = net.fissionmc.net.NodeIds.resolve(file, parsed.nodeId.ifBlank { null }, persistInYml = parsed.mode != NodeMode.COMBINED)
             log.info("backend id: ${r.id}" + (if (r.generated) " (generated, saved to ${r.savedTo})" else if (parsed.nodeId.isBlank()) " (generated earlier, from .fission-node-id)" else " (node.id)"))
             if (parsed.security && parsed.mode == NodeMode.BACKEND) runCatching { net.fissionmc.net.Keys.encode(net.fissionmc.net.Keys.loadOrCreate(parsed.keyFile).public) }.getOrNull()?.let {
-                log.info("master authorized keys line for this backend (add it to ${"the master's"} node.authorized file if it is not there): ${r.id} $it")
+                log.info("master authorized keys line for this backend (add it as one line to the master's authorized keys FILE, named by `authorized:` under `node:` in the master's fission.yml, default fission-authorized.keys next to that fission.yml, if it is not there): ${r.id} $it")
             }
             nodeId = r.id
             parsed.copy(nodeId = r.id)
@@ -124,12 +126,30 @@ object NodeBootstrap {
         link = l
 
         log.info("Pulling world '$levelName' from the master into $dest")
-        val puller = WorldPuller(l, dest)
-        l.handler = { msg -> if (!puller.handle(msg)) extraHandlers.forEach { it(msg) } }
+        var puller = WorldPuller(l, dest)
+        val seededSignal = java.util.concurrent.Semaphore(0)   // the master says a world now exists (the seeder finished): wakes a waiting backend
+        l.handler = { msg -> if (msg is net.fissionmc.protocol.WorldSeeded) seededSignal.release() else if (!puller.handle(msg)) extraHandlers.forEach { it(msg) } }
         val t0 = System.nanoTime()
-        val r = try { puller.pull(levelName).get(PULL_TIMEOUT_S, TimeUnit.SECONDS) }
-        catch (e: Exception) { stop(); throw IllegalStateException("World pull failed: ${e.cause?.message ?: e.message}", e) }
-        log.info("World ready: ${r.downloaded} downloaded (${r.bytes / 1024} KiB), ${r.unchanged} unchanged, ${r.deleted} removed in ${(System.nanoTime() - t0) / 1_000_000} ms")
+        val giveUpAt = System.nanoTime() + SEED_WAIT_MINUTES * 60_000_000_000L
+        var ready0: net.fissionmc.net.world.PullResult? = null
+        while (true) {
+            try { ready0 = puller.pull(levelName).get(PULL_TIMEOUT_S, TimeUnit.SECONDS); break }
+            catch (e: java.util.concurrent.ExecutionException) {
+                val missing = e.cause as? net.fissionmc.net.world.WorldMissingException
+                if (missing == null) { stop(); throw IllegalStateException("World pull failed: ${e.cause?.message ?: e.message}", e) }
+                if (missing.seeder == cfg.nodeId) {
+                    log.info("The master has no world '$levelName' yet and this backend (${cfg.nodeId}) is the first alphabetically: it creates the world and uploads level.dat, data/ and the other non-chunk files once it is up")
+                    WorldSeedUploader.arm(dest, levelName); extraHandlers += { m -> if (m is net.fissionmc.protocol.WorldSeeded) WorldSeedUploader.onSeeded(m) }
+                    break
+                }
+                log.info("The master has no world '$levelName' yet: waiting for ${missing.seeder} to create it (asking again every ${SEED_POLL_S}s, giving up after $SEED_WAIT_MINUTES minutes)")
+                if (System.nanoTime() > giveUpAt) { stop(); error("The master still has no world '$levelName' after $SEED_WAIT_MINUTES minutes: start ${missing.seeder} (the seeder), or put a world folder '$levelName' into the master's world-root") }
+                seededSignal.tryAcquire(SEED_POLL_S, TimeUnit.SECONDS)
+                puller = WorldPuller(l, dest)
+            }
+            catch (e: Exception) { stop(); throw IllegalStateException("World pull failed: ${e.cause?.message ?: e.message}", e) }
+        }
+        ready0?.let { r -> log.info("World ready: ${r.downloaded} downloaded (${r.bytes / 1024} KiB), ${r.unchanged} unchanged, ${r.deleted} removed in ${(System.nanoTime() - t0) / 1_000_000} ms") }
         // plugin replication: the master's jars into the plugins folder, before Paper discovers plugins (combined mode shares the folder with its own master half: nothing to pull)
         if (cfg.mode == NodeMode.BACKEND && pluginsCfg.replicate) PluginReplicationStatus.run(l, pluginsDir.toAbsolutePath().normalize(), pluginsCfg.conflict) { msg -> extraHandlers.forEach { it(msg) } }
         // From here on, messages from the master go to the registered handlers.

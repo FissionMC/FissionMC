@@ -7,6 +7,9 @@ import java.nio.file.*
 import java.security.MessageDigest
 import java.util.concurrent.CompletableFuture
 
+/** The master has no such world: [seeder] is the backend that has to create it. */
+class WorldMissingException(val world: String, val seeder: String) : RuntimeException("the master has no world '$world' (seeder: $seeder)")
+
 data class PullResult(val downloaded: Int, val unchanged: Int, val deleted: Int, val bytes: Long)
 
 /**
@@ -42,6 +45,7 @@ class WorldPuller(private val link: NodeLink, private val dest: Path) {
             when (msg) {
                 is WorldManifest -> if (msg.name == world) onManifest(msg) else return false
                 is FileChunk -> if (msg.world == world) onChunk(msg) else return false
+                is WorldMissing -> if (msg.name == world) fail(WorldMissingException(msg.name, msg.seeder)) else return false
                 is WorldError -> { fail(IllegalStateException(msg.message)) }
                 else -> return false
             }

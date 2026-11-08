@@ -38,6 +38,14 @@ object Launcher {
         }
         val mcVersion = dist.getProperty("mcVersion") ?: error("fission-dist.properties has no mcVersion")
         banner(dist.getProperty("version") ?: "dev", mcVersion)
+        val force = System.getenv("FISSION_SHUTDOWN_FORCE_SECONDS")?.toLongOrNull() ?: 120L
+        Runtime.getRuntime().addShutdownHook(Thread({
+            try { Thread.sleep(force * 1000) } catch (_: InterruptedException) { return@Thread }
+            System.err.println("[fission-launcher] shutdown has taken more than ${force}s: thread dump, then forcing the exit (FISSION_SHUTDOWN_FORCE_SECONDS changes this)")
+            Thread.getAllStackTraces().forEach { (t, st) -> System.err.println("\"${t.name}\" daemon=${t.isDaemon} state=${t.state}"); st.forEach { System.err.println("\tat $it") } }
+            System.err.flush()
+            Runtime.getRuntime().halt(1)
+        }, "shutdown-watchdog").also { it.isDaemon = true })
         val work = File(".fission").also { it.mkdirs() }
         val vanilla = System.getenv("FISSION_VANILLA_DIR")?.takeIf { it.isNotBlank() }?.let(::File) ?: File(work, "vanilla")
         if (!File(vanilla, "META-INF/versions").isDirectory) {

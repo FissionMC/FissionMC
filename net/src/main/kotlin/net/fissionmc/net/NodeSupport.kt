@@ -9,7 +9,8 @@ object NodeSupport {
     fun masterSecurity(cfg: NodeConfig): NodeSecurity? {
         if (!cfg.security) return null
         val pair = Keys.loadOrCreate(cfg.keyFile)
-        return NodeSecurity(pair.private) { id ->
+        val hint = { "the master reads ${cfg.authorizedFile} (" + (if (java.nio.file.Files.isRegularFile(cfg.authorizedFile)) "file found, " + (runCatching { Keys.loadAuthorized(cfg.authorizedFile).keys.sorted() }.getOrNull()?.let { "ids: ${it.joinToString().ifEmpty { "none" }}" } ?: "but it cannot be parsed") else "FILE NOT FOUND: create it or set authorized: under node: in fission.yml") + ")" }
+        return NodeSecurity(pair.private, hint) { id ->
             runCatching { Keys.loadAuthorized(cfg.authorizedFile)[id] }.getOrNull()
         }
     }

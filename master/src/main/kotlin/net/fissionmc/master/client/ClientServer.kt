@@ -32,6 +32,8 @@ class ClientServer(
     val relay: net.fissionmc.master.PlayerRelay? = null,
     val log: (String) -> Unit = { println(it) },
     val settings: MasterSettings = MasterSettings(),
+    /** Set = the node link shares this port: a connection whose first byte is 0 (a node link frame; a Minecraft handshake starts with its non-zero length) goes here. */
+    private val nodeAdopt: ((Channel) -> Unit)? = null,
 ) : Closeable {
     /** The live settings: motd, max players, online mode, compression and the listen address are read from here (replaced by [rebind] on a config reload). */
     @Volatile var config: ClientConfig = initialConfig
@@ -52,17 +54,32 @@ class ClientServer(
     fun start(): ClientServer {
         FissionPacketEventsAPI.install(Side.MASTER)
         bound = bindListener(config.host, config.port)
-        log("[master] clients: ${config.host}:$port, online-mode=${config.onlineMode}, compression=${config.compressionThreshold}")
+        log("[master] clients: ${config.host}:$port, online-mode=${config.onlineMode}, compression=${config.compressionThreshold}" + if (nodeAdopt != null) ", node links share this port" else "")
         return this
+    }
+
+    private fun addPlayerHandlers(ch: Channel) {
+        System.getProperty("fission.dump-client-stream")?.let { d -> ch.pipeline().addLast("dump", StreamDump(java.nio.file.Files.createDirectories(java.nio.file.Path.of(d)), dumpCounter.incrementAndGet())) }
+        ch.pipeline().addLast("splitter", FrameDecoder()).addLast("prepender", FramePrepender())
+            .addLast("session", ClientSession(this@ClientServer))
+    }
+
+    /** Looks at the first byte of a connection on a shared port, hands the channel to the node link or to the player pipeline and gets out of the way (its buffered bytes are forwarded). */
+    private class ProtocolSniffer(val node: (Channel) -> Unit, val players: (Channel) -> Unit) : io.netty.handler.codec.ByteToMessageDecoder() {
+        override fun decode(ctx: io.netty.channel.ChannelHandlerContext, buf: io.netty.buffer.ByteBuf, out: MutableList<Any>) {
+            if (!buf.isReadable) return
+            if (buf.getUnsignedByte(buf.readerIndex()).toInt() == 0) node(ctx.channel()) else players(ctx.channel())
+            ctx.pipeline().remove(this)
+        }
     }
 
     private fun bindListener(host: String, port: Int): Channel = ServerBootstrap().group(group).channel(NioServerSocketChannel::class.java)
         .childOption(ChannelOption.TCP_NODELAY, true)
         .childHandler(object : ChannelInitializer<Channel>() {
             override fun initChannel(ch: Channel) {
-                System.getProperty("fission.dump-client-stream")?.let { d -> ch.pipeline().addLast("dump", StreamDump(java.nio.file.Files.createDirectories(java.nio.file.Path.of(d)), dumpCounter.incrementAndGet())) }
-                ch.pipeline().addLast("splitter", FrameDecoder()).addLast("prepender", FramePrepender())
-                    .addLast("session", ClientSession(this@ClientServer))
+                val adopt = nodeAdopt
+                if (adopt == null) addPlayerHandlers(ch)
+                else ch.pipeline().addLast("sniffer", ProtocolSniffer(adopt) { c -> addPlayerHandlers(c); c.pipeline().context("prepender").fireChannelActive() })
             }
         }).bind(host, port).sync().channel()
 

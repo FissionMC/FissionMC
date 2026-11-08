@@ -48,6 +48,15 @@ class NettyTransport(
         onLink(link)
     }
 
+    /**
+     * Turns an already accepted TCP channel into a node link (acceptor side): used when the node link shares a port with another protocol and the first bytes
+     * showed it is ours. The handlers are added to a channel that is already active, so channelActive is replayed to the link handler.
+     */
+    fun adopt(ch: Channel, onLink: (NodeLink) -> Unit) {
+        init(ch, false, onLink)
+        ch.pipeline().context("enc").fireChannelActive()
+    }
+
     override fun bind(address: NodeAddress, onLink: (NodeLink) -> Unit): Closeable {
         val b = ServerBootstrap()
         val sock = when (address) {

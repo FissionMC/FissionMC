@@ -11,7 +11,7 @@ import java.util.Base64
  * Node identity for the mutual handshake: our Ed25519 private key plus a lookup of the public key we
  * trust for each node id. Both sides prove possession of their key over the same transcript.
  */
-class NodeSecurity(private val privateKey: PrivateKey, private val trusted: (String) -> PublicKey?) {
+class NodeSecurity(private val privateKey: PrivateKey, val authorizedHint: () -> String = { "" }, private val trusted: (String) -> PublicKey?) {
     fun sign(transcript: ByteArray): ByteArray = Signature.getInstance("Ed25519").run {
         initSign(privateKey); update(transcript); sign()
     }

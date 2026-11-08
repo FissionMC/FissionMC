@@ -21,14 +21,19 @@ class MasterServer(
     private val plugins: net.fissionmc.net.plugins.PluginServer? = null,
 ) : Closeable {
     private val worlds = WorldServer(worldRoot)
+    private val seeding = WorldSeeding(worldRoot, registry, { owners[it] }) { println("[master] $it") }
     private var bound: Closeable? = null
     @Volatile var address: NodeAddress = address
         private set
 
-    fun start(): MasterServer { bound = transport.bind(address, ::accept); return this }
+    /** [listen] false = no listener of its own: node links arrive through [adopt] (they share the players' port). */
+    fun start(listen: Boolean = true): MasterServer { if (listen) bound = transport.bind(address, ::accept); return this }
+
+    /** A channel the client listener accepted whose first bytes were a node link's: handshake and registration as for any other link. */
+    fun adopt(ch: io.netty.channel.Channel) { (transport as? NettyTransport ?: error("port sharing needs the Netty transport")).adopt(ch, ::accept) }
 
     private fun accept(link: NodeLink) {
-        link.handler = { msg -> if (!worlds.handle(link, msg) && !handlePlugins(link, msg)) registry[linkOwner(link)]?.let { onMessage(it, msg) } }
+        link.handler = { msg -> if (!seeding.handle(link, msg) && !worlds.handle(link, msg) && !handlePlugins(link, msg)) registry[linkOwner(link)]?.let { onMessage(it, msg) } }
         link.ready.thenAccept { peer ->
             if (peer.role == NodeRole.BACKEND) { owners[link] = peer.nodeId; registry.register(peer, link) }
             else link.close("masters cannot connect to a master")
