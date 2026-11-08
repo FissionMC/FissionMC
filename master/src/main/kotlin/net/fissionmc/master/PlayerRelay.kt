@@ -177,6 +177,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
             is PlayerPosition -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.let { it.dim = msg.dimension; it.x = msg.x; it.z = msg.z; it.known = true; it.client.playerMoved(msg.dimension, msg.x, msg.z) } }
             is EntityHandover -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // owner -> new owner, as is
+            is BorderForward -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // ghost-edge ticks and neighbour updates: to the owner of the chunk, as is
             is EntityHandoverAck -> registry[msg.origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned))
             is PlayerFileSave -> playerData?.onFileSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.kind, msg.bytes)
             is PlayerFlushed -> playerData?.flushed(java.util.UUID(msg.uuidHigh, msg.uuidLow))

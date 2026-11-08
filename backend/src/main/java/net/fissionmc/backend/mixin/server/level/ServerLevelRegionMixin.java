@@ -7,8 +7,13 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.NaturalSpawner;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.fissionmc.backend.blocks.TickLevelBinding;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.ticks.LevelTicks;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -20,6 +25,28 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(ServerLevel.class)
 public abstract class ServerLevelRegionMixin {
+    @Shadow @Final private LevelTicks<Block> blockTicks;
+    @Shadow @Final private LevelTicks<Fluid> fluidTicks;
+    private boolean fission$ticksBound;
+
+    /** Tells the two tick queues which level they belong to (the hook in LevelTicksRegionMixin needs it to forward ghost ticks). */
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void fission$bindTickQueues(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        if (!fission$ticksBound) {
+            fission$ticksBound = true;
+            ((TickLevelBinding) (Object) this.blockTicks).fission$bind((ServerLevel) (Object) this);
+            ((TickLevelBinding) (Object) this.fluidTicks).fission$bind((ServerLevel) (Object) this);
+        }
+    }
+
+    /** Block entities (hoppers, furnaces, spawners, ...) and queued block events of a ghost chunk belong to its owner: the ghost copy must not tick them (two backends moving the same hopper items). */
+    @Inject(method = "shouldTickBlocksAt(J)Z", at = @At("RETURN"), cancellable = true)
+    private void fission$ghostBlockEntities(long chunkPos, CallbackInfoReturnable<Boolean> cir) {
+        if (cir.getReturnValueZ() && !RegionsBackend.ownsChunk((ServerLevel) (Object) this, (int) chunkPos, (int) (chunkPos >> 32))) {
+            cir.setReturnValue(false);
+        }
+    }
+
     @Inject(method = "tickChunk", at = @At("HEAD"), cancellable = true)
     private void fission$ghostChunkTick(LevelChunk chunk, int randomTickSpeed, CallbackInfo ci) {
         if (!RegionsBackend.ownsChunk((ServerLevel) (Object) this, chunk.getPos().x(), chunk.getPos().z())) {

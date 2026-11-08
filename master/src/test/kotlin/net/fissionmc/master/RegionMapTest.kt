@@ -80,5 +80,7 @@ class RegionMapTest {
         val h = rt(EntityHandover("backend-a", "backend-b", ow, listOf(EntityBlob(2, 1, 2, byteArrayOf(1, 2, 3))))) as EntityHandover
         assertEquals("backend-b", h.toBackend); assertContentEquals(byteArrayOf(1, 2, 3), h.blobs.single().bytes)
         val a = rt(EntityHandoverAck("backend-a", listOf(1L, 2L))) as EntityHandoverAck; assertEquals(listOf(1L, 2L), a.spawned)
+        val bf = rt(BorderForward("backend-a", "backend-b", ow, listOf(BorderTick(-1, 64, 7, true, "minecraft:water", 5, 0), BorderTick(3, -60, 9, false, "minecraft:frosted_ice", 80, -3)), listOf(BorderNeighbor(0, 70, 0, "minecraft:stone")))) as BorderForward
+        assertEquals("backend-b", bf.toBackend); assertEquals(BorderTick(3, -60, 9, false, "minecraft:frosted_ice", 80, -3), bf.ticks[1]); assertEquals(BorderNeighbor(0, 70, 0, "minecraft:stone"), bf.neighbors.single())
     }
 }

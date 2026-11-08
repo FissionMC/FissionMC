@@ -54,6 +54,16 @@ class PlayerRelayTest {
         }
     }
 
+    @Test fun `ghost edge ticks and neighbour updates are delivered to the owner only`() {
+        val (reg, links) = registryWith("backend-a", "backend-b")
+        val relay = PlayerRelay(reg)
+        val m = BorderForward("backend-a", "backend-b", "minecraft:overworld", listOf(BorderTick(0, 64, 0, true, "minecraft:water", 5, 0)), listOf(BorderNeighbor(0, 64, 0, "minecraft:water")))
+        assertTrue(relay.handle(reg["backend-a"]!!, m))
+        assertSame(m, links["backend-b"]!!.sent.single()); assertTrue(links["backend-a"]!!.sent.isEmpty())
+        links["backend-b"]!!.isOpen = false
+        relay.handle(reg["backend-a"]!!, m); assertEquals(1, links["backend-b"]!!.sent.size, "a closed link gets nothing")
+    }
+
     @Test fun `master stats survive the wire and format`() {
         val st = MasterStats(1234L, 3, 2, 3, 120, 480, 20_480, 1_048_576, 150, 2048, 12,
             listOf(NodeStat("backend-a", 2, 1500, true), NodeStat("backend-b", 1, 2_250, false)))

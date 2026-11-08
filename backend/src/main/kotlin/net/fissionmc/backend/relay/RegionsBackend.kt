@@ -29,8 +29,14 @@ object RegionsBackend {
             is RegionMap -> { val changed = you != m.you || rules != m.rules; you = m.you; rules = m.rules; if (changed) log.info("[fission] regions: I am ${m.you}, ${m.rules.size} rules") }   // the master resends every 5 s (a first send can precede the handlers)
             is GenerateChunk -> server?.execute { generate(server, m) }
             is EntityHandover -> server?.execute { spawnHandover(server, m) }
+            is BorderForward -> BorderForwardBackend.onMessage(m)
         }
     }
+
+    fun youId(): String = you
+
+    /** The backend that owns chunk ([cx],[cz]) (decided by the chunk's centre block, like [ownsChunk]); null when regions are off or nobody is known. */
+    fun chunkOwner(dim: String, cx: Int, cz: Int): String? = if (!enabled) null else ownerOf(dim, cx * 16 + 8, cz * 16 + 8)
 
     private fun ownerOf(dim: String, x: Int, z: Int): String? {
         val rs = rules
@@ -80,6 +86,7 @@ object RegionsBackend {
 
     fun tick(server: MinecraftServer) {
         if (!enabled) return
+        BorderForwardBackend.tick(server)
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
         ticks++
         for (p in server.playerList.players) {

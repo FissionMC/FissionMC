@@ -24,6 +24,21 @@ class EntityHandover(val origin: String, val toBackend: String, val dimension: S
 /** Target backend -> master (81): the handed over entities (uuid pairs high/low) are spawned; the master tells [origin] to remove them ([EntityRemove]). */
 class EntityHandoverAck(val origin: String, val spawned: List<Long>) : NodeMessage
 
+/** A scheduled block tick ([fluid] false, [type] = block id like `minecraft:frosted_ice`) or fluid tick ([fluid] true) at a position the sender does not own; [delay] in ticks, [priority] = TickPriority value. */
+data class BorderTick(val x: Int, val y: Int, val z: Int, val fluid: Boolean, val type: String, val delay: Int, val priority: Int)
+
+/** A neighbour update ("[block] next to this position changed") for a block the sender does not own. */
+data class BorderNeighbor(val x: Int, val y: Int, val z: Int, val block: String)
+
+/**
+ * Backend -> master -> backend (101): work a backend produced in a chunk another backend owns (its copy there is a ghost: never ticked). Scheduled ticks and neighbour updates
+ * of ghost positions are not run on the ghost, they are forwarded here and the owner runs them on its authoritative copy (so water keeps flowing, frosted ice keeps melting, a
+ * torch next to a border notices its support gone). The sender sets [origin], the master delivers the message to [toBackend] as is.
+ */
+class BorderForward(val origin: String, val toBackend: String, val dimension: String, val ticks: List<BorderTick>, val neighbors: List<BorderNeighbor>) : NodeMessage
+
+const val MAX_BORDER_ITEMS = 4096
+
 fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
     .register<RegionMap>(77, { m, b ->
         b.writeString(m.you, 64).writeVarInt(m.rules.size)
@@ -44,3 +59,14 @@ fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
     })
     .register<EntityHandoverAck>(81, { m, b -> b.writeString(m.origin, 64).writeVarInt(m.spawned.size); m.spawned.forEach { b.writeLong(it) } },
         { b -> val o = b.readString(64); val n = b.readVarInt(); require(n in 0..MAX_ENTITY_BLOBS * 2) { "too many" }; EntityHandoverAck(o, List(n) { b.readLong() }) })
+    .register<BorderForward>(101, { m, b ->
+        b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128)
+        b.writeVarInt(m.ticks.size); m.ticks.forEach { t -> b.writeInt(t.x).writeInt(t.y).writeInt(t.z).writeBoolean(t.fluid).writeString(t.type, 128).writeVarInt(t.delay).writeVarInt(t.priority + 3) }
+        b.writeVarInt(m.neighbors.size); m.neighbors.forEach { n -> b.writeInt(n.x).writeInt(n.y).writeInt(n.z).writeString(n.block, 128) }
+    }, { b ->
+        val o = b.readString(64); val t = b.readString(64); val d = b.readString(128)
+        val nt = b.readVarInt(); require(nt in 0..MAX_BORDER_ITEMS) { "too many border ticks" }
+        val ticks = List(nt) { BorderTick(b.readInt(), b.readInt(), b.readInt(), b.readBoolean(), b.readString(128), b.readVarInt(), b.readVarInt() - 3) }
+        val nn = b.readVarInt(); require(nn in 0..MAX_BORDER_ITEMS) { "too many border neighbours" }
+        BorderForward(o, t, d, ticks, List(nn) { BorderNeighbor(b.readInt(), b.readInt(), b.readInt(), b.readString(128)) })
+    })
