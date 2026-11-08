@@ -69,8 +69,10 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** `messages.local.enabled` (set by the client server): the backends announce joins and leaves themselves. */
     @Volatile var localAnnouncements: Boolean = false
 
-    /** The permission level the master grants a player on every backend (4 for admins); set by the client server, which owns the admin set. */
+    /** The operator level the master grants a player on every backend (highest level of its groups, 4 = admin); set by the client server, which owns the permissions. */
     @Volatile var grantedLevel: (net.fissionmc.master.client.PlayerProfile) -> Int = { 0 }
+    /** The group nodes the master grants a player on every backend (real Bukkit permissions there). */
+    @Volatile var grantedNodes: (net.fissionmc.master.client.PlayerProfile) -> List<String> = { emptyList() }
 
     /** The canonical player data (null = no player data handling: tests, or disabled). */
     @Volatile var playerData: PlayerDataStore? = null
@@ -119,7 +121,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
         node.link.send(AnnouncementMode(localAnnouncements))
         chatFormat?.let { node.link.send(it) }
         if (regions.enabled) node.link.send(net.fissionmc.protocol.RegionMap(node.info.nodeId, regions.toRules()))   // the join-time send can arrive before the backend's handlers exist
-        node.link.send(PlayerPermission(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, grantedLevel(p)))   // before the attach: the join already sees the operator level
+        node.link.send(PlayerPermission(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, grantedLevel(p), grantedNodes(p)))   // before the attach: the join already sees the operator level
         playerData?.let { store ->   // the stored data goes first, the backend loads it when it creates the player
             val data = store.read(p.uuid)
             node.link.send(PlayerData(id, p.uuid.mostSignificantBits, p.uuid.leastSignificantBits, data != null, data ?: ByteArray(0)))

@@ -35,58 +35,127 @@ data class ChatSettings(
 }
 
 /**
- * The master's admins, keyed by UUID (admin == operator level 4 on every backend, and who may use the master's own commands).
- * Sources: `admin: players: [<uuid>, ...]` in fission.yml (static, removable only by editing the file) and `admins.txt` next to it (lines
- * `uuid name`, written by `/fission admin add` and by name binding). NAMES are only a bootstrap: a name entry (in either file) is bound to the UUID of the
- * first player who logs in with that name (if [bindNames]); the pair is persisted in admins.txt, a WARN line is logged, and from then on only the UUID
- * counts. In online mode the UUID is authenticated, so binding once is safe; in offline mode (`client.online-mode=false`) the UUID derives from
- * the name and anyone can claim an admin's name before the admin does (the master warns at start).
+ * The master's permission groups and who is in them (the `permissions:` section of fission.yml).
+ *
+ *  - `groups`: node -> operator level 0-4 (default: `fission.admin: 4`). Level 4 is the old "admin": full operator on every backend and the right to use the
+ *    master's own `/fission` commands.
+ *  - `players`: name or UUID -> nodes. A player gets EVERY listed node as a real Bukkit permission on every backend (level 0 groups too); the operator level is
+ *    the highest level among its groups. Unknown group names are skipped with a WARN line.
+ *
+ * Players are keyed by UUID. A NAME entry only bootstraps: it is bound to the UUID of the first player who logs in with that name (if [bindNames]); the pair
+ * is persisted in [file] (`permissions.txt`, lines `uuid name -`), a WARN line is logged, and from then on only the UUID counts (the nodes still come from
+ * the name entry of fission.yml, so editing the yml changes them). `/fission admin add` writes `uuid name fission.admin` lines for runtime admins. In online
+ * mode the UUID is authenticated, so binding once is safe; in offline mode (`client.online-mode=false`) the UUID derives from the name and anyone can claim a
+ * name before its owner does (the master warns at start).
+ *
+ * A legacy `admins.txt` (lines `uuid name` of the old admin set) is read when `permissions.txt` does not exist yet and counts as `fission.admin`.
  */
-class AdminStore(
-    private val file: Path? = null, entries: List<String> = emptyList(), private val bindNames: Boolean = true, private val log: (String) -> Unit = {},
+class PermissionStore(
+    private val file: Path? = null, val groups: Map<String, Int> = DEFAULT_GROUPS, entries: Map<String, List<String>> = emptyMap(),
+    private val bindNames: Boolean = true, private val log: (String) -> Unit = {}, legacyFile: Path? = null,
 ) {
-    private val staticUuids = HashSet<UUID>()
-    private val uuids = java.util.concurrent.ConcurrentHashMap<UUID, String>()          // persisted: uuid -> name (comment)
-    private val pendingNames = java.util.concurrent.ConcurrentHashMap.newKeySet<String>() // lowercase names waiting for their first login
+    private val staticNodes = HashMap<UUID, Set<String>>()                                 // uuid entries of fission.yml
+    private val nameNodes = HashMap<String, Set<String>>()                                 // lowercase name entries of fission.yml
+    private val pendingNames = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()  // lowercase names waiting for their first login
+    private val bound = java.util.concurrent.ConcurrentHashMap<UUID, String>()             // persisted: uuid -> name bound by a first login
+    private val extra = java.util.concurrent.ConcurrentHashMap<UUID, Set<String>>()        // persisted: nodes added at runtime (/fission admin add)
 
     init {
-        for (e in entries.map { it.trim() }.filter { it.isNotEmpty() }) parseUuid(e)?.let { staticUuids += it } ?: pendingNames.add(e.lowercase())
-        file?.takeIf { Files.isRegularFile(it) }?.let { f ->
+        for ((key, nodes) in entries) {
+            val known = LinkedHashSet<String>()
+            for (n in nodes.map { it.trim() }.filter { it.isNotEmpty() }) if (n in groups) known += n else log("WARN permissions.players.$key: unknown group '$n' (groups: ${groups.keys.joinToString(", ")}), ignored")
+            val k = key.trim()
+            parseUuid(k)?.let { staticNodes[it] = known } ?: run { nameNodes[k.lowercase()] = known; pendingNames.add(k.lowercase()) }
+        }
+        val use = file?.takeIf { Files.isRegularFile(it) } ?: legacyFile?.takeIf { Files.isRegularFile(it) }
+        var migrated = false
+        use?.let { f ->
+            val legacy = f != file
             for (line in Files.readAllLines(f).map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }) {
-                val parts = line.split(Regex("\\s+"), limit = 2)
-                val u = parseUuid(parts[0])
-                if (u != null) uuids[u] = parts.getOrElse(1) { "" } else pendingNames.add(parts[0].lowercase())
+                val parts = line.split(Regex("\\s+"), limit = 3)
+                val u = parseUuid(parts[0]) ?: continue
+                if (parts.size > 1) bound[u] = parts[1]
+                val col = parts.getOrNull(2)
+                val nodes = if (legacy) setOf(ADMIN) else if (col == null || col == "-") emptySet() else col.split(',').map { it.trim() }.filter { it in groups }.toSet()
+                if (nodes.isNotEmpty()) extra[u] = nodes
+                if (legacy) migrated = true
             }
         }
         // a name that is already bound to a uuid can never be bound again (an impostor with the same name stays out after a restart)
-        uuids.values.forEach { pendingNames.remove(it.lowercase()) }
+        bound.values.forEach { pendingNames.remove(it.lowercase()) }
+        if (migrated) { log("WARN ${legacyFile?.fileName} migrated to ${file?.fileName}: its players are in $ADMIN now"); persist() }
     }
 
     private fun parseUuid(s: String): UUID? = try { UUID.fromString(s) } catch (_: IllegalArgumentException) { null }
 
-    fun isAdmin(uuid: UUID?): Boolean = uuid != null && (uuid in staticUuids || uuids.containsKey(uuid))
-    fun isStatic(uuid: UUID): Boolean = uuid in staticUuids
-    val any: Boolean get() = staticUuids.isNotEmpty() || uuids.isNotEmpty() || pendingNames.isNotEmpty()
+    /** All group nodes of [uuid] (config uuid entry + config name entry it is bound to + runtime additions), in a stable order. */
+    fun nodesOf(uuid: UUID?): Set<String> {
+        if (uuid == null) return emptySet()
+        val out = LinkedHashSet<String>()
+        staticNodes[uuid]?.let { out += it }
+        bound[uuid]?.let { n -> nameNodes[n.lowercase()]?.let { out += it } }
+        extra[uuid]?.let { out += it }
+        return out.filter { it in groups }.toSet()
+    }
+    /** The operator level the master grants [uuid]: the highest level among its groups (0 = none). */
+    fun levelOf(uuid: UUID?): Int = nodesOf(uuid).maxOfOrNull { groups[it] ?: 0 } ?: 0
+    fun has(uuid: UUID?, node: String): Boolean = node in nodesOf(uuid)
+    /** Level 4: operator everywhere and the master's own commands. */
+    fun isAdmin(uuid: UUID?): Boolean = levelOf(uuid) >= 4
+    fun isStatic(uuid: UUID): Boolean = uuid in staticNodes
+    val any: Boolean get() = staticNodes.isNotEmpty() || bound.isNotEmpty() || extra.isNotEmpty() || pendingNames.isNotEmpty()
     val pending: Set<String> get() = pendingNames.toSet()
 
     /** A player logged in: if its name is a pending bootstrap entry it is bound to this UUID. True when bound now. */
     fun bindOnLogin(name: String, uuid: UUID): Boolean {
         if (!bindNames || !pendingNames.remove(name.lowercase())) return false
-        uuids[uuid] = name; persist()
-        log("WARN admin $name bound to uuid $uuid")
+        bound[uuid] = name; persist()
+        log("WARN permissions: $name bound to uuid $uuid")
         return true
     }
 
-    fun add(uuid: UUID, name: String) { uuids[uuid] = name; pendingNames.remove(name.lowercase()); persist() }
+    /** Runtime admin (`/fission admin add`): adds [ADMIN]. */
+    fun add(uuid: UUID, name: String) { bound.putIfAbsent(uuid, name); extra[uuid] = (extra[uuid] ?: emptySet()) + ADMIN; pendingNames.remove(name.lowercase()); persist() }
 
-    /** Removes a runtime admin. False if it is not one (or is a static entry of fission.yml). */
-    fun remove(uuid: UUID): Boolean { val r = uuids.remove(uuid) != null; if (r) persist(); return r }
-    fun uuidByName(name: String): UUID? = uuids.entries.firstOrNull { it.value.equals(name, ignoreCase = true) }?.key
+    /** Removes the runtime/bound entries of [uuid]. False if there were none (static uuid entries of fission.yml are edited in the file). */
+    fun remove(uuid: UUID): Boolean { val r = (extra.remove(uuid) != null) or (bound.remove(uuid) != null); if (r) persist(); return r }
+    fun uuidByName(name: String): UUID? = bound.entries.firstOrNull { it.value.equals(name, ignoreCase = true) }?.key
 
     private fun persist() {
         file ?: return
-        try { Files.write(file, listOf("# master admins: uuid name (written by the master)") + uuids.entries.sortedBy { it.value.lowercase() }.map { "${it.key} ${it.value}".trim() } + pendingNames.sorted()) }
+        val lines = bound.entries.sortedBy { it.value.lowercase() }.map { "${it.key} ${it.value} ${extra[it.key]?.joinToString(",") ?: "-"}" } +
+            extra.entries.filter { !bound.containsKey(it.key) }.map { "${it.key} - ${it.value.joinToString(",")}" }
+        try { Files.write(file, listOf("# master permissions: uuid name nodes (written by the master; '-' = the nodes come from fission.yml)") + lines + pendingNames.sorted().map { "# waiting for first login: $it" }) }
         catch (e: Exception) { log("WARN cannot write $file: $e") }
+    }
+
+    companion object {
+        const val ADMIN = "fission.admin"
+        val DEFAULT_GROUPS: Map<String, Int> = mapOf(ADMIN to 4)
+
+        /**
+         * Reads `permissions:` (and the legacy `admin:` section, which counts as [ADMIN] with a one-time warning) of [root].
+         * `players` values are a comma separated text or a yaml list.
+         */
+        fun from(root: ConfigSection, file: Path? = null, legacyFile: Path? = null, log: (String) -> Unit = {}): PermissionStore {
+            val perm = root.section("permissions"); val g = perm.section("groups"); val p = perm.section("players")
+            val groups = LinkedHashMap<String, Int>()
+            for (k in g.keys()) groups[k] = g.int(k, 0).also { if (it !in 0..4) throw ConfigException("permissions.groups.$k: expected an operator level 0-4, got $it") }
+            val entries = LinkedHashMap<String, List<String>>()
+            for (k in p.keys()) entries[k] = p.stringList(k).flatMap { it.split(',') }
+            var bind = perm.bool("bind-names", true)
+            val legacy = root.section("admin")   // always read, so the old section never counts as an unknown key
+            val old = legacy.stringList("players").flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }
+            val oldBind = legacy.bool("bind-names", true)
+            if (old.isNotEmpty()) {
+                if (!perm.has("bind-names")) bind = oldBind
+                log("WARN fission.yml: the admin: section is deprecated; its ${old.size} player(s) are treated as $ADMIN. Move them to permissions: players: { <name>: $ADMIN } and remove admin:")
+                if (ADMIN !in groups) groups[ADMIN] = 4
+                for (n in old) entries[n] = (entries[n] ?: emptyList()) + ADMIN
+            }
+            if (groups.isEmpty()) groups += DEFAULT_GROUPS
+            return PermissionStore(file, groups, entries, bind, log, legacyFile)
+        }
     }
 }
 
@@ -132,7 +201,7 @@ class Announcements(private val s: AnnouncementSettings) {
 /** Everything the master reads from fission.yml besides the node and client listener keys. */
 data class MasterSettings(
     val chat: ChatSettings = ChatSettings(),
-    val adminStore: AdminStore = AdminStore(),
+    val permissions: PermissionStore = PermissionStore(),
     val messages: AnnouncementSettings = AnnouncementSettings(),
     /** `travel.pet-radius` */
     val petRadius: Int = 24,
@@ -148,14 +217,14 @@ data class MasterSettings(
     val ghosts: GhostSettings = GhostSettings(),
 ) {
     val announcements: Announcements by lazy { Announcements(messages) }
-    fun isAdmin(uuid: UUID?): Boolean = adminStore.isAdmin(uuid)
+    fun isAdmin(uuid: UUID?): Boolean = permissions.isAdmin(uuid)
 
     companion object {
         /**
-         * Reads the master's sections of [root]: `chat`, `messages`, `admin`, `travel` and `regions.margin` (every key documented in fission.default.yml). The caller runs
+         * Reads the master's sections of [root]: `chat`, `messages`, `permissions` (and the legacy `admin`), `travel` and `regions.margin` (every key documented in fission.default.yml). The caller runs
          * `root.finish()` once all readers are done, which reports unknown keys with their path.
          */
-        fun from(root: ConfigSection, adminsFile: Path? = null, log: (String) -> Unit = {}): MasterSettings {
+        fun from(root: ConfigSection, permissionsFile: Path? = null, legacyAdminsFile: Path? = null, log: (String) -> Unit = {}): MasterSettings {
             val d = ChatSettings()
             val c = root.section("chat"); val fmt = c.section("format"); val g = c.section("global"); val l = c.section("local")
             val default = c.string("default", "local").lowercase()
@@ -163,7 +232,6 @@ data class MasterSettings(
             val syntax = fmt.string("syntax", d.syntax).lowercase()
             if (syntax != "minimessage" && syntax != "legacy") throw ConfigException("chat.format.syntax: expected minimessage or legacy, got '$syntax'")
             val m = root.section("messages"); val join = m.section("join"); val leave = m.section("leave"); val sw = m.section("switch"); val loc = m.section("local")
-            val admin = root.section("admin")
             return MasterSettings(
                 chat = ChatSettings(
                     defaultGlobal = default == "global", syntax = syntax,
@@ -179,10 +247,10 @@ data class MasterSettings(
                     joinGlobal = join.bool("global", true), leaveGlobal = leave.bool("global", true), joinFormat = join.string("format", ""), leaveFormat = leave.string("format", ""),
                     switchEnabled = sw.bool("enabled", false), switchFormat = sw.string("format", "{name} moved to {backend}"), localEnabled = loc.bool("enabled", false),
                 ),
-                adminStore = AdminStore(adminsFile, admin.stringList("players").flatMap { it.split(',') }, admin.bool("bind-names", true), log),
+                permissions = PermissionStore.from(root, permissionsFile, legacyAdminsFile, log),
             )
         }
 
-        fun load(file: Path, log: (String) -> Unit = {}): MasterSettings = from(FissionConfig.load(file), file.toAbsolutePath().resolveSibling("admins.txt"), log)
+        fun load(file: Path, log: (String) -> Unit = {}): MasterSettings = from(FissionConfig.load(file), file.toAbsolutePath().resolveSibling("permissions.txt"), file.toAbsolutePath().resolveSibling("admins.txt"), log)
     }
 }

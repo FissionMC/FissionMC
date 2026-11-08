@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * FissionMC: {@code isOp} (Bukkit's {@code isOp()}, plugins, the op list checks) answers true for the master's admins, and the permission level that
+ * FissionMC: {@code isOp} (Bukkit's {@code isOp()}, plugins, the op list checks) answers true for the master's level 4 players (admins), and the permission level that
  * vanilla sends a player (join, /op, /deop) is reported to the master. New file next to the ported PlayerListMixin.
  */
 @Mixin(PlayerList.class)

@@ -104,11 +104,12 @@ class PlayerDataSave(val uuidHigh: Long, val uuidLow: Long, val nbt: ByteArray) 
 data class PlayerDataFlush(val playerId: Long, val petRadius: Int = 24) : NodeMessage
 
 /**
- * Master -> backend (id 60), sent right before [PlayerAttach] and again whenever the master's admin set changes: the permission level the master
- * grants [playerId] on this backend. 4 = full operator ("admin == op level 4 on every backend"), 0 = nothing from the master (the backend's own ops
- * list applies). The backend answers the vanilla/Paper op checks with it and resends the player's command tree.
+ * Master -> backend (id 60), sent right before [PlayerAttach] and again whenever the master's permissions change: what the master grants [playerId] on
+ * this backend (`permissions:` section of fission.yml). [level] is the highest operator level among the player's groups (4 = full operator, 0 = no
+ * level from the master; the backend's own ops list applies and the higher of the two wins). [nodes] are ALL the group nodes of the player, set as
+ * real Bukkit permissions (also for level 0 groups). The backend resends the player's command tree when the level changes.
  */
-data class PlayerPermission(val playerId: Long, val uuidHigh: Long, val uuidLow: Long, val level: Int) : NodeMessage
+data class PlayerPermission(val playerId: Long, val uuidHigh: Long, val uuidLow: Long, val level: Int, val nodes: List<String> = emptyList()) : NodeMessage
 
 /**
  * Backend -> master (id 61): the permission level (0-4) the backend computed for a relayed player, sent whenever vanilla sends the player its
@@ -194,7 +195,8 @@ fun MessageRegistry.registerPlayerMessages(): MessageRegistry = this
     .register<PlayerDataSave>(58, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeByteArray(m.nbt, MAX_PLAYER_DATA) },
         { b -> PlayerDataSave(b.readLong(), b.readLong(), b.readByteArray(MAX_PLAYER_DATA)) })
     .register<PlayerDataFlush>(59, { m, b -> b.writeLong(m.playerId).writeVarInt(m.petRadius) }, { b -> PlayerDataFlush(b.readLong(), b.readVarInt()) })
-    .register<PlayerPermission>(60, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermission(b.readLong(), b.readLong(), b.readLong(), b.readVarInt()) })
+    .register<PlayerPermission>(60, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level).writeVarInt(m.nodes.size); m.nodes.forEach { n -> b.writeString(n, 128) } },
+        { b -> PlayerPermission(b.readLong(), b.readLong(), b.readLong(), b.readVarInt(), List(b.readVarInt().coerceIn(0, 256)) { b.readString(128) }) })
     .register<PlayerPermissionReport>(61, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.level) }, { b -> PlayerPermissionReport(b.readLong(), b.readLong(), b.readVarInt()) })
     .register<AnnouncementMode>(70, { m, b -> b.writeBoolean(m.local) }, { b -> AnnouncementMode(b.readBoolean()) })
     .register<PlayerFile>(71, { m, b -> b.writeLong(m.playerId).writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.kind).writeBoolean(m.present).writeByteArray(m.bytes, MAX_PLAYER_DATA) },

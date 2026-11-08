@@ -90,6 +90,8 @@ class ConfigFilesTest {
         fails("chunk: { authority: 3 }", "chunk.authority")
         fails("travel: { pet-radius: 999 }", "travel.pet-radius")
         fails("admin: { players: { a: b } }", "admin.players")
+        fails("permissions: { groups: { fission.admin: 9 } }", "permissions.groups.fission.admin", "0-4")
+        fails("permissions: { groups: { x: high } }", "permissions.groups.x", "whole number")
         fails("regions: { dimensions: { overworld: [ 5 ] } }", "regions.dimensions.overworld[0]")
         fails("messages: [1, 2]", "messages", "section")
     }

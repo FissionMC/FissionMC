@@ -27,24 +27,25 @@ object MasterCommands {
     }
 
     /**
-     * `/fission admin add|remove <player>`: edits the admin set, which is keyed by UUID (admins.txt next to fission.yml). Admin = operator level 4
-     * on every backend. `add` needs the player online (its UUID is resolved from the name); `remove` takes an online name, a name recorded in admins.txt or a uuid.
+     * `/fission admin add|remove <player>`: edits the runtime admins (group fission.admin), which are keyed by UUID (permissions.txt next to fission.yml). fission.admin is level 4 by default:
+     * operator on every backend. `add` needs the player online (its UUID is resolved from the name); `remove` takes an online name, a name recorded in permissions.txt or a uuid.
      */
     private fun admin(s: ClientSession, server: ClientServer, args: List<String>) {
         if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
         val action = args.getOrNull(0)?.lowercase(); val who = args.getOrNull(1)
         if ((action != "add" && action != "remove") || who == null || args.size != 2) { s.tell(Component.text("Usage: /fission admin add|remove <player>", NamedTextColor.RED)); return }
-        val store = server.settings.adminStore
+        val store = server.settings.permissions
+        if (!store.groups.containsKey(PermissionStore.ADMIN)) { s.tell(Component.text("The group ${PermissionStore.ADMIN} is not defined in permissions.groups.", NamedTextColor.RED)); return }
         val online = server.findByName(who)
         val uuid = online?.uuid ?: try { java.util.UUID.fromString(who) } catch (_: IllegalArgumentException) { null } ?: store.uuidByName(who)
         if (uuid == null) { s.tell(Component.text("Unknown player: $who (it has to be online, or give a uuid)", NamedTextColor.RED)); return }
         if (action == "add") {
             store.add(uuid, online?.playerName ?: who)
-            s.tell(Component.text("${online?.playerName ?: who} ($uuid) is an admin now (operator level 4 on every backend).", NamedTextColor.GRAY))
+            s.tell(Component.text("${online?.playerName ?: who} ($uuid) is in ${PermissionStore.ADMIN} now (operator level ${store.groups[PermissionStore.ADMIN]} on every backend).", NamedTextColor.GRAY))
         } else if (store.remove(uuid)) {
             s.tell(Component.text("${online?.playerName ?: who} is no admin any more.", NamedTextColor.GRAY))
         } else {
-            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in admin: players of fission.yml: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
+            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in permissions.players of fission.yml: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
         }
         server.log("[master] ${s.playerName}: admin $action $who ($uuid)")
         online?.pushPermission()

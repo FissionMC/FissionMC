@@ -169,8 +169,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** Node of this session as other sessions may see it. */
     fun liveNodeOf(): String? = liveNode
     /**
-     * Admin for the master's own commands and command tree: in the master's admin set (which is also operator level 4 on every backend), or
-     * operator level 4 on the backend the player is on right now (`/op` on that backend).
+     * Admin for the master's own commands and command tree: operator level 4 from the master's permission groups (`permissions:` in fission.yml, by default
+     * the node fission.admin), or operator level 4 on the backend the player is on right now (`/op` on that backend). Lower levels do not get the master's commands.
      */
     val isAdmin: Boolean get() = server.settings.isAdmin(uuid) || backendLevel >= 4
 
@@ -192,10 +192,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         startSwitch(target) { why -> server.log("[regions] $playerName: cannot move to $target: $why") }
     } }
 
-    /** The master's admin set changed: tell the player's backend (it resends the command tree, which the master patches again). */
+    /** The master's permissions changed: tell the player's backend (it resends the command tree, which the master patches again). */
     fun pushPermission() { channel.eventLoop().execute {
         val id = relayId ?: return@execute; val u = uuid ?: return@execute
-        server.relay?.sendTo(id, net.fissionmc.protocol.PlayerPermission(id, u.mostSignificantBits, u.leastSignificantBits, if (server.settings.isAdmin(u)) 4 else 0))
+        server.relay?.sendTo(id, net.fissionmc.protocol.PlayerPermission(id, u.mostSignificantBits, u.leastSignificantBits, server.settings.permissions.levelOf(u), server.settings.permissions.nodesOf(u).toList()))
     } }
     private var hostName = ""
     private var tap: net.fissionmc.packets.PacketTap? = null
@@ -739,7 +739,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (!server.register(this, p)) { disconnect("You are already connected"); return }
         registered = true
         server.tabs.register(this, tabDecode); server.ghosts.register(this)
-        server.settings.adminStore.bindOnLogin(p.name, p.uuid)   // bootstrap: a name entry in the admin list becomes this uuid
+        server.settings.permissions.bindOnLogin(p.name, p.uuid)   // bootstrap: a name entry in permissions.players becomes this uuid
         val t = server.config.compressionThreshold
         if (t >= 0) {
             send(WrapperLoginServerSetCompression(t))

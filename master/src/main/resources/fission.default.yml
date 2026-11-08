@@ -20,10 +20,20 @@ client:
   compression-threshold: 256
   enabled: true
 
-# Admins (operator level 4 on every backend + the master's /fission commands). Names only bootstrap: the first login with that name binds its UUID.
-admin:
-  players: []                  # e.g. [R4T_2, "35deb110-752a-3928-95c4-cc89250ce08e"]
-  bind-names: true
+# Permission groups. A group is a permission node with an operator level (0-4). A listed player gets EVERY node of its groups as a real permission on every
+# backend (plugins such as LuckPerms see them, level 0 too) and the highest level among them as operator level (4 = full operator, the old "admin").
+# The master's own /fission commands need level 4 (by default fission.admin). The master reads this file at start; the backends follow the master live (also on /fission admin add|remove).
+# Without `groups` only fission.admin (level 4) exists. An old `admin: players:` list is still read (as fission.admin) with a warning.
+permissions:
+  groups:
+    fission.admin: 4           # operator level 4 on every backend + the master's /fission commands
+    fission.moderator: 2
+    fission.trainee: 0         # level 0 still grants the node
+  players: {}                  # name or UUID: groups, as a comma text or a list, e.g.
+                               #   R4T_2: fission.admin, fission.moderator, fission.trainee
+                               #   "35deb110-752a-3928-95c4-cc89250ce08e": [fission.moderator]
+                               # Unknown group names are skipped with a warning in the master log.
+  bind-names: true             # names only bootstrap: the first login with that name binds its UUID (kept in permissions.txt); false = names grant nothing
 
 # Chat. Placeholders: {name} {displayname} {uuid} {serverid} ({backend} is the same) {message}. A literal < is written \< in MiniMessage.
 chat:

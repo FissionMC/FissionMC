@@ -28,7 +28,7 @@ data class MasterConfig(
             val ghost = r.int("ghost-zone", 12).also { if (it !in 1..64) throw ConfigException("regions.ghost-zone: expected 1-64, got $it") }
             val strip = r.int("border-strip", 1).also { if (it < 0) throw ConfigException("regions.border-strip: expected 0 or more, got $it") }
             val client = ClientConfig.from(root)
-            val settings = MasterSettings.from(root, dir.resolve("admins.txt"), log)
+            val settings = MasterSettings.from(root, dir.resolve("permissions.txt"), dir.resolve("admins.txt"), log)
             val c = root.section("chunk")
             val det: Set<String> = c.stringList("deterministic").toSet()   // `true` (all) is the text "true"
             val chunkAuthority = c.bool("authority", true); val lease = c.long("lease-seconds", 60L); val stats = c.long("stats-interval", 30L)

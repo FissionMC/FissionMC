@@ -40,7 +40,7 @@ class ClientServer(
         private set
     /** Global chat (needs the relay). */
     init { relay?.localAnnouncements = settings.announcements.local; relay?.petRadius = settings.petRadius }
-    init { relay?.grantedLevel = { p -> if (settings.isAdmin(p.uuid)) 4 else 0 } }
+    init { relay?.grantedLevel = { p -> settings.permissions.levelOf(p.uuid) }; relay?.grantedNodes = { p -> settings.permissions.nodesOf(p.uuid).toList() } }
     /** Global chat (needs the relay). */
     val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
     /** The network wide tab list and the ghost players (see `.dev/docs/tablist-ghosts-commands.md`). */

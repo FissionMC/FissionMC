@@ -158,30 +158,32 @@ class SwitchAndChatTest {
         assertEquals("legacy", MasterSettings.from(FissionConfig.parse("chat: { format: { syntax: legacy } }")).chat.syntax)
     }
 
-    @Test fun `admins are keyed by uuid, a name only bootstraps once and then grants nothing`() {
-        val dir = java.nio.file.Files.createTempDirectory("adm"); val file = dir.resolve("admins.txt")
+    private val groups = mapOf("fission.admin" to 4, "fission.moderator" to 2, "fission.trainee" to 0)
+
+    @Test fun `players are keyed by uuid, a name only bootstraps once and then grants nothing to others`() {
+        val dir = java.nio.file.Files.createTempDirectory("adm"); val file = dir.resolve("permissions.txt")
         val logs = ArrayList<String>()
         val real = java.util.UUID.fromString("11111111-2222-3333-4444-555555555555"); val impostor = java.util.UUID(9, 9); val fixed = java.util.UUID(5, 5)
-        val s = AdminStore(file, listOf("Alice", fixed.toString()), true) { logs += it }
-        assertTrue(s.isAdmin(fixed), "uuid entries from the properties"); assertFalse(s.isAdmin(real), "a name alone grants nothing before the first login")
-        assertTrue(s.bindOnLogin("alice", real)); assertTrue(logs.any { it.startsWith("WARN admin alice bound to uuid $real") })
-        assertTrue(s.isAdmin(real))
-        assertFalse(s.bindOnLogin("Alice", impostor), "the name is spent"); assertFalse(s.isAdmin(impostor), "a different uuid with the admin's old name is no admin")
-        // persisted: after a restart the name entry from the properties is still there, but it is bound already, so an impostor cannot take it
-        val again = AdminStore(file, listOf("Alice"), true)
-        assertTrue(again.isAdmin(real)); assertFalse(again.bindOnLogin("Alice", impostor)); assertFalse(again.isAdmin(impostor))
-        assertTrue(java.nio.file.Files.readAllLines(file).any { it.startsWith("$real") && it.endsWith("alice") || it.contains("$real Alice") || it.contains("$real alice") })
+        val entries = mapOf("Alice" to listOf("fission.admin", "fission.trainee"), fixed.toString() to listOf("fission.moderator"))
+        val s = PermissionStore(file, groups, entries, true, { logs += it })
+        assertEquals(2, s.levelOf(fixed), "uuid entries from the yaml"); assertEquals(0, s.levelOf(real)); assertTrue(s.nodesOf(real).isEmpty(), "a name alone grants nothing before the first login")
+        assertTrue(s.bindOnLogin("alice", real)); assertTrue(logs.any { it.startsWith("WARN permissions: alice bound to uuid $real") })
+        assertEquals(setOf("fission.admin", "fission.trainee"), s.nodesOf(real)); assertTrue(s.isAdmin(real)); assertFalse(s.isAdmin(fixed))
+        assertFalse(s.bindOnLogin("Alice", impostor), "the name is spent"); assertFalse(s.isAdmin(impostor)); assertTrue(s.nodesOf(impostor).isEmpty())
+        // persisted: after a restart the name entry is there, but it is bound already, so an impostor cannot take it
+        val again = PermissionStore(file, groups, entries, true)
+        assertEquals(setOf("fission.admin", "fission.trainee"), again.nodesOf(real)); assertFalse(again.bindOnLogin("Alice", impostor)); assertFalse(again.isAdmin(impostor))
         assertEquals(real, again.uuidByName("ALICE"))
         assertFalse(again.remove(fixed), "static entries are removed in the file, not at runtime"); assertTrue(again.remove(real)); assertFalse(again.isAdmin(real))
     }
 
     @Test fun `name binding can be switched off and runtime admins are stored by uuid`() {
-        val file = java.nio.file.Files.createTempDirectory("adm").resolve("admins.txt")
-        val off = AdminStore(file, listOf("Bob"), false)
+        val file = java.nio.file.Files.createTempDirectory("adm").resolve("permissions.txt")
+        val off = PermissionStore(file, groups, mapOf("Bob" to listOf("fission.admin")), false)
         assertFalse(off.bindOnLogin("Bob", java.util.UUID(1, 1))); assertFalse(off.isAdmin(java.util.UUID(1, 1)))
-        val s = AdminStore(file); val u = java.util.UUID(3, 4)
-        s.add(u, "Carol"); assertTrue(AdminStore(file).isAdmin(u)); assertFalse(AdminStore(file).isAdmin(java.util.UUID(3, 5)))
-        val m = MasterSettings.from(FissionConfig.parse("admin: { players: [\"$u\"] }"))
+        val s = PermissionStore(file, groups); val u = java.util.UUID(3, 4)
+        s.add(u, "Carol"); assertTrue(PermissionStore(file, groups).isAdmin(u)); assertFalse(PermissionStore(file, groups).isAdmin(java.util.UUID(3, 5)))
+        val m = MasterSettings.from(FissionConfig.parse("permissions: { players: { \"$u\": fission.admin } }"))
         assertTrue(m.isAdmin(u)); assertFalse(m.isAdmin(null))
     }
 

@@ -634,6 +634,7 @@ public abstract class PlayerListMixin {
     @Inject(method = "placeNewPlayer", at = @At("HEAD"), cancellable = true)
     private void paper$placeNewPlayer(final Connection connection, final ServerPlayer player, final CommonListenerCookie cookie, final CallbackInfo ci) {
         ci.cancel();
+        net.fissionmc.backend.relay.PermissionBackend.applyNodes(player.getUUID(), player.getBukkitEntity()); // FissionMC: the master's permission nodes, before the join event
         player.isRealPlayer = true; // Paper
         player.loginTime = System.currentTimeMillis(); // Paper - Replace OfflinePlayer#getLastPlayed
         NameAndId gameProfile = player.nameAndId();

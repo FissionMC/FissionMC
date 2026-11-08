@@ -83,8 +83,8 @@ private fun runMaster(args: Array<String>) {
     if (listen.host == "127.0.0.1" || listen.host == "localhost" || listen.host == "::1")
         println("[master] WARN node.listen is ${listen.host}:${listen.port}: backends in other containers/machines cannot connect (use 0.0.0.0:${listen.port}); a changed value applies live")
     println("[master] node link security: ${if (cfg.security) "on (Ed25519, authorized keys: ${cfg.authorizedFile})" else "OFF (node.security=false: any backend may connect)"}")
-    if (settings.adminStore.any && !clientCfg.onlineMode)
-        println("[master] WARN admins exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as an admin's name (and is then bound to it first if the admin has not logged in yet). Use online mode outside development.")
+    if (settings.permissions.any && !clientCfg.onlineMode)
+        println("[master] WARN permissions exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as a listed name (and is then bound to it first if its owner has not logged in yet). Use online mode outside development.")
     // local chat format (chat.local.format): pushed to the backends on join, on every attach and every 5 s (a first send can precede the backend's handlers)
     val chatFormat = net.fissionmc.protocol.ChatFormat(settings.chat.syntax, settings.chat.localFormat)
     relay.chatFormat = chatFormat
