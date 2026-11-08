@@ -13,11 +13,21 @@ import net.minecraft.world.phys.AABB;
 import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.llamalad7.mixinextras.sugar.Local;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Paper: sources/net/minecraft/world/level/block/entity/BeaconBlockEntity.java.patch
- * TODO(behaviour): applyEffects uses getHumansInRange/BeaconEffectEvent, effect range load/save ("Paper.Range"),
- * BeaconActivated/DeactivatedEvent, MC-153086 fix.
+ * done: BeaconEffectEvent + custom range in applyEffects (wrapped at the tick call site), BeaconActivated/DeactivatedEvent (tick: compared with the level count at HEAD),
+ * deactivate event + MC-153086 in setRemoved, "Paper.Range" and "Levels" load/save, unfiltered effect load (SPIGOT-3598).
+ * left: BlockLockCheckEvent in createMenu.
  */
 @Mixin(BeaconBlockEntity.class)
 public abstract class BeaconBlockEntityMixin {
@@ -113,4 +123,83 @@ public abstract class BeaconBlockEntityMixin {
         return beaconLevel >= 4 && !Objects.equals(primaryEffect, secondaryEffect) && secondaryEffect != null;
     }
     // Paper end - diff out applyEffects logic components
+
+    @Shadow private List<?> beamSections;
+
+    // Paper start - beacon activation/deactivation events: tick does not change `levels` before its own previousLevels read, so HEAD holds the previous value
+    private static final ThreadLocal<int[]> paper$previousLevels = ThreadLocal.withInitial(() -> new int[1]);
+
+    @Inject(method = "tick", at = @At("HEAD"))
+    private static void paper$rememberLevels(final Level level, final BlockPos pos, final net.minecraft.world.level.block.state.BlockState state, final BeaconBlockEntity entity, final CallbackInfo ci) {
+        paper$previousLevels.get()[0] = ((BeaconBlockEntityMixin) (Object) entity).levels;
+    }
+
+    @Inject(method = "tick", at = @At("RETURN"))
+    private static void paper$activationEvents(final Level level, final BlockPos pos, final net.minecraft.world.level.block.state.BlockState state, final BeaconBlockEntity entity, final CallbackInfo ci) {
+        final int previousLevels = paper$previousLevels.get()[0];
+        final int now = ((BeaconBlockEntityMixin) (Object) entity).levels;
+        if (previousLevels <= 0 && now > 0) {
+            new io.papermc.paper.event.block.BeaconActivatedEvent(org.bukkit.craftbukkit.block.CraftBlock.at(level, pos)).callEvent();
+        } else if (previousLevels > 0 && now <= 0) {
+            new io.papermc.paper.event.block.BeaconDeactivatedEvent(org.bukkit.craftbukkit.block.CraftBlock.at(level, pos)).callEvent();
+        }
+    }
+    // Paper end - beacon activation/deactivation events
+
+    // Paper start - Custom beacon ranges + BeaconEffectEvent
+    @WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/entity/BeaconBlockEntity;applyEffects(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;ILnet/minecraft/core/Holder;Lnet/minecraft/core/Holder;)V"))
+    private static void paper$applyEffects(final Level level, final BlockPos worldPosition, final int levels, final @Nullable Holder<MobEffect> primaryPower, final @Nullable Holder<MobEffect> secondaryPower, final Operation<Void> original, @Local(argsOnly = true) final BeaconBlockEntity entity) {
+        if (level.isClientSide() || primaryPower == null) return;
+        final int baseAmp = computeEffectAmplifier(levels, primaryPower, secondaryPower);
+        final int durationTicks = computeEffectDuration(levels);
+        final List<Player> players = getHumansInRange(level, worldPosition, levels, entity);
+        paper$applyAndCallEvent(level, worldPosition, players, new MobEffectInstance(primaryPower, durationTicks, baseAmp, true, true), true);
+        if (hasSecondaryEffect(levels, primaryPower, secondaryPower)) {
+            paper$applyAndCallEvent(level, worldPosition, players, new MobEffectInstance(secondaryPower, durationTicks, 0, true, true), false);
+        }
+    }
+
+    private static void paper$applyAndCallEvent(final Level level, final BlockPos position, final List<Player> players, final MobEffectInstance mobEffectInstance, final boolean isPrimary) {
+        final org.bukkit.potion.PotionEffect apiEffect = org.bukkit.craftbukkit.potion.CraftPotionUtil.toBukkit(mobEffectInstance);
+        final org.bukkit.craftbukkit.block.CraftBlock apiBlock = org.bukkit.craftbukkit.block.CraftBlock.at(level, position);
+        for (final Player player : players) {
+            final com.destroystokyo.paper.event.block.BeaconEffectEvent event = new com.destroystokyo.paper.event.block.BeaconEffectEvent(apiBlock, apiEffect, (org.bukkit.entity.Player) player.getBukkitEntity(), isPrimary);
+            if (!event.callEvent()) continue;
+            player.addEffect(org.bukkit.craftbukkit.potion.CraftPotionUtil.fromBukkit(event.getEffect()), org.bukkit.event.entity.EntityPotionEffectEvent.Cause.BEACON);
+        }
+    }
+    // Paper end - Custom beacon ranges + BeaconEffectEvent
+
+    // Paper start - beacon deactivation event + fix MC-153086
+    @Inject(method = "setRemoved", at = @At("HEAD"))
+    private void paper$removedEvent(final CallbackInfo ci) {
+        final BeaconBlockEntity self = (BeaconBlockEntity) (Object) this;
+        if (self.getLevel() != null) {
+            new io.papermc.paper.event.block.BeaconDeactivatedEvent(org.bukkit.craftbukkit.block.CraftBlock.at(self.getLevel(), self.getBlockPos())).callEvent();
+        }
+    }
+
+    @WrapOperation(method = "setRemoved", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/entity/BeaconBlockEntity;playSound(Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Lnet/minecraft/sounds/SoundEvent;)V"))
+    private void paper$deactivateSoundOnlyWhenActive(final Level level, final BlockPos pos, final net.minecraft.sounds.SoundEvent sound, final Operation<Void> original) {
+        if (this.levels > 0 && !this.beamSections.isEmpty()) original.call(level, pos, sound);
+    }
+    // Paper end
+
+    // Paper start - persistence: custom range, levels, non-default effects (SPIGOT-3598, SPIGOT-5053)
+    @Inject(method = "loadEffect", at = @At("HEAD"), cancellable = true)
+    private static void paper$unfilteredEffect(final ValueInput input, final String field, final CallbackInfoReturnable<Holder<MobEffect>> cir) {
+        cir.setReturnValue(input.read(field, net.minecraft.core.registries.BuiltInRegistries.MOB_EFFECT.holderByNameCodec()).orElse(null));
+    }
+
+    @Inject(method = "loadAdditional", at = @At("TAIL"))
+    private void paper$loadExtra(final ValueInput input, final CallbackInfo ci) {
+        this.levels = input.getIntOr("Levels", 0);
+        this.effectRange = input.getDoubleOr(PAPER_RANGE_TAG, -1);
+    }
+
+    @Inject(method = "saveAdditional", at = @At("TAIL"))
+    private void paper$saveExtra(final ValueOutput output, final CallbackInfo ci) {
+        output.putDouble(PAPER_RANGE_TAG, this.effectRange);
+    }
+    // Paper end
 }
