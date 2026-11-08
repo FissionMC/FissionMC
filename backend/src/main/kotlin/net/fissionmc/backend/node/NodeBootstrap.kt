@@ -95,16 +95,30 @@ object NodeBootstrap {
         closeables += transport
 
         val ready = java.util.concurrent.CompletableFuture<NodeLink>()
+        var client0: NodeClient? = null
         val client = NodeClient(
             transport, address,
             onReady = { l, peer ->
                 log.info("Connected to master ${peer.nodeId}")
                 if (!ready.complete(l) && started) relinked(l)
             },
-            onFailure = { log.warning("Master connection failed: ${it.message}") },
+            onFailure = { log.warning("Master connection failed (dialing ${client0?.address ?: address}): ${it.message}") },
             onDisconnect = { log.warning("Lost connection to master: $it") },
         ).start()
+        client0 = client
         closeables += client
+        // config reload: a changed node.master makes the backend drop the link and dial the new master address; everything else in fission.yml applies after a restart
+        // (the Minecraft port/ip of a backend is vanilla's server.properties and is not live-reloadable)
+        if (cfg.mode == NodeMode.BACKEND) closeables += net.fissionmc.net.ConfigWatcher(file, { log.warning(it) }) { oldText, newText ->
+            val changed = net.fissionmc.net.ConfigWatcher.changedKeys(oldText, newText)
+            log.info("fission.yml changed (${changed.joinToString().ifEmpty { "comments only" }})")
+            if ("node.master" in changed) {
+                val to = try { NodeConfig.from(net.fissionmc.net.FissionConfig.load(file), file.parent).master } catch (e: Exception) { log.warning("fission.yml reload failed, keeping node.master as it is: ${e.message}"); return@ConfigWatcher }
+                if (to == null) log.warning("node.master was removed: restart required") else { log.info("node.master is now ${to.host}:${to.port}: reconnecting"); client.redirect(to) }
+            }
+            val later = changed.filter { it != "node.master" }
+            if (later.isNotEmpty()) log.info("needs a restart to take effect: ${later.joinToString()}")
+        }.start()
         val l = try { ready.get(CONNECT_TIMEOUT_S, TimeUnit.SECONDS) }
         catch (e: java.util.concurrent.TimeoutException) { stop(); error("Could not reach the master at $address within ${CONNECT_TIMEOUT_S}s") }
         link = l

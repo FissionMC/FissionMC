@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class NodeClient(
     private val transport: Transport,
-    private val address: NodeAddress,
+    address: NodeAddress,
     private val onReady: (NodeLink, PeerInfo) -> Unit,
     private val onFailure: (Throwable) -> Unit = {},
     private val onDisconnect: (String) -> Unit = {},
@@ -21,11 +21,21 @@ class NodeClient(
 ) : Closeable {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "node-client").apply { isDaemon = true } }
     private val stopped = AtomicBoolean()
+    @Volatile var address: NodeAddress = address
+        private set
     @Volatile var link: NodeLink? = null
         private set
     private var delay = initialDelayMs
 
     fun start(): NodeClient { scheduler.execute(::attempt); return this }
+
+    /** Use another address from now on: drops the current link, the reconnect loop then dials [to]. */
+    fun redirect(to: NodeAddress) {
+        if (to == address) return
+        address = to
+        delay = initialDelayMs
+        link?.close("master address changed")
+    }
 
     private fun attempt() {
         if (stopped.get()) return

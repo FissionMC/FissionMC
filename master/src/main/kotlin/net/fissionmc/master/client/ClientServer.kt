@@ -25,7 +25,7 @@ import java.util.concurrent.Executors
  * run on the channel's own loop, so nothing blocks a loop.
  */
 class ClientServer(
-    val config: ClientConfig,
+    initialConfig: ClientConfig,
     val authenticator: Authenticator = MojangAuthenticator(),
     /** Players currently attached to backends (for the status ping); limbo players are added by this class. */
     private val extraPlayers: () -> Int = { 0 },
@@ -33,6 +33,9 @@ class ClientServer(
     val log: (String) -> Unit = { println(it) },
     val settings: MasterSettings = MasterSettings(),
 ) : Closeable {
+    /** The live settings: motd, max players, online mode, compression and the listen address are read from here (replaced by [rebind] on a config reload). */
+    @Volatile var config: ClientConfig = initialConfig
+        private set
     /** Global chat (needs the relay). */
     init { relay?.localAnnouncements = settings.announcements.local; relay?.petRadius = settings.petRadius }
     init { relay?.grantedLevel = { p -> if (settings.isAdmin(p.uuid)) 4 else 0 } }
@@ -48,17 +51,39 @@ class ClientServer(
 
     fun start(): ClientServer {
         FissionPacketEventsAPI.install(Side.MASTER)
-        bound = ServerBootstrap().group(group).channel(NioServerSocketChannel::class.java)
-            .childOption(ChannelOption.TCP_NODELAY, true)
-            .childHandler(object : ChannelInitializer<Channel>() {
-                override fun initChannel(ch: Channel) {
-                    System.getProperty("fission.dump-client-stream")?.let { d -> ch.pipeline().addLast("dump", StreamDump(java.nio.file.Files.createDirectories(java.nio.file.Path.of(d)), dumpCounter.incrementAndGet())) }
-                    ch.pipeline().addLast("splitter", FrameDecoder()).addLast("prepender", FramePrepender())
-                        .addLast("session", ClientSession(this@ClientServer))
-                }
-            }).bind(config.host, config.port).sync().channel()
+        bound = bindListener(config.host, config.port)
         log("[master] clients: ${config.host}:$port, online-mode=${config.onlineMode}, compression=${config.compressionThreshold}")
         return this
+    }
+
+    private fun bindListener(host: String, port: Int): Channel = ServerBootstrap().group(group).channel(NioServerSocketChannel::class.java)
+        .childOption(ChannelOption.TCP_NODELAY, true)
+        .childHandler(object : ChannelInitializer<Channel>() {
+            override fun initChannel(ch: Channel) {
+                System.getProperty("fission.dump-client-stream")?.let { d -> ch.pipeline().addLast("dump", StreamDump(java.nio.file.Files.createDirectories(java.nio.file.Path.of(d)), dumpCounter.incrementAndGet())) }
+                ch.pipeline().addLast("splitter", FrameDecoder()).addLast("prepender", FramePrepender())
+                    .addLast("session", ClientSession(this@ClientServer))
+            }
+        }).bind(host, port).sync().channel()
+
+    /**
+     * Applies a reloaded config: motd, max players, online mode and compression take effect for the next ping/login; a changed listen address is bound first and the old
+     * listener closed afterwards (same port with another host: close first, restore the old one if the bind fails). Players who are connected stay connected.
+     * Returns null on success, else why the new address could not be bound (the old listener keeps running then).
+     */
+    @Synchronized fun rebind(new: ClientConfig): String? {
+        if (new.host == config.host && new.port == config.port) { config = new; return null }
+        val old = bound; val was = "${config.host}:${config.port}"
+        try {
+            bound = bindListener(new.host, new.port); config = new; old?.close()
+        } catch (first: Throwable) {
+            if (new.port != config.port) return first.message ?: first.toString()
+            old?.close()
+            try { bound = bindListener(new.host, new.port); config = new }
+            catch (second: Throwable) { bound = runCatching { bindListener(config.host, config.port) }.getOrNull(); return second.message ?: second.toString() }
+        }
+        log("[master] clients: now listening on ${new.host}:$port (was $was)")
+        return null
     }
 
     /** An announcement line for everybody who is playing on a backend (limbo players get nothing, like chat). */

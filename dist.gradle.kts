@@ -67,11 +67,12 @@ tasks.register("dist") {
     inputs.dir(file("surface"))
     outputs.dir(distRoot)
     val mcVersion = project.property("mcVersion") as String
+    val distVersion = project(":master").version.toString()
     val surfaceDir = file("surface")
     doLast {
         val root = distRoot.get().asFile
         root.deleteRecursively(); root.mkdirs()
-        fatJar(File(root, "master.jar"), masterCp.files.toList(), "net.fissionmc.master.MasterMainKt")
+        fatJar(File(root, "master.jar"), masterCp.files.toList(), "net.fissionmc.master.MasterMainKt", mapOf("fission-dist.properties" to "version=$distVersion\nmcVersion=$mcVersion\n".toByteArray()))
         val surfaceFiles = surfaceDir.walkTopDown().filter { it.isFile }.map { it.relativeTo(surfaceDir).path.replace(File.separatorChar, '/') }.sorted().toList()
         // Two layers like the dev setup: the outer backend.jar holds ONLY the loader (Mixin, ASM, Launcher) so the app class loader never sees game classes;
         // the game classes (Paper port, our code, libraries) are a nested jar the Launcher extracts to .fission/game.jar and gives to FissionClassLoader.
@@ -82,7 +83,7 @@ tasks.register("dist") {
         val gameSha1 = java.security.MessageDigest.getInstance("SHA-1").digest(gameBytes).joinToString("") { "%02x".format(it) }
         val extra = LinkedHashMap<String, ByteArray>()
         extra["game.jar"] = gameBytes
-        extra["fission-dist.properties"] = "mcVersion=$mcVersion\ngameSha1=$gameSha1\n".toByteArray()
+        extra["fission-dist.properties"] = "version=$distVersion\nmcVersion=$mcVersion\ngameSha1=$gameSha1\n".toByteArray()
         extra["surface/INDEX"] = (surfaceFiles.joinToString("\n") + "\n").toByteArray()
         surfaceFiles.forEach { extra["surface/$it"] = File(surfaceDir, it).readBytes() }
         fatJar(File(root, "backend.jar"), loaderCp.files.toList(), "net.fissionmc.loader.Launcher", extra)

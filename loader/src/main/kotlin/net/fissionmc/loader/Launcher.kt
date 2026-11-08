@@ -19,12 +19,25 @@ import java.util.zip.ZipFile
 object Launcher {
     private fun log(s: String) = println("[fission-launcher] $s")
 
+    private fun banner(version: String, mc: String) {
+        listOf(
+            """ _____ _          _             __  __  ____""",
+            """|  ___(_)___ ___ (_) ___  _ __ |  \/  |/ ___|""",
+            """| |_  | / __/ __|| |/ _ \| '_ \| |\/| | |""",
+            """|  _| | \__ \__ \| | (_) | | | | |  | | |___""",
+            """|_|   |_|___/___/|_|\___/|_| |_|_|  |_|\____|""",
+        ).forEach(::println)
+        println("  backend | FissionMC $version | Minecraft $mc | Java ${System.getProperty("java.version")} (${System.getProperty("java.vm.name")}) | pid ${ProcessHandle.current().pid()}")
+        println()
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
         val dist = java.util.Properties().also { p ->
             Launcher::class.java.getResourceAsStream("/fission-dist.properties")?.use { p.load(it) } ?: error("not a FissionMC distribution jar: fission-dist.properties is missing (run via the Gradle run task or build with ./gradlew dist)")
         }
         val mcVersion = dist.getProperty("mcVersion") ?: error("fission-dist.properties has no mcVersion")
+        banner(dist.getProperty("version") ?: "dev", mcVersion)
         val work = File(".fission").also { it.mkdirs() }
         val vanilla = System.getenv("FISSION_VANILLA_DIR")?.takeIf { it.isNotBlank() }?.let(::File) ?: File(work, "vanilla")
         if (!File(vanilla, "META-INF/versions").isDirectory) {

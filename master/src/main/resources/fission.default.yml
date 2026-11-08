@@ -5,7 +5,7 @@
 
 node:
   mode: master                 # must be `master` for this process
-  listen: "127.0.0.1:25600"    # where the backends connect
+  listen: "0.0.0.0:25600"    # where the backends connect. 0.0.0.0 = reachable from other containers/machines (the node link is authenticated); 127.0.0.1 = only from this container
   security: true               # Ed25519 authentication of the backends (keep on outside tests)
   key: fission-node.key        # this node's key file (created if missing)
   authorized: fission-authorized.keys   # one line per backend: "<node id> <base64 public key>" (gradlew :master:nodeKeys)

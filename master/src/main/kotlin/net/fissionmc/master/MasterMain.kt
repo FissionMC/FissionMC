@@ -10,6 +10,8 @@ import java.nio.file.Path
 fun main(args: Array<String>) {
     // "nogui" / "--nogui" are accepted and ignored so a Minecraft-style launcher line (java -jar server.jar nogui, e.g. a Pterodactyl egg) works; the first other argument is the config file
     val configFile = Path.of(args.firstOrNull { it != "nogui" && !it.startsWith("-") } ?: "fission.yml").toAbsolutePath()
+    Banner.print("master", listOf("config ${configFile}", "console: stop, list, help"))
+    LogFormat.install()
     if (FissionConfig.writeDefaultIfMissing(configFile, MasterMainResources.defaultConfig())) println("[master] no ${configFile.fileName}: wrote the commented default to $configFile")
     // every section is read up front; an unknown key, a wrong type or an invalid region map stops the master with the key path
     val mc = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } } catch (e: IllegalArgumentException) {
@@ -55,6 +57,9 @@ fun main(args: Array<String>) {
     println("[master] event log epoch ${hub.epoch}")
     println("[master] plugin replication ${if (mc.plugins.replicate) "on, jars from ${configFile.parent.toAbsolutePath().resolve(mc.plugins.dir).normalize()}" else "off"}")
     println("[master] listening on ${listen.host}:${listen.port}, worlds in ${cfg.worldRoot}")
+    if (listen.host == "127.0.0.1" || listen.host == "localhost" || listen.host == "::1")
+        println("[master] WARN node.listen is ${listen.host}:${listen.port}: backends in other containers/machines cannot connect (use 0.0.0.0:${listen.port}); a changed value applies live")
+    println("[master] node link security: ${if (cfg.security) "on (Ed25519, authorized keys: ${cfg.authorizedFile})" else "OFF (node.security=false: any backend may connect)"}")
     if (settings.adminStore.any && !clientCfg.onlineMode)
         println("[master] WARN admins exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as an admin's name (and is then bound to it first if the admin has not logged in yet). Use online mode outside development.")
     // local chat format (chat.local.format): pushed to the backends on join, on every attach and every 5 s (a first send can precede the backend's handlers)
@@ -76,6 +81,28 @@ fun main(args: Array<String>) {
     if (dbgPackets) System.setProperty("fission.debug.packets", "1")
     if (dbgRelayProbe) registry.addListener(RelayProbe(relay, dbgRecordLimbo?.let { Path.of(it) }))
     Runtime.getRuntime().addShutdownHook(Thread { chunks?.let { println(it.statsLine()) }; stats.close(); clients?.close(); master.close(); transport.close() })
+    // config reload: a changed fission.yml is read again; listen addresses and the client motd/max players/online mode/compression apply live, everything else after a restart
+    val reloadable = setOf("client.listen", "client.motd", "client.max-players", "client.online-mode", "client.compression-threshold", "node.listen")
+    ConfigWatcher(configFile, { println("[master] $it") }) { oldText, newText ->
+        val changed = ConfigWatcher.changedKeys(oldText, newText)
+        println("[master] ${configFile.fileName} changed (${changed.joinToString().ifEmpty { "comments only" }}): reloading")
+        val fresh = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } }
+            catch (e: Exception) { println("[master] CONFIG RELOAD FAILED, keeping the running configuration: ${e.message}"); return@ConfigWatcher }
+        val applied = mutableListOf<String>()
+        if ("node.listen" in changed) {
+            val to = fresh.node.listen
+            if (to == null) println("[master] node.listen was removed: restart required") else master.rebind(to)?.let { println("[master] node.listen: cannot listen on ${to.host}:${to.port}: $it (still on ${(master.address as? NodeAddress.Tcp)?.let { a -> "${a.host}:${a.port}" }})") }
+                ?: run { println("[master] backends now connect to ${to.host}:${to.port}"); applied += "node.listen" }
+        }
+        if (changed.any { it.startsWith("client.") && it in reloadable } && clients != null) {
+            clients.rebind(fresh.client)?.let { println("[master] client listener: cannot apply ${fresh.client.host}:${fresh.client.port}: $it (still on ${clients.config.host}:${clients.config.port})") }
+                ?: run { applied += changed.filter { it.startsWith("client.") && it in reloadable } }
+        }
+        val later = changed.filter { it !in reloadable }
+        if (applied.isNotEmpty()) println("[master] applied live: ${applied.joinToString()}")
+        if (later.isNotEmpty()) println("[master] needs a restart to take effect: ${later.joinToString()}")
+    }.start()
+
     // the console: a hosting panel (Pterodactyl) sends "stop" to stdin and marks the server running when this line matches `)! For help, type "`
     val startedAt = java.lang.management.ManagementFactory.getRuntimeMXBean().startTime
     println("[master] Done (${"%.3f".format((System.currentTimeMillis() - startedAt) / 1000.0)}s)! For help, type \"help\"")
