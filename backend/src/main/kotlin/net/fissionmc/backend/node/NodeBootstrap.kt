@@ -25,6 +25,8 @@ object NodeBootstrap {
     private const val CONNECT_TIMEOUT_S = 30L
 
     @Volatile var link: NodeLink? = null; private set
+    /** True once a node mode other than standalone is active: only then is there a master to push chunks/player data to (a standalone server must not queue anything for it). */
+    @Volatile var networked: Boolean = false; private set
     @Volatile var master: MasterServer? = null; private set
     private val extraHandlers = java.util.concurrent.CopyOnWriteArrayList<(NodeMessage) -> Unit>()
     private var closeables = mutableListOf<AutoCloseable>()
@@ -72,6 +74,7 @@ object NodeBootstrap {
             parsed.copy(nodeId = r.id)
         }
         if (cfg.mode == NodeMode.STANDALONE) return
+        networked = true
         require(net.fissionmc.net.world.WorldFiles.safeRelative(levelName)) { "level-name '$levelName' is not usable for node sync" }
         val dest = universe.resolve(levelName).toAbsolutePath().normalize()
         require(dest != Path.of("").toAbsolutePath().normalize() && dest != universe.toAbsolutePath().normalize()) { "refusing to sync into $dest" }
