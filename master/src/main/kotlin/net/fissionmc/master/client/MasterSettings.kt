@@ -142,6 +142,10 @@ data class MasterSettings(
     val switchFreshPosition: Boolean = true,
     /** `regions.margin` blocks of hysteresis at a region border (default 8). */
     val regionMargin: Int = 8,
+    /** `cross-commands:` (tp to a player on another backend), see [CrossCommands]. */
+    val cross: CrossCommandSettings = CrossCommandSettings(),
+    /** `ghosts:` (players of other backends shown as entities). */
+    val ghosts: GhostSettings = GhostSettings(),
 ) {
     val announcements: Announcements by lazy { Announcements(messages) }
     fun isAdmin(uuid: UUID?): Boolean = adminStore.isAdmin(uuid)
@@ -169,6 +173,7 @@ data class MasterSettings(
                 switchMode = root.section("switch").string("mode", "seamless").lowercase().also { if (it != "seamless" && it != "login") throw ConfigException("switch.mode: expected seamless or login, got '$it'") },
                 switchFreshPosition = root.section("switch").bool("fresh-position", true),
                 regionMargin = root.section("regions").int("margin", 8).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
+                cross = CrossCommandSettings.from(root), ghosts = GhostSettings.from(root),
                 petRadius = root.section("travel").int("pet-radius", 24).also { if (it !in 0..128) throw ConfigException("travel.pet-radius: expected 0-128, got $it") },
                 messages = AnnouncementSettings(
                     joinGlobal = join.bool("global", true), leaveGlobal = leave.bool("global", true), joinFormat = join.string("format", ""), leaveFormat = leave.string("format", ""),

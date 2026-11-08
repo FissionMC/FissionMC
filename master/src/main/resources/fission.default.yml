@@ -71,6 +71,20 @@ world-settings:
   gamemode: true               # the default game mode
   sync-interval-ticks: 20      # how often the master broadcasts the whole state (20 = every second)
 
+# Commands with a player target that work across backends: when the sender types `/tp Bob` and Bob is on another backend, the master asks the sender's
+# backend whether the sender may run the command (permissions), moves the sender to Bob's backend without a loading screen and runs the command there as the sender.
+# An entry is `name` or `name@argIndex` (0-based); the target must be the LAST argument (`/tp Bob` moves you, `/tp Bob Alice` does not).
+cross-commands:
+  enabled: true
+  commands: [tp, teleport]
+  check-timeout-ms: 3000       # the command is passed to the sender's backend unchanged when its permission answer does not arrive in time
+
+# Players of other backends are shown as player entities (position, pose, equipment, skin parts) to players within `range` blocks.
+# The tab list always shows the whole network, independent of this section.
+ghosts:
+  enabled: true
+  range: 128                   # blocks
+
 # Pets and riders travel with a player who switches backend
 travel:
   pet-radius: 24               # blocks, 0 = pets stay

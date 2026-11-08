@@ -16,6 +16,8 @@ interface RelayClient {
     fun deliver(frame: ByteArray)
     /** The permission level (0-4) the player's current backend reports for it (join, /op, /deop). */
     fun backendPermission(level: Int) {}
+    /** The sender's backend answered a permission check for a cross-backend command. */
+    fun commandChecked(seq: Long, allowed: Boolean) {}
     /** The player's backend reports where the player is now (block x/z in [dimension]); used for region border crossings. */
     fun playerMoved(dimension: String, x: Int, z: Int) {}
     /** Like [deliver], but says which binding (player id of an [PlayerRelay.attach]) the frame came from; a client with two bindings (backend switch) overrides this. */
@@ -149,6 +151,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
     /** Sends [msg] to every live backend except [nodeId]. */
     fun broadcastExcept(nodeId: String, msg: NodeMessage) { registry.broadcast(msg, nodeId) }
 
+    /** Ghost player reports of the backends (GhostPose/GhostMeta/GhostSwing); set by the client server. */
+    @Volatile var ghostHandler: ((NodeMessage) -> Unit)? = null
+
     /** Receives the backends' answers to global chat messages (set by the master main / tests). */
     @Volatile var chatResultHandler: ((GlobalChatResult) -> Unit)? = null
 
@@ -165,6 +170,8 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerPacketToClient -> { framesOut.incrementAndGet(); bytesOut.addAndGet(msg.bytes.size.toLong()); bindings[msg.playerId]?.takeIf { it.node === node }?.let { it.client.deliverFrom(it.id, msg.bytes) } }
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
             is GlobalChatResult -> chatResultHandler?.invoke(msg)
+            is GhostPose, is GhostMeta, is GhostSwing -> ghostHandler?.invoke(msg)
+            is CommandCheckResult -> bindings[msg.playerId]?.takeIf { it.node === node }?.client?.commandChecked(msg.seq, msg.allowed)
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
             is PlayerPosition -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.let { it.dim = msg.dimension; it.x = msg.x; it.z = msg.z; it.known = true; it.client.playerMoved(msg.dimension, msg.x, msg.z) } }
             is EntityHandover -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // owner -> new owner, as is

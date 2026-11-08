@@ -43,6 +43,16 @@ class ClientServer(
     init { relay?.grantedLevel = { p -> if (settings.isAdmin(p.uuid)) 4 else 0 } }
     /** Global chat (needs the relay). */
     val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
+    /** The network wide tab list and the ghost players (see `.dev/docs/tablist-ghosts-commands.md`). */
+    val tabs = TabListHub(log)
+    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { v, p -> tabs.holds(v, p) }, log)
+    val crossCommands = CrossCommands(settings.cross)
+    init {
+        if (settings.ghosts.enabled) {
+            tabs.onShown = ghosts::tabShown
+            relay?.ghostHandler = { m -> when (m) { is net.fissionmc.protocol.GhostPose -> ghosts.pose(m); is net.fissionmc.protocol.GhostMeta -> ghosts.meta(m); is net.fissionmc.protocol.GhostSwing -> ghosts.swing(m); else -> {} } }
+        }
+    }
     private val dumpCounter = java.util.concurrent.atomic.AtomicInteger()
     val keyPair: KeyPair = LoginCrypto.newKeyPair()
     private val sessions = ConcurrentHashMap<UUID, ClientSession>()

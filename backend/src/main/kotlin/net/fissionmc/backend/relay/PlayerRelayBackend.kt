@@ -89,6 +89,7 @@ object PlayerRelayBackend {
             if (m is RegionMap || m is GenerateChunk || m is EntityHandover) RegionsBackend.onMessage(m, serverRef)
             if (m is PlayerMoveTo) serverRef?.let { srv -> srv.execute { srv.playerList.getPlayer(java.util.UUID(m.uuidHigh, m.uuidLow))?.connection?.teleport(m.x, m.y, m.z, m.yaw, m.pitch) } }   // position hand-off: where the client really is
             if (m is ChatFormat) LocalChatBackend.onMessage(m)
+            if (m is CommandCheck) serverRef?.let { srv -> GhostBackend.checkCommand(srv, m, synchronized(sessions) { sessions[m.playerId]?.name }) }
             if (m is WorldSettingsState || m is WorldSettingApply) WorldSettingsBackend.onMessage(m)
             if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)
             if (m is PlayerPermission || m is PlayerDetach) PermissionBackend.onMessage(m, serverRef)
@@ -121,6 +122,7 @@ object PlayerRelayBackend {
         TravelBackend.tick(server)
         WorldSettingsBackend.tick(server)
         RegionsBackend.tick(server)
+        GhostBackend.tick(server)
         net.fissionmc.backend.chunk.ChunkAuthorityBackend.tick(server)
         LimboCheck.once(server)
         GameplayCheck.tick(server)

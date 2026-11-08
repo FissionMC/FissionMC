@@ -39,7 +39,7 @@ import javax.crypto.Cipher
  * configuration, then limbo play. Runs on the channel's event loop; it never blocks (auth runs on [ClientServer.auth]).
  * All packets are decoded/encoded with PacketEvents wrappers.
  */
-class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAdapter(), net.fissionmc.master.RelayClient {
+class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAdapter(), net.fissionmc.master.RelayClient, TabViewer, net.fissionmc.master.seamless.GhostViewer {
     private enum class Mode { LIMBO, AWAIT_ACK, RELAY }
     private var mode = Mode.LIMBO
     val inRelay: Boolean get() = mode == Mode.RELAY
@@ -109,6 +109,65 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** Permission level the current backend reports for this player (see [net.fissionmc.protocol.PlayerPermissionReport]). */
     @Volatile var backendLevel = 0; private set
     override fun backendPermission(level: Int) { backendLevel = level }
+
+    // ---- central tab list, ghost players, cross-backend commands (see .dev/docs/tablist-ghosts-commands.md)
+    /** The backend the client plays on with a complete PLAY phase on both sides, else null (limbo, classic reconfiguration, no backend). Read by other sessions' threads. */
+    @Volatile private var liveNode: String? = null
+    private fun refreshLive() { liveNode = if (mode == Mode.RELAY && tracker.clientState == ConnectionState.PLAY && tracker.serverState == ConnectionState.PLAY) currentNodeId else null }
+    override val tabUuid: java.util.UUID get() = prof!!.uuid
+    override val tabNode: String? get() = liveNode
+    override fun tabSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { cleanup.observe(frame); writeRelay(frame) } } }
+    override val ghostUuid: java.util.UUID get() = prof!!.uuid
+    override val ghostNode: String? get() = liveNode
+    override fun ghostSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) writeRelay(frame) } }
+    override fun ghostAdded(clientId: Int) { channel.eventLoop().execute { idMap.onAdded(clientId, -1) } }
+    override fun ghostRemoved(clientId: Int) { channel.eventLoop().execute { idMap.onRemoved(clientId) } }
+    private val tabDecode: (ByteArray) -> com.github.retrooper.packetevents.event.PacketSendEvent? = { f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }
+    /** The client holds a fresh level/tab list: forget what the hubs think it has. */
+    private fun hubsReset() { server.tabs.reset(this); server.ghosts.reset(this) }
+    /** The join stream of the current backend is in: add the remote tab lines, then the ghosts that are in range. */
+    private fun hubsPlaced() { refreshLive(); server.tabs.placed(this); server.ghosts.placed(this) }
+
+    private class PendingCheck(val seq: Long, val frame: ByteArray, val targetName: String, val targetNode: String) { var timeout: ScheduledFuture<*>? = null }
+    private var pendingCheck: PendingCheck? = null
+    private var checkSeq = 0L
+    /** The command to run on the new backend once the switch that was started for it is complete. */
+    private var commandAfterSwitch: ByteArray? = null
+
+    override fun commandChecked(seq: Long, allowed: Boolean) { channel.eventLoop().execute {
+        val pc = pendingCheck ?: return@execute
+        if (pc.seq != seq) return@execute
+        pc.timeout?.cancel(false); pendingCheck = null
+        if (!allowed) { server.log("[cross] $playerName: backend $currentNodeId does not allow the command, passing it on"); passCommand(pc.frame); return@execute }
+        val target = server.findByName(pc.targetName)?.currentNodeId
+        if (target == null || target == currentNodeId) { passCommand(pc.frame); return@execute }
+        commandAfterSwitch = pc.frame
+        server.log("[cross] $playerName: moving to $target for a command on ${pc.targetName}")
+        startSwitch(target) { why -> commandAfterSwitch = null; server.log("[cross] $playerName: cannot move to $target: $why"); passCommand(pc.frame) }
+    } }
+
+    /** Sends a client command frame to the current backend as is (what the client sent). */
+    private fun passCommand(frame: ByteArray) { val id = relayId ?: return; server.relay?.toBackend(id, frame) }
+
+    /** The switch is complete: run the command that triggered it, a moment later (the new backend finishes placing the player first). */
+    private fun runCommandAfterSwitch() {
+        val f = commandAfterSwitch ?: return; commandAfterSwitch = null
+        channel.eventLoop().schedule({ if (channel.isActive && mode == Mode.RELAY) passCommand(f) }, 400, TimeUnit.MILLISECONDS)
+    }
+
+    /** `/tp <name>` and friends: true = swallowed (the master asks the sender's backend first and decides). */
+    private fun crossCommand(bytes: ByteArray, cmd: String): Boolean {
+        val cc = server.crossCommands; val relay = server.relay ?: return false
+        if (!cc.enabled || pendingCheck != null || switching != null || switchPending || mode != Mode.RELAY || liveNode == null) return false
+        val id = relayId ?: return false
+        val m = cc.match(cmd, currentNodeId) { name -> server.findByName(name)?.let { o -> o.liveNodeOf()?.let { n -> o.playerName to n } } } ?: return false
+        val pc = PendingCheck(++checkSeq, bytes, m.targetName, m.targetNode); pendingCheck = pc
+        pc.timeout = channel.eventLoop().schedule({ if (pendingCheck === pc) commandChecked(pc.seq, false) }, server.settings.cross.checkTimeoutMs, TimeUnit.MILLISECONDS)
+        relay.sendTo(id, net.fissionmc.protocol.CommandCheck(id, pc.seq, cmd))
+        return true
+    }
+    /** Node of this session as other sessions may see it. */
+    fun liveNodeOf(): String? = liveNode
     /**
      * Admin for the master's own commands and command tree: in the master's admin set (which is also operator level 4 on every backend), or
      * operator level 4 on the backend the player is on right now (`/op` on that backend).
@@ -176,6 +235,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     override fun channelInactive(ctx: ChannelHandlerContext) {
         keepAlive?.cancel(false)
+        pendingCheck?.timeout?.cancel(false); pendingCheck = null
+        if (registered) { liveNode = null; server.ghosts.unregister(this); server.tabs.unregister(this) }
         if (announcedJoin && registered) { announcedJoin = false; server.unregister(this); registered = false; server.announce(server.settings.announcements.leave(playerName, currentNodeId)) }
         relayId?.let { server.relay?.detach(it, "client left") }
         switching?.let { server.relay?.detach(it.id, "client left") }
@@ -222,9 +283,12 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             val p = posTracker.latest(2.0)
             if (p != null) patched = net.fissionmc.master.seamless.PositionFrames.patchPlayerPosition(rewritten, p) else net.fissionmc.master.seamless.PositionFrames.observeTeleport(rewritten, posTracker)
         } else if (state == ConnectionState.PLAY && id == pPlayerPosition) net.fissionmc.master.seamless.PositionFrames.observeTeleport(rewritten, posTracker)   // the client was teleported (spawn, /tp, a switch): that is where it is now
-        val frame = toClient(patched) ?: return
+        var frame = toClient(patched) ?: return
         if (state == ConnectionState.PLAY) {
             join?.let { j -> if (id == pPlayerPosition) j.positionSent() else if (id == pBatchFinished) j.chunkBatch() }
+            // central tab list: the hub records this player's own line and keeps the lines of players who are still online on another backend
+            if (id == PlayIds.playerInfoUpdate) frame = server.tabs.update(this, frame)
+            else if (id == PlayIds.playerInfoRemove) frame = server.tabs.remove(this, frame) ?: return
             cleanup.observe(frame); clientView.observe(frame)
             if (id == pBatchFinished) batchOutstanding++
             if (id == PlayIds.keepAliveS2C && frame.size >= 9) { backendKeepAlives.add(java.nio.ByteBuffer.wrap(PlayIds.payload(frame)).long); while (backendKeepAlives.size > 8) backendKeepAlives.poll() }
@@ -234,6 +298,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             Mode.RELAY -> writeRelay(frame)
             else -> if (pendingFromBackend.size < 20_000) pendingFromBackend.add(frame) else channel.close()
         }
+        // classic reconfiguration (fallback path): the backend's Login is the first PLAY frame; the hubs add their lines behind it
+        if (mode == Mode.RELAY && state == ConnectionState.PLAY && id == PlayIds.login && liveNode == null) hubsPlaced()
     }
 
     private fun writeRelay(frame: ByteArray) {
@@ -249,7 +315,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     override fun detachedFrom(bindingId: Long, reason: String, backendLost: Boolean) { channel.eventLoop().execute {
         val sw = switching
         if (sw != null && sw.id == bindingId) {   // the backend we were switching to refused or died: the player stays where it is
-            sw.timeout?.cancel(false); switching = null; restoreDataOwner()
+            sw.timeout?.cancel(false); switching = null; restoreDataOwner(); commandAfterSwitch = null
             server.log("[client $playerName] switch to ${sw.nodeId} failed: $reason")
             tell("Could not move to ${sw.nodeId}: ${reason.removePrefix("kick:")}")
             return@execute
@@ -257,7 +323,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (bindingId != relayId) return@execute
         val pendingTransplant = switching?.takeIf { it.login != null }
         if (pendingTransplant != null) { server.log("[client $playerName] backend ended during a transplant to ${pendingTransplant.nodeId}: taking over now"); completeTransplant(pendingTransplant); return@execute }
-        relayId = null; currentNodeId = null; backendLevel = 0
+        relayId = null; currentNodeId = null; backendLevel = 0; refreshLive()
         server.log("[client $playerName] backend session ended: $reason")
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) { channel.close(); return@execute }
         // the client's real phase is what the tracker saw, not what we last set by hand
@@ -286,6 +352,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         server.log("[client] $playerName: backend lost, back to limbo")
         pendingFromBackend.clear(); tap = null; tracker = net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion(), ConnectionState.PLAY)
         mode = Mode.LIMBO; currentSpawn = null; idMap.start(Limbo.ENTITY_ID); clientView.reset()
+        refreshLive(); server.tabs.hidden(this); server.ghosts.hidden(this); hubsReset()
         startLimboPlay(cleanup.cleanupFrames())
     }
 
@@ -415,7 +482,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val cleanupTab = cleanup.cleanupFrames()
         val removal = net.fissionmc.master.seamless.TransplantBuilder.cleanup(idMap, clientView, cleanupTab)
         val removedEntities = idMap.heldIds().size
-        relayId = sw.id; currentNodeId = sw.nodeId; switching = null
+        hubsReset()
+        relayId = sw.id; currentNodeId = sw.nodeId; switching = null; refreshLive()
         if (old != null) server.relay?.detach(old, "switched to ${sw.nodeId}")
         backendKeepAlives.clear(); pendingFromBackend.clear()
         staleBatchAcks = batchOutstanding; batchOutstanding = 0
@@ -442,6 +510,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         channel.flush()
         if (lastTeleportId != null && latest != null) server.relay?.toBackend(sw.id, net.fissionmc.master.seamless.PositionFrames.acceptTeleportation(lastTeleportId, latest.x, latest.y, latest.z, latest.yaw, latest.pitch))
         server.relay?.toBackend(sw.id, PlayIds.frame(PlayIds.playerLoaded))
+        hubsPlaced(); runCommandAfterSwitch()
         announceArrival(sw.nodeId, if (old != null) before else null)
         server.log("[client] $playerName now on ${sw.nodeId} (transplant: no Login/Respawn, client keeps entity id ${idMap.clientSelf}, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, $removedEntities entities removed, ${removal.size} cleanup frames, ${sw.buffer.size} buffered frames, ${forgets.size} chunks forgotten, position hand-off ${if (lastTeleportId != null) "to the client's real position" else "off"})")
     }
@@ -459,6 +528,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log, ConnectionState.PLAY)
         tracker = tap?.tracker ?: net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion(), ConnectionState.PLAY)
         val cleanupFrames = cleanup.cleanupFrames()
+        hubsReset(); refreshLive()
         cleanupFrames.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
         selfEntityId = if (login.size >= 5) java.nio.ByteBuffer.wrap(PlayIds.payload(login)).int else -1
         idMap.start(selfEntityId); clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
@@ -473,6 +543,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         // a second Login keeps the old LocalPlayer (bound to the old level): Respawn makes the client build a new one (see RespawnFrames)
         runCatching { RespawnFrames.fromLogin(login) }.onSuccess { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }.onFailure { server.log("[client $playerName] no Respawn after the Login: $it") }
         channel.flush()
+        hubsPlaced(); runCommandAfterSwitch()
         announceArrival(sw.nodeId, if (old != null) currentNodeIdBefore else null)
         join?.let { j -> j.loginForwarded(); channel.eventLoop().schedule({ if (join === j) { server.log(j.line(playerName, sw.nodeId)); join = null } }, 20, TimeUnit.SECONDS) }
         server.log("[client] $playerName now on ${sw.nodeId} (Login entity id $selfEntityId, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, ${cleanupFrames.size} cleanup frames)")
@@ -484,7 +555,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val id = server.relay?.attach(this, nodeId)
         if (id == null) { tell("Could not move to ${nodeId ?: "a backend"}: not connected"); return }
         if (old != null) server.relay?.detach(old, "switch (classic)")
-        relayId = id; currentNodeId = server.relay?.nodeIdOf(id); mode = Mode.AWAIT_ACK; currentSpawn = null; clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
+        commandAfterSwitch = null
+        relayId = id; currentNodeId = server.relay?.nodeIdOf(id); mode = Mode.AWAIT_ACK; refreshLive(); server.ghosts.hidden(this); currentSpawn = null; clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
         keepAlive?.cancel(false); backendKeepAlives.clear(); pendingFromBackend.clear()
         tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log)
         tracker = tap?.tracker ?: net.fissionmc.packets.ClientStateTracker(net.fissionmc.packets.StateIds.forVersion())
@@ -543,6 +615,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             pBatchAck -> { if (staleBatchAcks > 0) { staleBatchAcks--; return true }; if (batchOutstanding > 0) batchOutstanding--; return false }
             PlayIds.chatCommand, PlayIds.chatCommandSigned -> {
                 val cmd = Strings.readFirst(bytes) ?: return false
+                if (pid == PlayIds.chatCommand && crossCommand(bytes, cmd)) return true   // the signed variant carries a signature chain of the sender's backend: never held back
                 return MasterCommands.handle(this, server, cmd)
             }
             PlayIds.commandSuggestion -> {   // tab completion of the master's own `/fission send <player> <backend>` (admins only)
@@ -665,6 +738,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         prof = p; join = JoinTiming()
         if (!server.register(this, p)) { disconnect("You are already connected"); return }
         registered = true
+        server.tabs.register(this, tabDecode); server.ghosts.register(this)
         server.settings.adminStore.bindOnLogin(p.name, p.uuid)   // bootstrap: a name entry in the admin list becomes this uuid
         val t = server.config.compressionThreshold
         if (t >= 0) {

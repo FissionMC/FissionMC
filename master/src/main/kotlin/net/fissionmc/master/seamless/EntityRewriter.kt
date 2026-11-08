@@ -183,11 +183,21 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
     private val sSpectate = PlayPacketIds.s("SpectatorAction")
     val handledServerbound: Set<Int> = setOf(sInteract, sAttack, sPlayerCommand, sPick, sTagQuery, sCmdMinecart, sSpectate)
 
+    /** Does an entity-targeting serverbound packet name a ghost player entity (an id of [GhostHub.GHOST_BASE] and up, which only the master knows)? */
+    private fun namesGhost(frame: ByteArray): Boolean {
+        val src = Unpooled.wrappedBuffer(frame); val pid = VarInts.tryRead(src) ?: return false
+        if (pid != sInteract && pid != sAttack && pid != sPick && pid != sTagQuery) return false
+        if (pid == sTagQuery) VarInts.tryRead(src)
+        val e = VarInts.tryRead(src) ?: return false
+        return e >= GhostHub.GHOST_BASE
+    }
+
     /** Counts of serverbound packets dropped because they named an entity this backend generation never told the client about. */
     @Volatile var droppedUnknown = 0L; private set
 
     /** A client frame heading for the current backend; null = drop (names an unknown entity). */
     fun toBackend(frame: ByteArray): ByteArray? {
+        if (namesGhost(frame)) { droppedUnknown++; return null }
         if (map.identity) return frame
         val src = Unpooled.wrappedBuffer(frame); val pid = vi(src)
         try {
