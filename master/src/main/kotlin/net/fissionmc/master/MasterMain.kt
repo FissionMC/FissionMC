@@ -53,7 +53,7 @@ private fun runMaster(args: Array<String>) {
         val det = chunkDeterministic
         val timer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "chunk-authority").also { it.isDaemon = true } }
         val store = net.fissionmc.master.chunk.FileChunkStore(Path.of(chunkStoreDir)) { println(it) }
-        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, leaseSeconds * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }).also { a ->
+        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, leaseSeconds * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }, regionOwner = { d, x, z -> if (regions.enabled) regions.owner(d, x * 16 + 8, z * 16 + 8) else null }).also { a ->
             val every = statsSeconds
             var last = ""
             timer.scheduleWithFixedDelay({ val l = a.statsLine(); if (l != last) { last = l; println(l) } }, every, every, java.util.concurrent.TimeUnit.SECONDS)

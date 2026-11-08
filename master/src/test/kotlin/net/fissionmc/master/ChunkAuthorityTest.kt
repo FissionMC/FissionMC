@@ -191,6 +191,23 @@ class ChunkAuthorityTest {
         assertTrue(links["c"]!!.next() is ChunkAvailable); assertTrue(links["c"]!!.sent.isEmpty(), "only the accepted push was announced")
     }
 
+    @Test fun `entities and poi of a chunk are only accepted from its region owner`() {
+        val reg = NodeRegistry(); val links = listOf("a", "b").associateWith { Link(it) }
+        links.forEach { (id, l) -> reg.register(PeerInfo(id, NodeRole.BACKEND, 1, "26.3"), l) }
+        val auth = ChunkAuthority(store(), reg, Executors.newSingleThreadScheduledExecutor { Thread(it).also { t -> t.isDaemon = true } }, {}, 30_000, regionOwner = { _, x, _ -> if (x < 0) "a" else "b" })
+        // chunk -3,0 belongs to a: b's (ghost) entity data is refused, a's is stored; a poi push of b is refused too
+        auth.handle(reg["b"]!!, ChunkPush("minecraft:overworld", ChunkKind.ENTITIES, -3, 0, 0, 0, blob("stale tnt")))
+        assertFalse((links["b"]!!.nextReal() as ChunkStored).accepted)
+        auth.handle(reg["b"]!!, ChunkPush("minecraft:overworld", ChunkKind.POI, -3, 0, 0, 0, blob("poi")))
+        assertFalse((links["b"]!!.nextReal() as ChunkStored).accepted)
+        auth.handle(reg["a"]!!, ChunkPush("minecraft:overworld", ChunkKind.ENTITIES, -3, 0, 0, 0, blob("real")))
+        assertTrue((links["a"]!!.nextReal() as ChunkStored).accepted)
+        assertEquals(2L, auth.pushesNotOwner.get())
+        // and b's own chunk is accepted from b
+        auth.handle(reg["b"]!!, ChunkPush("minecraft:overworld", ChunkKind.ENTITIES, 4, 0, 0, 0, blob("mine")))
+        assertTrue((links["b"]!!.nextReal() as ChunkStored).accepted)
+    }
+
     @Test fun `chunk messages survive the wire`() {
         val reg = MessageRegistry.core().registerChunkMessages(); val bytes = blob("payload")
         fun <T : NodeMessage> rt(m: T): NodeMessage { val b = Unpooled.buffer(); reg.encode(m, b); return reg.decode(b).also { assertEquals(0, b.readableBytes()) } }

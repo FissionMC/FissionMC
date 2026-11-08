@@ -21,6 +21,8 @@ class ChunkAuthority(
     private val generationOwner: (dimension: String, x: Int, z: Int) -> String? = { _, _, _ -> null },
     /** Static regions: may the non-owner [requester] wait for the owner to generate this chunk (a player of the requester can see it: a ghost chunk)? Else the requester generates it locally and does not keep it. */
     private val ownerGenerates: (requester: String, dimension: String, x: Int, z: Int) -> Boolean = { _, _, _, _ -> true },
+    /** Static regions: the backend that owns (ticks) chunk x,z, null = nobody in particular. Entities and points of interest of a chunk are only accepted from it. */
+    private val regionOwner: (dimension: String, x: Int, z: Int) -> String? = { _, _, _ -> null },
 ) {
     private class Lease(val node: String, var expiresAt: Long)
     private class Waiter(val node: RegisteredNode, val reqId: Long)
@@ -108,6 +110,10 @@ class ChunkAuthority(
         val key = ChunkKey(m.dimension, m.kind, m.x, m.z)
         if (m.kind == ChunkKind.CHUNK) generationOwner(m.dimension, m.x, m.z)?.takeIf { it != node.info.nodeId && registry[it]?.link?.isOpen == true }?.let { owner ->
             // regions: only the generation owner writes a chunk (a neighbour may have advanced it in memory to finish its own border features: its copy is not kept)
+            pushesRejected.incrementAndGet(); pushesNotOwner.incrementAndGet(); node.link.send(ChunkStored(m.dimension, m.kind, m.x, m.z, false, store.get(key)?.version ?: 0L)); return
+        }
+        if (m.kind != ChunkKind.CHUNK) regionOwner(m.dimension, m.x, m.z)?.takeIf { it != node.info.nodeId && registry[it]?.link?.isOpen == true }?.let {
+            // a ghost copy never has live entities: its (empty or stale) entity and poi data must not overwrite the owner's
             pushesRejected.incrementAndGet(); pushesNotOwner.incrementAndGet(); node.link.send(ChunkStored(m.dimension, m.kind, m.x, m.z, false, store.get(key)?.version ?: 0L)); return
         }
         val r = store.put(key, m.status, m.baseVersion, m.bytes, node.info.nodeId)

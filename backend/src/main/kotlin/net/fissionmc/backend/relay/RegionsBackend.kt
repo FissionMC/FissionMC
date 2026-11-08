@@ -77,6 +77,16 @@ object RegionsBackend {
         return ownsBlock(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)
     }
 
+    @JvmField val foreignEntitiesSkipped = java.util.concurrent.atomic.AtomicLong()
+    /** An entity read from disk / worldgen: may this backend hold it? (its position is in a chunk this backend owns, or regions are off) */
+    @JvmStatic fun ownsEntityAtLoad(entity: Entity): Boolean {
+        if (!enabled) return true
+        val level = entity.level() as? ServerLevel ?: return true
+        val ok = ownsBlock(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)
+        if (!ok && net.fissionmc.net.FissionDebug.on) log.info("[fission] entities: not loading ${entity.type.descriptionId} ${entity.uuid} at ${entity.blockX},${entity.blockY},${entity.blockZ} (${level.dimension().identifier()}): owned by ${ownerOf(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)}")
+        return ok
+    }
+
     /**
      * A vehicle (boat, minecart, horse, ...) with a player somewhere in its passenger tree is ticked by the player's backend wherever it is. The player is here, the other side only has a ghost,
      * and a frozen vehicle under a steering player breaks the vanilla movement checks ("moved too quickly", rubber band) during the hysteresis stretch behind the border.
@@ -125,7 +135,7 @@ object RegionsBackend {
         if (ticks % 20 == 0 || (strayHint && ticks % 4 == 0)) { strayHint = false; handOverStrays(server, link) }
         if (ticks % 100 == 0) {
             val l = "[fission] regions: stats ownedChunkTicks=${ownedChunkTicks.get()} ghostChunkTicksSkipped=${ghostChunkTicksSkipped.get()} ghostEntityTicksSkipped=${ghostEntityTicksSkipped.get()} " +
-                "ghostBlockTicksSkipped=${ghostBlockTicksSkipped.get()} ghostSpawnPassesSkipped=${ghostSpawnPassesSkipped.get()} generateJobs=${generatedCount.get()} handedOver=${handedOverCount.get()} handoversReceived=${receivedCount.get()}"
+                "ghostBlockTicksSkipped=${ghostBlockTicksSkipped.get()} ghostSpawnPassesSkipped=${ghostSpawnPassesSkipped.get()} generateJobs=${generatedCount.get()} handedOver=${handedOverCount.get()} handoversReceived=${receivedCount.get()} foreignEntitiesNotLoaded=${foreignEntitiesSkipped.get()} pistonsBlocked=${pistonsBlocked.get()}"
             if (l != lastStats) { lastStats = l; if (net.fissionmc.net.FissionDebug.on) log.info(l) }
         }
     }
@@ -137,14 +147,18 @@ object RegionsBackend {
             val dim = level.dimension().identifier().toString()
             val byTarget = HashMap<String, MutableList<net.fissionmc.protocol.EntityBlob>>()
             for (e in level.allEntities) {
-                if (e is ServerPlayer || e.isRemoved || e.tickCount == 0 || e.isPassenger || e is Projectile || handingOver.containsKey(e.uuid)) continue
+                // (no tickCount test any more: foreign copies from disk are not loaded at all (PersistentEntitySectionManagerRegionMixin), so every live entity in foreign territory is new and must go to its owner)
+                if (e is ServerPlayer || e.isRemoved || e.isPassenger || handingOver.containsKey(e.uuid)) continue
+                if (e is Projectile && e.getOwner() is ServerPlayer) continue   // a player's own arrow / pearl / trident is resolved by the owner player's backend (pearls teleport the thrower)
                 if (e.passengers.isNotEmpty() && carriesPlayer(e)) continue   // a player's vehicle follows the player (RootVehicle / mount hint), it is never handed over under him
                 if (e is Leashable && e.isLeashed) continue
-                if (e.type.category == net.minecraft.world.entity.MobCategory.MISC && e !is net.minecraft.world.entity.item.ItemEntity && e !is net.minecraft.world.entity.ExperienceOrb && e !is VehicleEntity) continue   // empty boats and minecarts (chest ones with their contents) drift and roll over borders
+                if (e.type.category == net.minecraft.world.entity.MobCategory.MISC && e !is net.minecraft.world.entity.item.ItemEntity && e !is net.minecraft.world.entity.ExperienceOrb && e !is VehicleEntity
+                    && e !is net.minecraft.world.entity.item.PrimedTnt && e !is net.minecraft.world.entity.item.FallingBlockEntity && e !is Projectile) continue   // empty boats and minecarts drift over borders; lit TNT and falling blocks fly over them
                 val target = ownerOf(dim, e.blockX, e.blockZ) ?: continue
                 if (target == you) continue
                 val b = TravelBackend.blobFor(EntityBlobKind.HANDOVER, e) ?: continue
                 byTarget.computeIfAbsent(target) { ArrayList() } += b; handingOver[e.uuid] = now; handedOverCount.incrementAndGet()
+                if (net.fissionmc.net.FissionDebug.on) log.info("[fission] entities: handing ${e.type.descriptionId} ${e.uuid} at ${e.blockX},${e.blockY},${e.blockZ} over to $target")
             }
             for ((target, blobs) in byTarget) blobs.chunked(MAX_ENTITY_BLOBS).forEach { link.send(EntityHandover(you, target, dim, it)) }
         }

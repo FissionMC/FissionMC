@@ -14,7 +14,11 @@ public final class FissionPlugin {
     public static void enable(JavaPlugin plugin) {
         plugin.getCommand("fission").setExecutor(new CommandExecutor() {
             @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-                if (args.length == 0 || !args[0].equalsIgnoreCase("status")) { sender.sendMessage("Usage: /fission status"); return true; }
+                if (args.length >= 1 && args[0].equalsIgnoreCase("debug")) {
+                    for (String line : FissionStatus.debug.apply(java.util.Arrays.copyOfRange(args, 1, args.length))) sender.sendMessage(line);
+                    return true;
+                }
+                if (args.length == 0 || !args[0].equalsIgnoreCase("status")) { sender.sendMessage("Usage: /fission status | debug entities|ghost-set|ghost-sync"); return true; }
                 sender.sendMessage("FissionMC status");
                 for (String line : FissionStatus.provider.get()) sender.sendMessage("  " + line);
                 return true;

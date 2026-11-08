@@ -105,6 +105,11 @@ object ChunkAuthorityBackend {
 
     /** IOWorker mixin: a chunk/entities/poi tag is being stored locally; queue it for the master. */
     @JvmStatic fun onStore(dim: String, kind: Int, x: Int, z: Int, tag: CompoundTag) {
+        if (kind != ChunkKind.CHUNK && net.fissionmc.backend.relay.RegionsBackend.enabled) {
+            // a ghost copy has no live entities and no authoritative poi: its data would overwrite the owner's (the master refuses it as well)
+            val o = net.fissionmc.backend.relay.RegionsBackend.chunkOwner(dim, x, z)
+            if (o != null && o != net.fissionmc.backend.relay.RegionsBackend.youId()) return
+        }
         if (!NodeBootstrap.networked) return   // standalone: no master, nothing to push (queueing would keep every saved chunk's NBT in memory for ever)
         val rank = if (kind == ChunkKind.CHUNK) ChunkStatusRank.of(tag.getStringOr("Status", "")) else 0
         queue[K(dim, kind, x, z)] = Queued(tag, rank)
