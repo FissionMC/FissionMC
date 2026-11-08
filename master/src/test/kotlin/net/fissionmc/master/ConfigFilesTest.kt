@@ -19,6 +19,7 @@ class ConfigFilesTest {
         assertTrue(c.node.masterProcess); assertEquals(25600, c.node.listen!!.port); assertEquals(25565, c.client.port)
         assertFalse(c.regions.enabled); assertEquals("minimessage", c.settings.chat.syntax); assertEquals(24, c.settings.petRadius)
         assertTrue(c.chunkAuthority); assertEquals(60L, c.leaseSeconds); assertEquals("chunkstore", c.chunkStoreDir)
+        assertTrue(c.plugins.replicate); assertEquals("plugins", c.plugins.dir)
         assertEquals(setOf("time", "weather", "gamerules", "difficulty", "border", "spawn", "gamemode"), c.worldSettings.categories); assertEquals(20, c.worldSettings.syncIntervalTicks)
     }
 
@@ -43,6 +44,15 @@ class ConfigFilesTest {
         val y = "chat:\n  global:\n    ${t[0]}\n  local:\n    ${t[1]}\n"
         val s = net.fissionmc.master.client.MasterSettings.from(FissionConfig.parse(y))
         assertTrue(s.chat.format.startsWith("<#b0d8d8>Global")); assertTrue(s.chat.localFormat.startsWith("<#b0d8d8>{serverid}"))
+    }
+
+    @Test fun `plugin replication keys are read and validated`() {
+        val c = master("node: { mode: master, listen: \"127.0.0.1:1\" }\nplugins: { replicate: false, dir: shared }")
+        assertFalse(c.plugins.replicate); assertEquals("shared", c.plugins.dir)
+        assertFailsWith<ConfigException> { master("node: { mode: master, listen: \"127.0.0.1:1\" }\nplugins: { dirr: x }") }.let { assertTrue(it.message!!.contains("plugins.dirr")) }
+        val text = Files.readString(repo.resolve("backend/src/main/resources/fission.backend.default.yml")).lines().joinToString("\n") { l -> if (l.startsWith("# plugins:") || l.startsWith("#   replicate:") || l.startsWith("#   conflict:")) l.removePrefix("# ") else l }
+        val root = FissionConfig.parse(text); val p = net.fissionmc.net.plugins.PluginsConfig.from(root); NodeConfig.from(root, repo.resolve("run-a")); ClientConfig.from(root); root.finish()
+        assertTrue(p.replicate); assertEquals(net.fissionmc.net.plugins.ConflictPolicy.LOCAL, p.conflict)
     }
 
     @Test fun `the committed backend default parses`() {

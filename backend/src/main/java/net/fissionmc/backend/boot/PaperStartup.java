@@ -81,7 +81,7 @@ public final class PaperStartup {
         args.add("--universe");
         args.add(universe.getPath());
         // FissionMC: node networking (master link + world pull) must finish before vanilla starts loading the world.
-        net.fissionmc.backend.node.NodeBootstrap.start(universe.toPath(), levelName(paperOptions));
+        net.fissionmc.backend.node.NodeBootstrap.start(universe.toPath(), levelName(paperOptions), paperOptions.has("plugins") ? ((File) paperOptions.valueOf("plugins")).toPath() : java.nio.file.Path.of("plugins"));
         if (paperOptions.has("world")) {
             args.add("--world");
             args.add((String) paperOptions.valueOf("world"));

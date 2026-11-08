@@ -45,12 +45,14 @@ fun main(args: Array<String>) {
     val chunkOff: ((RegisteredNode, net.fissionmc.protocol.NodeMessage) -> Boolean)? = if (chunks == null) { n, m ->
         if (m is net.fissionmc.protocol.ChunkRequest) { n.link.send(net.fissionmc.protocol.ChunkAbsent(m.reqId, false)); true } else m is net.fissionmc.protocol.ChunkPush
     } else null
-    val master = MasterServer(transport, listen, cfg.worldRoot, registry) { n, m -> if (!relay.handle(n, m) && chunks?.handle(n, m) != true && chunkOff?.invoke(n, m) != true) hub.handle(n, m) }.start()
+    val pluginServer = net.fissionmc.net.plugins.PluginServer(configFile.parent.toAbsolutePath().resolve(mc.plugins.dir).normalize(), mc.plugins.replicate) { println("[master] $it") }
+    val master = MasterServer(transport, listen, cfg.worldRoot, registry, { n, m -> if (!relay.handle(n, m) && chunks?.handle(n, m) != true && chunkOff?.invoke(n, m) != true) hub.handle(n, m) }, pluginServer).start()
     master.registry.addListener(object : NodeRegistry.Listener {
         override fun joined(node: RegisteredNode) = println("[master] ${node.info.nodeId} joined")
         override fun left(node: RegisteredNode, reason: String) = println("[master] ${node.info.nodeId} left: $reason")
     })
     println("[master] event log epoch ${hub.epoch}")
+    println("[master] plugin replication ${if (mc.plugins.replicate) "on, jars from ${configFile.parent.toAbsolutePath().resolve(mc.plugins.dir).normalize()}" else "off"}")
     println("[master] listening on ${listen.host}:${listen.port}, worlds in ${cfg.worldRoot}")
     if (settings.adminStore.any && !clientCfg.onlineMode)
         println("[master] WARN admins exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as an admin's name (and is then bound to it first if the admin has not logged in yet). Use online mode outside development.")

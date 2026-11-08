@@ -52,13 +52,14 @@ object NodeBootstrap {
     }
 
     @JvmStatic
-    fun start(universe: Path, levelName: String) {
+    fun start(universe: Path, levelName: String, pluginsDir: Path = Path.of("plugins")) {
         val file = Path.of("fission.yml").toAbsolutePath()
         // missing file: the commented default (standalone), written once; unknown keys and wrong types stop the server with the key path
         if (net.fissionmc.net.FissionConfig.writeDefaultIfMissing(file, NodeBootstrap::class.java.getResourceAsStream("/fission.backend.default.yml")!!.readBytes().toString(Charsets.UTF_8))) log.info("No fission.yml: wrote the commented default to $file")
         val root = net.fissionmc.net.FissionConfig.load(file)
         val parsed = NodeConfig.from(root, file.parent)
         if (parsed.mode == NodeMode.COMBINED) combinedClientCfg = net.fissionmc.master.client.ClientConfig.from(root)
+        val pluginsCfg = net.fissionmc.net.plugins.PluginsConfig.from(root)
         root.finish()
         // the backend id: node.id by hand wins; otherwise a random one is generated once and saved (net/NodeIds.kt), so it survives restarts
         val cfg = if (parsed.mode == NodeMode.STANDALONE) parsed else {
@@ -112,6 +113,8 @@ object NodeBootstrap {
         val r = try { puller.pull(levelName).get(PULL_TIMEOUT_S, TimeUnit.SECONDS) }
         catch (e: Exception) { stop(); throw IllegalStateException("World pull failed: ${e.cause?.message ?: e.message}", e) }
         log.info("World ready: ${r.downloaded} downloaded (${r.bytes / 1024} KiB), ${r.unchanged} unchanged, ${r.deleted} removed in ${(System.nanoTime() - t0) / 1_000_000} ms")
+        // plugin replication: the master's jars into the plugins folder, before Paper discovers plugins (combined mode shares the folder with its own master half: nothing to pull)
+        if (cfg.mode == NodeMode.BACKEND && pluginsCfg.replicate) PluginReplicationStatus.run(l, pluginsDir.toAbsolutePath().normalize(), pluginsCfg.conflict) { msg -> extraHandlers.forEach { it(msg) } }
         // From here on, messages from the master go to the registered handlers.
         l.handler = { msg -> extraHandlers.forEach { it(msg) } }
         nodeId = cfg.nodeId

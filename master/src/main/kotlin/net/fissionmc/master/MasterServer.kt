@@ -18,13 +18,14 @@ class MasterServer(
     worldRoot: Path,
     val registry: NodeRegistry = NodeRegistry(),
     private val onMessage: (RegisteredNode, NodeMessage) -> Unit = { _, _ -> },
+    private val plugins: net.fissionmc.net.plugins.PluginServer? = null,
 ) : Closeable {
     private val worlds = WorldServer(worldRoot)
     private var bound: Closeable? = null
 
     fun start(): MasterServer {
         bound = transport.bind(address) { link ->
-            link.handler = { msg -> if (!worlds.handle(link, msg)) registry[linkOwner(link)]?.let { onMessage(it, msg) } }
+            link.handler = { msg -> if (!worlds.handle(link, msg) && !handlePlugins(link, msg)) registry[linkOwner(link)]?.let { onMessage(it, msg) } }
             link.ready.thenAccept { peer ->
                 if (peer.role == NodeRole.BACKEND) { owners[link] = peer.nodeId; registry.register(peer, link) }
                 else link.close("masters cannot connect to a master")
@@ -34,8 +35,15 @@ class MasterServer(
         return this
     }
 
+    /** Plugin replication; a master without a plugin server (combined mode) answers "disabled" so a remote backend does not wait. */
+    private fun handlePlugins(link: NodeLink, msg: NodeMessage): Boolean {
+        plugins?.let { return it.handle(link, msg) }
+        if (msg is net.fissionmc.protocol.PluginManifestRequest) { link.send(net.fissionmc.protocol.PluginManifest(false, emptyList())); return true }
+        return msg is net.fissionmc.protocol.PluginFileRequest
+    }
+
     private val owners = java.util.concurrent.ConcurrentHashMap<NodeLink, String>()
     private fun linkOwner(link: NodeLink) = owners[link] ?: ""
 
-    override fun close() { bound?.close(); worlds.close() }
+    override fun close() { bound?.close(); worlds.close(); plugins?.close() }
 }

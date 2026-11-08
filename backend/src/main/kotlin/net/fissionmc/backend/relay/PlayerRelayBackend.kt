@@ -80,7 +80,7 @@ object PlayerRelayBackend {
     }
 
     @JvmStatic fun attach() {
-        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}", WorldSettingsBackend.summary()) + net.fissionmc.backend.node.MasterInfo.lines() }
+        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}", WorldSettingsBackend.summary()) + net.fissionmc.backend.node.MasterInfo.lines() + net.fissionmc.backend.node.PluginReplicationStatus.lines() }
         NodeBootstrap.addMessageHandler { m ->
             if (m is MasterStats) net.fissionmc.backend.node.MasterInfo.onStats(m)
             if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)

@@ -17,6 +17,7 @@ data class MasterConfig(
     val chunkAuthority: Boolean, val chunkDeterministic: Set<String>, val leaseSeconds: Long, val chunkStatsSeconds: Long, val chunkStoreDir: String, val playerDataDir: String,
     val debugPackets: Boolean, val debugDumpClientStream: String?, val debugRelayProbe: Boolean, val debugRecordLimbo: String?,
     val worldSettings: net.fissionmc.master.worldsettings.WorldSettingsConfig = net.fissionmc.master.worldsettings.WorldSettingsConfig(),
+    val plugins: net.fissionmc.net.plugins.PluginsConfig = net.fissionmc.net.plugins.PluginsConfig(),
 ) {
     companion object {
         fun read(root: ConfigSection, dir: Path, fileName: String = "fission.yml", log: (String) -> Unit = {}): MasterConfig {
@@ -36,7 +37,7 @@ data class MasterConfig(
             val d = root.section("debug")
             val cfg = MasterConfig(node, client, settings, regions, ghost, strip, chunkAuthority, det, lease, stats, storeDir, playerDir,
                 d.bool("packets", false), d.optString("dump-client-stream")?.takeIf { it.isNotBlank() }, d.bool("relay-probe", false), d.optString("record-limbo")?.takeIf { it.isNotBlank() },
-                net.fissionmc.master.worldsettings.WorldSettingsConfig.from(root))
+                net.fissionmc.master.worldsettings.WorldSettingsConfig.from(root), net.fissionmc.net.plugins.PluginsConfig.from(root))
             root.finish()
             return cfg
         }

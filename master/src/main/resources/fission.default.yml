@@ -105,3 +105,9 @@ playerdata:
 #   dump-client-stream: /tmp/fission-dump
 #   relay-probe: false
 #   record-limbo: /tmp/limbo
+
+# Plugin replication: jars in `dir` are copied to every backend at its boot (before the backend loads plugins). Backends keep their own plugins;
+# a jar a backend installed itself is never touched. Plugin data folders and configs are NOT replicated. New/changed jars need a backend restart.
+plugins:
+  replicate: true              # false = serve nothing (backends keep the jars they got earlier)
+  dir: plugins                 # relative to this file

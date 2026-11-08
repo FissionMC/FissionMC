@@ -11,6 +11,7 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
 import net.fissionmc.protocol.MessageRegistry
 import net.fissionmc.protocol.registerWorldMessages
+import net.fissionmc.protocol.registerPluginMessages
 import net.fissionmc.protocol.registerReplicationMessages
 import net.fissionmc.protocol.registerPlayerMessages
 import net.fissionmc.protocol.registerChunkMessages
@@ -28,7 +29,7 @@ import java.util.concurrent.CompletableFuture
  */
 class NettyTransport(
     private val me: LocalNode,
-    private val registry: MessageRegistry = MessageRegistry.core().registerWorldMessages().registerReplicationMessages().registerPlayerMessages().registerChunkMessages().registerRegionMessages().registerChatFormatMessages().registerWorldSettingsMessages().registerPositionMessages(),
+    private val registry: MessageRegistry = MessageRegistry.core().registerWorldMessages().registerReplicationMessages().registerPlayerMessages().registerChunkMessages().registerRegionMessages().registerChatFormatMessages().registerWorldSettingsMessages().registerPositionMessages().registerPluginMessages(),
     private val heartbeatMs: Long = 5_000,
     private val timeoutMs: Long = 20_000,
     private val security: NodeSecurity? = null,
