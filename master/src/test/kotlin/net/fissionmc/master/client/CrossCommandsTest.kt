@@ -28,6 +28,22 @@ class CrossCommandsTest {
         assertNull(CrossCommands(CrossCommandSettings(false)).match("tp bob", "a", lookup))
     }
 
+    @Test fun `inspect says why a configured command stays where it is, and nothing for other commands`() {
+        val c = cc("tp")
+        assertNull(c.inspect("gamemode creative", "a", lookup).reason)
+        assertTrue(c.inspect("tp carl", "a", lookup).reason!!.contains("sender's backend"))
+        assertTrue(c.inspect("tp nobody", "a", lookup).reason!!.contains("not a player online"))
+        assertTrue(c.inspect("tp bob 1 2 3", "a", lookup).reason!!.contains("last argument"))
+        assertTrue(c.inspect("tp", "a", lookup).reason!!.contains("no argument"))
+        assertTrue(c.inspect("tp bob", null, lookup).reason!!.contains("not on a backend"))
+        assertNotNull(c.inspect("TP BOB", "a", lookup).match)
+    }
+
+    @Test fun `the packet ids are those of the 26_3 protocol order (chat_command 7, chat_command_signed 8, chat 9)`() {
+        // GameProtocols of server-26.3.jar registers serverbound: ... change_game_mode 5, chat_ack 6, chat_command 7, chat_command_signed 8, chat 9
+        assertEquals(7, PlayIds.chatCommand); assertEquals(8, PlayIds.chatCommandSigned); assertEquals(9, PlayIds.chat)
+    }
+
     @Test fun `an argument index picks the target position`() {
         val c = cc("tpask@1")
         assertNotNull(c.match("tpask here bob", "a", lookup)); assertNull(c.match("tpask bob", "a", lookup))
@@ -44,7 +60,7 @@ class CrossCommandsTest {
     @Test fun `ghost and command messages survive the wire`() {
         val reg = MessageRegistry.core().registerGhostMessages()
         val msgs = listOf(GhostPose(1, 2, "minecraft:overworld", 1.5, 64.0, -3.25, 90f, -10f, 91f, true), GhostSwing(1, 2, 1),
-            CommandCheck(5, 9, "tp Bob"), CommandCheckResult(5, 9, true))
+            CommandCheck(5, 9, "tp Bob"), CommandCheckResult(5, 9, true), CommandCheckResult(5, 9, false, present = false))
         for (m in msgs) { val b = Unpooled.buffer(); reg.encode(m, b); assertEquals(m, reg.decode(b)); assertEquals(0, b.readableBytes()) }
         val meta = GhostMeta(1, 2, byteArrayOf(1, 2, 3), ByteArray(0)); val b = Unpooled.buffer(); reg.encode(meta, b)
         val d = reg.decode(b) as GhostMeta; assertContentEquals(meta.entityData, d.entityData); assertEquals(0, d.equipment.size)

@@ -43,16 +43,23 @@ class CrossCommands(settings: CrossCommandSettings) {
     private val argIndex: Map<String, Int> = if (!settings.enabled) emptyMap() else settings.commands.associate { c -> c.substringBefore('@').trim().lowercase().substringAfterLast(':') to (c.substringAfter('@', "0").toIntOrNull() ?: 0) }
     val enabled: Boolean get() = argIndex.isNotEmpty()
 
-    fun match(line: String, senderNode: String?, lookup: Lookup): Match? {
-        if (argIndex.isEmpty() || senderNode == null) return null
+    /** Outcome of [inspect]: [match] when the sender must be moved, else [reason] (null = not one of the configured commands at all, nothing to say). */
+    class Inspection(val match: Match?, val reason: String?)
+
+    fun match(line: String, senderNode: String?, lookup: Lookup): Match? = inspect(line, senderNode, lookup).match
+
+    fun inspect(line: String, senderNode: String?, lookup: Lookup): Inspection {
+        if (argIndex.isEmpty()) return Inspection(null, null)
         val tokens = line.trim().removePrefix("/").split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (tokens.size < 2) return null
+        if (tokens.isEmpty()) return Inspection(null, null)
         val label = tokens[0].lowercase().substringAfterLast(':')   // minecraft:tp, essentials:tp
-        val idx = argIndex[label] ?: return null
+        val idx = argIndex[label] ?: return Inspection(null, null)
+        if (senderNode == null) return Inspection(null, "the sender is not on a backend right now")
         val args = tokens.drop(1)
-        if (args.size != idx + 1) return null                        // the target is the LAST argument: `/tp Bob Alice`, `/tp Bob 1 2 3` do not move the sender
-        val (name, node) = lookup.find(args[idx]) ?: return null
-        if (node == senderNode) return null
-        return Match(label, name, node)
+        if (args.size < idx + 1) return Inspection(null, "no argument at position $idx")
+        if (args.size != idx + 1) return Inspection(null, "the player is not the last argument (this form does not move the sender)")   // `/tp Bob Alice`, `/tp Bob 1 2 3`
+        val (name, node) = lookup.find(args[idx]) ?: return Inspection(null, "'${args[idx]}' is not a player online on a backend (offline, in limbo or not a name)")
+        if (node == senderNode) return Inspection(null, "$name is on the sender's backend $node")
+        return Inspection(Match(label, name, node), null)
     }
 }

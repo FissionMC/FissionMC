@@ -82,16 +82,22 @@ object GhostBackend {
     /** The master asks whether a relayed player may run a command (cross-backend commands). Runs on the server thread. */
     @JvmStatic fun checkCommand(server: MinecraftServer, m: CommandCheck, playerName: String?) {
         server.execute {
+            var present = true; var why = ""; var who = ""
             val allowed = try {
                 val p = playerName?.let { server.playerList.getPlayerByName(it) }
-                if (p == null) false else {
+                if (p == null) { present = false; why = "player ${playerName ?: "#" + m.playerId} is not on this backend (yet)"; false } else {
+                    val b = p.bukkitEntity
+                    who = "op=${b.isOp} perm(minecraft.command.tp)=${b.hasPermission("minecraft.command.tp")} fissionLevel=${PermissionBackend.level(p.uuid)}"
                     val pr = server.commands.dispatcher.parse(m.command, p.createCommandSourceStack())
                     net.minecraft.commands.Commands.validateParseResults(pr)
-                    pr.context.command != null
+                    val ok = pr.context.command != null
+                    if (!ok) why = "parsed but no executable command"
+                    ok
                 }
-            } catch (_: com.mojang.brigadier.exceptions.CommandSyntaxException) { false }
-            catch (t: Throwable) { log.warning("[fission] command check for $playerName failed: $t"); false }
-            NodeBootstrap.link?.takeIf { it.isOpen }?.send(CommandCheckResult(m.playerId, m.seq, allowed))
+            } catch (e: com.mojang.brigadier.exceptions.CommandSyntaxException) { why = "parse: ${e.message}"; false }
+            catch (t: Throwable) { why = "failed: $t"; false }
+            log.info("[fission] command check for $playerName: '/${m.command}' -> ${if (!present) "player not here yet" else if (allowed) "allowed" else "DENIED"}${if (why.isNotEmpty()) " ($why)" else ""} [$who]")
+            NodeBootstrap.link?.takeIf { it.isOpen }?.send(CommandCheckResult(m.playerId, m.seq, allowed, present))
         }
     }
 }

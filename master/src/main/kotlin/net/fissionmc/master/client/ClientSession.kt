@@ -128,41 +128,77 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** The join stream of the current backend is in: add the remote tab lines, then the ghosts that are in range. */
     private fun hubsPlaced() { refreshLive(); server.tabs.placed(this); server.ghosts.placed(this) }
 
-    private class PendingCheck(val seq: Long, val frame: ByteArray, val targetName: String, val targetNode: String) { var timeout: ScheduledFuture<*>? = null }
+    private class PendingCheck(val seq: Long, val frame: ByteArray, val cmd: String, val targetName: String, val targetNode: String) { var timeout: ScheduledFuture<*>? = null }
     private var pendingCheck: PendingCheck? = null
     private var checkSeq = 0L
-    /** The command to run on the new backend once the switch that was started for it is complete. */
-    private var commandAfterSwitch: ByteArray? = null
+    /** The command to run on the new backend once the switch that was started for it is complete (frame + text). */
+    private var commandAfterSwitch: PendingCheck? = null
+    /** The probe that waits until the new backend has the player (and tells whether it may run the command there). */
+    private var arrival: PendingCheck? = null
+    private var arrivalTries = 0
 
-    override fun commandChecked(seq: Long, allowed: Boolean) { channel.eventLoop().execute {
+    override fun commandChecked(seq: Long, allowed: Boolean, present: Boolean) { channel.eventLoop().execute {
+        val ar = arrival
+        if (ar != null && ar.seq == seq) { arrivalAnswer(ar, allowed, present); return@execute }
         val pc = pendingCheck ?: return@execute
         if (pc.seq != seq) return@execute
         pc.timeout?.cancel(false); pendingCheck = null
-        if (!allowed) { server.log("[cross] $playerName: backend $currentNodeId does not allow the command, passing it on"); passCommand(pc.frame); return@execute }
-        val target = server.findByName(pc.targetName)?.currentNodeId
-        if (target == null || target == currentNodeId) { passCommand(pc.frame); return@execute }
-        commandAfterSwitch = pc.frame
-        server.log("[cross] $playerName: moving to $target for a command on ${pc.targetName}")
-        startSwitch(target) { why -> commandAfterSwitch = null; server.log("[cross] $playerName: cannot move to $target: $why"); passCommand(pc.frame) }
+        if (!allowed) { server.log("[cross] $playerName: '/${pc.cmd}' not allowed by backend $currentNodeId, passing it on so the backend prints its own error"); passCommand(pc.frame); return@execute }
+        val target = server.findByName(pc.targetName)?.liveNodeOf()
+        if (target == null || target == currentNodeId) { server.log("[cross] $playerName: '/${pc.cmd}': ${pc.targetName} is no longer on another backend (now ${target ?: "offline"}), passing it on"); passCommand(pc.frame); return@execute }
+        commandAfterSwitch = pc
+        server.log("[cross] $playerName: '/${pc.cmd}' allowed by $currentNodeId, moving to $target (${pc.targetName}'s backend), the command is run there on arrival")
+        startSwitch(target) { why -> commandAfterSwitch = null; server.log("[cross] $playerName: cannot move to $target: $why, passing '/${pc.cmd}' to $currentNodeId"); passCommand(pc.frame) }
     } }
 
     /** Sends a client command frame to the current backend as is (what the client sent). */
     private fun passCommand(frame: ByteArray) { val id = relayId ?: return; server.relay?.toBackend(id, frame) }
 
-    /** The switch is complete: run the command that triggered it, a moment later (the new backend finishes placing the player first). */
+    /**
+     * The switch is complete: run the command that triggered it as soon as the new backend HAS the player. Instead of a fixed delay the backend is asked
+     * (CommandCheck, answered on its server thread) until it answers "present"; the answer also says whether the player may run the command there.
+     */
     private fun runCommandAfterSwitch() {
-        val f = commandAfterSwitch ?: return; commandAfterSwitch = null
-        channel.eventLoop().schedule({ if (channel.isActive && mode == Mode.RELAY) passCommand(f) }, 400, TimeUnit.MILLISECONDS)
+        val pc = commandAfterSwitch ?: return; commandAfterSwitch = null
+        arrival = pc; arrivalTries = 0
+        server.log("[cross] $playerName arrived on $currentNodeId, waiting for it to have the player before running '/${pc.cmd}'")
+        probeArrival(pc)
+    }
+    private fun probeArrival(pc: PendingCheck) {
+        if (arrival == null) return
+        val id = relayId
+        if (!channel.isActive || mode != Mode.RELAY || id == null) { arrival = null; server.log("[cross] $playerName: gone before '/${pc.cmd}' could run"); return }
+        val seq = ++checkSeq
+        val probe = PendingCheck(seq, pc.frame, pc.cmd, pc.targetName, pc.targetNode); arrival = probe
+        probe.timeout = channel.eventLoop().schedule({ if (arrival === probe) retryArrival(probe, "no answer") }, 400, TimeUnit.MILLISECONDS)
+        server.relay?.sendTo(id, net.fissionmc.protocol.CommandCheck(id, seq, pc.cmd))
+    }
+    private fun retryArrival(pc: PendingCheck, why: String) {
+        if (arrival !== pc) return
+        if (++arrivalTries >= 15) { arrival = null; server.log("[cross] $playerName: $why after $arrivalTries tries on $currentNodeId, running '/${pc.cmd}' anyway"); passCommand(pc.frame); return }
+        channel.eventLoop().schedule({ if (arrival === pc) probeArrival(pc) }, 150, TimeUnit.MILLISECONDS)
+    }
+    private fun arrivalAnswer(pc: PendingCheck, allowed: Boolean, present: Boolean) {
+        pc.timeout?.cancel(false)
+        if (!present) { retryArrival(pc, "the backend does not have the player yet"); return }
+        arrival = null
+        server.log("[cross] $playerName on $currentNodeId (${arrivalTries} retries): '/${pc.cmd}' ${if (allowed) "allowed, running it as the player" else "NOT allowed for the player on this backend (its operator level/permissions here differ from the backend it came from?), running it anyway so the backend prints its error"}")
+        passCommand(pc.frame)
     }
 
     /** `/tp <name>` and friends: true = swallowed (the master asks the sender's backend first and decides). */
     private fun crossCommand(bytes: ByteArray, cmd: String): Boolean {
         val cc = server.crossCommands; val relay = server.relay ?: return false
-        if (!cc.enabled || pendingCheck != null || switching != null || switchPending || mode != Mode.RELAY || liveNode == null) return false
+        if (!cc.enabled) return false
+        val insp = cc.inspect(cmd, currentNodeId) { name -> server.findByName(name)?.let { o -> o.liveNodeOf()?.let { n -> o.playerName to n } } }
+        if (insp.match == null) { if (insp.reason != null) server.log("[cross] $playerName: '/$cmd' stays on $currentNodeId: ${insp.reason}"); return false }
+        val busy = when { pendingCheck != null -> "another check is pending"; arrival != null || commandAfterSwitch != null -> "a cross-backend command is still arriving"; switching != null || switchPending -> "a switch is running"; mode != Mode.RELAY -> "mode $mode"; liveNode == null -> "the session is not live"; else -> null }
+        if (busy != null) { server.log("[cross] $playerName: '/$cmd' stays on $currentNodeId: $busy"); return false }
         val id = relayId ?: return false
-        val m = cc.match(cmd, currentNodeId) { name -> server.findByName(name)?.let { o -> o.liveNodeOf()?.let { n -> o.playerName to n } } } ?: return false
-        val pc = PendingCheck(++checkSeq, bytes, m.targetName, m.targetNode); pendingCheck = pc
-        pc.timeout = channel.eventLoop().schedule({ if (pendingCheck === pc) commandChecked(pc.seq, false) }, server.settings.cross.checkTimeoutMs, TimeUnit.MILLISECONDS)
+        val m = insp.match
+        val pc = PendingCheck(++checkSeq, bytes, cmd, m.targetName, m.targetNode); pendingCheck = pc
+        pc.timeout = channel.eventLoop().schedule({ if (pendingCheck === pc) { server.log("[cross] $playerName: ${currentNodeId} did not answer the check for '/$cmd' in ${server.settings.cross.checkTimeoutMs} ms"); commandChecked(pc.seq, false) } }, server.settings.cross.checkTimeoutMs, TimeUnit.MILLISECONDS)
+        server.log("[cross] $playerName on $currentNodeId: intercepted '/$cmd' -> ${m.targetName} is on ${m.targetNode}, asking $currentNodeId whether the player may run it")
         relay.sendTo(id, net.fissionmc.protocol.CommandCheck(id, pc.seq, cmd))
         return true
     }
@@ -299,7 +335,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             else -> if (pendingFromBackend.size < 20_000) pendingFromBackend.add(frame) else channel.close()
         }
         // classic reconfiguration (fallback path): the backend's Login is the first PLAY frame; the hubs add their lines behind it
-        if (mode == Mode.RELAY && state == ConnectionState.PLAY && id == PlayIds.login && liveNode == null) hubsPlaced()
+        if (mode == Mode.RELAY && state == ConnectionState.PLAY && id == PlayIds.login && liveNode == null) { hubsPlaced(); runCommandAfterSwitch() }
     }
 
     private fun writeRelay(frame: ByteArray) {
@@ -406,7 +442,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 server.log("[client $playerName] switch to ${sw.nodeId}: ${r.abort}")
                 switching = null; server.relay?.detach(sw.id, "switch aborted"); restoreDataOwner()
                 if (r.mismatch) { server.log("[client $playerName] falling back to StartConfiguration for ${sw.nodeId}"); classicAttach(sw.nodeId) }
-                else tell("Could not move to ${sw.nodeId}: ${r.abort}")
+                else { tell("Could not move to ${sw.nodeId}: ${r.abort}"); commandAfterSwitch?.let { server.log("[cross] $playerName: '/${it.cmd}' dropped, the switch to ${sw.nodeId} was aborted"); commandAfterSwitch = null } }
                 return
             }
             if (r.finished) { sw.inPlay = true; join?.configDone() }
@@ -555,7 +591,6 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val id = server.relay?.attach(this, nodeId)
         if (id == null) { tell("Could not move to ${nodeId ?: "a backend"}: not connected"); return }
         if (old != null) server.relay?.detach(old, "switch (classic)")
-        commandAfterSwitch = null
         relayId = id; currentNodeId = server.relay?.nodeIdOf(id); mode = Mode.AWAIT_ACK; refreshLive(); server.ghosts.hidden(this); currentSpawn = null; clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
         keepAlive?.cancel(false); backendKeepAlives.clear(); pendingFromBackend.clear()
         tap = net.fissionmc.packets.PacketTap.create(channel, prof?.uuid, prof?.name, user.clientVersion, server.log)
@@ -616,6 +651,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             PlayIds.chatCommand, PlayIds.chatCommandSigned -> {
                 val cmd = Strings.readFirst(bytes) ?: return false
                 if (pid == PlayIds.chatCommand && crossCommand(bytes, cmd)) return true   // the signed variant carries a signature chain of the sender's backend: never held back
+                if (pid == PlayIds.chatCommandSigned && server.crossCommands.inspect(cmd, currentNodeId) { n -> server.findByName(n)?.let { o -> o.liveNodeOf()?.let { x -> o.playerName to x } } }.match != null)
+                    server.log("[cross] $playerName: '/$cmd' arrived as a SIGNED command packet, which cannot be held back; it goes to $currentNodeId unchanged (the player is not moved)")
                 return MasterCommands.handle(this, server, cmd)
             }
             PlayIds.commandSuggestion -> {   // tab completion of the master's own `/fission send <player> <backend>` (admins only)

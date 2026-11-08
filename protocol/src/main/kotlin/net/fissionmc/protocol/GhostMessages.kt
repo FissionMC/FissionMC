@@ -20,7 +20,8 @@ data class GhostSwing(val uuidHigh: Long, val uuidLow: Long, val hand: Int) : No
 data class CommandCheck(val playerId: Long, val seq: Long, val command: String) : NodeMessage
 
 /** Backend -> master (100): the answer to [CommandCheck]: true when the command parses for the player's command source (its permission requirements hold). */
-data class CommandCheckResult(val playerId: Long, val seq: Long, val allowed: Boolean) : NodeMessage
+/** [present] false = the backend does not have the player (yet): [allowed] is meaningless then (used to wait for a player that was just moved there). */
+data class CommandCheckResult(val playerId: Long, val seq: Long, val allowed: Boolean, val present: Boolean = true) : NodeMessage
 
 fun MessageRegistry.registerGhostMessages(): MessageRegistry = this
     .register<GhostPose>(96,
@@ -31,4 +32,4 @@ fun MessageRegistry.registerGhostMessages(): MessageRegistry = this
         { b -> GhostMeta(b.readLong(), b.readLong(), b.readByteArray(65536), b.readByteArray(65536)) })
     .register<GhostSwing>(98, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeVarInt(m.hand) }, { b -> GhostSwing(b.readLong(), b.readLong(), b.readVarInt()) })
     .register<CommandCheck>(99, { m, b -> b.writeLong(m.playerId).writeLong(m.seq).writeString(m.command, 1024) }, { b -> CommandCheck(b.readLong(), b.readLong(), b.readString(1024)) })
-    .register<CommandCheckResult>(100, { m, b -> b.writeLong(m.playerId).writeLong(m.seq).writeBoolean(m.allowed) }, { b -> CommandCheckResult(b.readLong(), b.readLong(), b.readBoolean()) })
+    .register<CommandCheckResult>(100, { m, b -> b.writeLong(m.playerId).writeLong(m.seq).writeBoolean(m.allowed).writeBoolean(m.present) }, { b -> CommandCheckResult(b.readLong(), b.readLong(), b.readBoolean(), b.readBoolean()) })

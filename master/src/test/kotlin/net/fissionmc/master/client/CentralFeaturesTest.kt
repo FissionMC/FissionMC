@@ -179,7 +179,15 @@ class CentralFeaturesTest {
                 val attach = r.links.getValue(bob.node).next { it is PlayerAttach && it.name == "Alice" } as PlayerAttach   // the switch to Bob's backend
                 cfg.forEach { f -> r.relay.handle(r.node(bob.node), PlayerPacketToClient(attach.playerId, f)) }
                 r.relay.handle(r.node(bob.node), PlayerPacketToClient(attach.playerId, loginFrame(33)))
-                assertNotNull(r.links.getValue(bob.node).next { isCommand(it, "tp Bob") }, "relayed as the sender on the target backend")
+                val bl = r.links.getValue(bob.node)
+                val probe1 = bl.next { it is CommandCheck } as CommandCheck   // arrival probe: no fixed delay, the backend is asked until it has the player
+                assertEquals("tp Bob", probe1.command); assertEquals(attach.playerId, probe1.playerId)
+                assertTrue(bl.none(250) { isCommand(it, "tp Bob") }, "not relayed before the backend has the player")
+                r.relay.handle(r.node(bob.node), CommandCheckResult(attach.playerId, probe1.seq, false, present = false))
+                val probe2 = bl.next { it is CommandCheck } as CommandCheck
+                assertNotEquals(probe1.seq, probe2.seq)
+                r.relay.handle(r.node(bob.node), CommandCheckResult(attach.playerId, probe2.seq, true))
+                assertNotNull(bl.next { isCommand(it, "tp Bob") }, "relayed as the sender on the target backend, once it has the player")
                 assertTrue(r.links.getValue(alice.node).none(200) { isCommand(it, "tp Bob") })
             } finally { alice.client.close(); bob.client.close() }
         }
