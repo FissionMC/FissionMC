@@ -348,7 +348,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (sw.heldLogin != null) { sw.buffer += frame; if (sw.buffer.size > 20_000) releaseHeld(sw); return }
         if (sw.login != null) { bufferForTransplant(sw, frame); return }
         if (Limbo.idOf(frame) == PlayIds.login) join?.backendLogin()
-        if (Limbo.idOf(frame) != PlayIds.login) { server.log("[client $playerName] dropped play frame ${Limbo.idOf(frame)} from ${sw.nodeId} before its Login"); return }
+        if (Limbo.idOf(frame) != PlayIds.login) { server.log("[client $playerName] " + (if (Limbo.idOf(frame) == PlayIds.disconnect) "${sw.nodeId} KICKED the player before its Login: ${frameTexts(frame)}" else "dropped play frame ${Limbo.idOf(frame)} from ${sw.nodeId} before its Login")); return }
         // seamless: the client keeps its level and player when the new backend's level is the same one
         val cur = currentSpawn; val parsed = runCatching { net.fissionmc.master.seamless.SpawnInfo.parse(frame) }.getOrNull()
         val why = when {

@@ -14,9 +14,14 @@ import java.security.MessageDigest
 import java.util.UUID
 
 /** Packet ids of 26.3 that the switch/chat logic looks at, resolved from PacketEvents' tables (a unit test pins them to vanilla's). */
+/** The readable text runs of a frame's payload (after the packet id): enough to show WHY a backend kicked a player (a Disconnect's reason component) in a log line. */
+fun frameTexts(frame: ByteArray): String =
+    Regex("[ -~]{4,}").findAll(String(frame, Charsets.ISO_8859_1)).map { it.value }.filter { it != "text" && it != "translate" }.take(6).joinToString(" | ").ifEmpty { "(no text)" }
+
 object PlayIds {
     private val V = ClientVersion.V_26_3
     val login by lazy { PacketType.Play.Server.JOIN_GAME.getId(V) }
+    val disconnect by lazy { PacketType.Play.Server.DISCONNECT.getId(V) }
     val keepAliveS2C by lazy { PacketType.Play.Server.KEEP_ALIVE.getId(V) }
     val keepAliveC2S by lazy { PacketType.Play.Client.KEEP_ALIVE.getId(V) }
     val bossEvent by lazy { PacketType.Play.Server.BOSS_BAR.getId(V) }
