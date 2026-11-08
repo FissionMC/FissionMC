@@ -37,7 +37,9 @@ object BorderForwardBackend {
     /** LevelTicks.schedule hook. True = the tick belongs to another backend and was queued for it (the caller must not schedule it here). */
     @JvmStatic fun forwardTick(level: ServerLevel, tick: ScheduledTick<*>): Boolean {
         if (!RegionsBackend.enabled) return false
-        val pos = tick.pos(); val type = tick.type()
+        val pos = tick.pos()
+        // a replicated change being written into this ghost copy: its owner ran onPlace itself, nothing to forward and nothing to queue on the ghost
+        if (net.fissionmc.backend.replication.Replication.isApplying() && batcher.foreignOwner(level.dimension().identifier().toString(), pos.x, pos.z) != null) return true; val type = tick.type()
         val fluid = type is Fluid
         val id = (if (fluid) BuiltInRegistries.FLUID.getKey(type as Fluid) else if (type is Block) BuiltInRegistries.BLOCK.getKey(type) else return false).toString()
         val delay = Math.max(1L, tick.triggerTick() - level.gameTime).coerceAtMost(1_000_000L).toInt()

@@ -39,6 +39,43 @@ class BorderForward(val origin: String, val toBackend: String, val dimension: St
 
 const val MAX_BORDER_ITEMS = 4096
 
+/**
+ * Backend -> master -> owner (102), about once a second: "players of [origin] look at these chunks of yours (a ghost there), keep them loaded and ticking". [chunks] = packed chunk coordinates
+ * (x in the low 32 bits, z in the high 32). Without it the owner has no chunk loaded at a border nobody on its side stands at, and water, redstone and plants there would not run at all.
+ */
+class GhostDemand(val origin: String, val toBackend: String, val dimension: String, val chunks: LongArray) : NodeMessage
+
+/** Backend -> master -> owner (103): [origin] holds a ghost copy of the owner's chunk (cx, cz); [hashes] = [SectionCodec.hash] of every section's block states, lowest section first. */
+class GhostSync(val origin: String, val toBackend: String, val dimension: String, val cx: Int, val cz: Int, val hashes: IntArray) : NodeMessage
+
+/** One section's block state ids (global `Block.getId`), run length encoded: pairs (stateId, count) over the 4096 positions in y, z, x order. */
+class GhostSection(val index: Int, val runs: IntArray)
+
+/** Owner -> master -> backend (104): the sections of chunk (cx, cz) whose hash differed from the ghost's, with the owner's states; the ghost copies them. [origin] = the owner. */
+class GhostFix(val origin: String, val toBackend: String, val dimension: String, val cx: Int, val cz: Int, val sections: List<GhostSection>) : NodeMessage
+
+/** Hash and run length coding of a section's block state ids (4096 entries, y, z, x order). Pure, shared by both ends. */
+object SectionCodec {
+    const val SIZE = 4096
+    fun hash(ids: IntArray): Int { var h = -0x7ee3623b; for (v in ids) h = (h xor v) * 0x01000193; return h }
+    fun encode(ids: IntArray): IntArray {
+        val out = ArrayList<Int>()
+        var i = 0
+        while (i < ids.size) { var j = i + 1; while (j < ids.size && ids[j] == ids[i]) j++; out += ids[i]; out += j - i; i = j }
+        return out.toIntArray()
+    }
+    fun decode(runs: IntArray): IntArray {
+        require(runs.size % 2 == 0) { "odd run list" }
+        val out = IntArray(SIZE); var n = 0
+        for (k in runs.indices step 2) { val c = runs[k + 1]; require(c > 0 && n + c <= SIZE) { "bad run" }; java.util.Arrays.fill(out, n, n + c, runs[k]); n += c }
+        require(n == SIZE) { "runs cover $n of $SIZE" }
+        return out
+    }
+}
+
+const val MAX_GHOST_CHUNKS = 4096
+const val MAX_GHOST_SECTIONS = 64
+
 fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
     .register<RegionMap>(77, { m, b ->
         b.writeString(m.you, 64).writeVarInt(m.rules.size)
@@ -69,4 +106,23 @@ fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
         val ticks = List(nt) { BorderTick(b.readInt(), b.readInt(), b.readInt(), b.readBoolean(), b.readString(128), b.readVarInt(), b.readVarInt() - 3) }
         val nn = b.readVarInt(); require(nn in 0..MAX_BORDER_ITEMS) { "too many border neighbours" }
         BorderForward(o, t, d, ticks, List(nn) { BorderNeighbor(b.readInt(), b.readInt(), b.readInt(), b.readString(128)) })
+    })
+    .register<GhostDemand>(102, { m, b ->
+        b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeVarInt(m.chunks.size); m.chunks.forEach { b.writeLong(it) }
+    }, { b ->
+        val o = b.readString(64); val t = b.readString(64); val d = b.readString(128); val n = b.readVarInt(); require(n in 0..MAX_GHOST_CHUNKS) { "too many ghost chunks" }
+        GhostDemand(o, t, d, LongArray(n) { b.readLong() })
+    })
+    .register<GhostSync>(103, { m, b ->
+        b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeInt(m.cx).writeInt(m.cz).writeVarInt(m.hashes.size); m.hashes.forEach { b.writeInt(it) }
+    }, { b ->
+        val o = b.readString(64); val t = b.readString(64); val d = b.readString(128); val x = b.readInt(); val z = b.readInt(); val n = b.readVarInt(); require(n in 0..MAX_GHOST_SECTIONS) { "too many sections" }
+        GhostSync(o, t, d, x, z, IntArray(n) { b.readInt() })
+    })
+    .register<GhostFix>(104, { m, b ->
+        b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeInt(m.cx).writeInt(m.cz).writeVarInt(m.sections.size)
+        m.sections.forEach { s -> b.writeVarInt(s.index).writeVarInt(s.runs.size); s.runs.forEach { b.writeVarInt(it) } }
+    }, { b ->
+        val o = b.readString(64); val t = b.readString(64); val d = b.readString(128); val x = b.readInt(); val z = b.readInt(); val n = b.readVarInt(); require(n in 0..MAX_GHOST_SECTIONS) { "too many sections" }
+        GhostFix(o, t, d, x, z, List(n) { val i = b.readVarInt(); val r = b.readVarInt(); require(r in 0..SectionCodec.SIZE * 2) { "too many runs" }; GhostSection(i, IntArray(r) { b.readVarInt() }) })
     })

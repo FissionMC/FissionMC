@@ -86,7 +86,7 @@ object PlayerRelayBackend {
             if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)
             if (m is ChunkData || m is ChunkAbsent || m is ChunkStored || m is ChunkAvailable) net.fissionmc.backend.chunk.ChunkAuthorityBackend.onMessage(m)
             if (m is PlayerFile || m is EntityTransfer || m is EntityRemove) TravelBackend.onMessage(m, serverRef)
-            if (m is RegionMap || m is GenerateChunk || m is EntityHandover || m is BorderForward) RegionsBackend.onMessage(m, serverRef)
+            if (m is RegionMap || m is GenerateChunk || m is EntityHandover || m is BorderForward || m is GhostDemand || m is GhostSync || m is GhostFix) RegionsBackend.onMessage(m, serverRef)
             if (m is PlayerMoveTo) serverRef?.let { srv -> srv.execute { srv.playerList.getPlayer(java.util.UUID(m.uuidHigh, m.uuidLow))?.let { TravelBackend.handoff(it, m.x, m.y, m.z, m.yaw, m.pitch) } } }   // position hand-off: where the client really is
             if (m is ChatFormat) LocalChatBackend.onMessage(m)
             if (m is CommandCheck) serverRef?.let { srv -> GhostBackend.checkCommand(srv, m, synchronized(sessions) { sessions[m.playerId]?.name }) }

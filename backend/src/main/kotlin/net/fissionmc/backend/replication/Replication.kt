@@ -1,6 +1,7 @@
 package net.fissionmc.backend.replication
 
 import net.fissionmc.backend.node.NodeBootstrap
+import net.fissionmc.backend.relay.RegionsBackend
 import net.fissionmc.net.NodeLink
 import net.fissionmc.protocol.*
 import net.minecraft.core.BlockPos
@@ -47,6 +48,7 @@ object Replication {
     /** Local events dropped because the master link was down. */
     @Volatile var droppedWhileDisconnected = 0L; private set
     @Volatile var appliedCount = 0L; private set
+    @Volatile var refused = 0L; private set
 
     @JvmStatic fun attach(id: String) {
         nodeId = id
@@ -64,8 +66,32 @@ object Replication {
         if (!enabled || applying.get()) return
         val dim = level.dimension().identifier().toString()
         val x = pos.x; val y = pos.y; val z = pos.z
-        if (!submit(BlockChange(dim, x, y, z, Block.getId(state), "block"))) return
+        // "ghost" = a write into a chunk another backend owns (a player of this backend builds or breaks across the border): the owner may refuse it (see [refusal])
+        val cause = if (RegionsBackend.enabled && !RegionsBackend.ownsBlock(dim, x, z)) "ghost" else "block"
+        if (!submit(BlockChange(dim, x, y, z, Block.getId(state), cause))) return
         synchronized(pending) { pending.merge(Key(dim, x, y, z), 1, Int::plus) }
+    }
+
+    /** No replicated event is waiting to be applied (ghost hashes are only taken then). */
+    @JvmStatic fun idle(): Boolean = inbox.isEmpty()
+
+    /** True while a replicated change is being applied on this thread (hooks use it to tell echoes from real gameplay). */
+    @JvmStatic fun isApplying(): Boolean = applying.get()
+
+    /** Shared by remote events and ghost fixes: writes [state] without neighbour updates and makes sure watching clients get the block even when the chunk is not block ticking. */
+    @JvmStatic fun applyRemote(level: ServerLevel, pos: BlockPos, state: BlockState): BlockState {
+        applying.set(true)
+        try { level.setBlock(pos, state, APPLY_FLAGS) } finally { applying.set(false) }
+        // Level.setBlock only calls sendBlockUpdated for chunks that are BLOCK_TICKING; a ghost chunk at the edge of the simulation distance is merely FULL and its viewers would keep the old block
+        level.chunkSource.blockChanged(pos)
+        return level.getBlockState(pos)
+    }
+
+    /** Owner side of a "ghost" write: why the block must not go in (an entity of this backend stands there), or null. */
+    @JvmStatic fun refusal(level: ServerLevel, pos: BlockPos, state: BlockState): String? {
+        if (state.isAir || level.getBlockState(pos) == state) return null
+        if (!level.isUnobstructed(state, pos, net.minecraft.world.phys.shapes.CollisionContext.empty())) return "an entity stands in the way"
+        return null
     }
 
     @JvmStatic fun onEntityDied(entity: Entity, cause: String) {
@@ -128,11 +154,24 @@ object Replication {
                 // (an own event without a pending entry is history from before a restart of this backend: apply it)
                 val level = level(server, e.dimension) ?: return log.warning("[fission] seq=${m.seq}: unknown dimension ${e.dimension}")
                 val state = Block.stateById(e.stateId)
-                applying.set(true)
-                try { level.setBlock(BlockPos(e.x, e.y, e.z), state, APPLY_FLAGS) } finally { applying.set(false) }
+                val pos = BlockPos(e.x, e.y, e.z)
+                // the owner decides about writes into its chunks: a refused placement is answered with the authoritative block ("fix", applied by everybody including the writer, whose client gets the real block back)
+                if (e.cause == "ghost" && !own && RegionsBackend.ownsBlock(e.dimension, e.x, e.z)) {
+                    val why = refusal(level, pos, state)
+                    if (why != null) {
+                        val cur = level.getBlockState(pos)
+                        refused++
+                        log.info("[fission] refused a placement from ${m.origin} at ${e.dimension} ${e.x},${e.y},${e.z} ($state): $why; answering with $cur")
+                        submit(BlockChange(e.dimension, e.x, e.y, e.z, Block.getId(cur), "fix"))
+                        level.chunkSource.blockChanged(pos)
+                        return
+                    }
+                }
+                val now = applyRemote(level, pos, state)
                 appliedCount++
-                val now = level.getBlockState(BlockPos(e.x, e.y, e.z))
-                if (net.fissionmc.net.FissionDebug.on) log.info("[fission] applied seq=${m.seq} BlockChange from ${m.origin} ${e.dimension} ${e.x},${e.y},${e.z} -> $state (readback ${if (now == state) "ok" else "MISMATCH $now"})")
+                if (net.fissionmc.net.FissionDebug.on) log.info("[fission] applied seq=${m.seq} BlockChange(${e.cause}) from ${m.origin} ${e.dimension} ${e.x},${e.y},${e.z} -> $state (readback ${if (now == state) "ok" else "MISMATCH $now"})")
+                // the readback differs from what the writer asked for (a plugin or the block itself changed it): the owner's result is the truth for everybody
+                if (!own && now != state && RegionsBackend.ownsBlock(e.dimension, e.x, e.z)) submit(BlockChange(e.dimension, e.x, e.y, e.z, Block.getId(now), "fix"))
             }
             is EntityRemoved -> {
                 val level = level(server, e.dimension) ?: return

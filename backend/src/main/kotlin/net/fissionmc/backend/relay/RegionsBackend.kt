@@ -31,6 +31,7 @@ object RegionsBackend {
             is GenerateChunk -> server?.execute { generate(server, m) }
             is EntityHandover -> server?.execute { spawnHandover(server, m) }
             is BorderForward -> BorderForwardBackend.onMessage(m)
+            is GhostDemand, is GhostSync, is GhostFix -> GhostSyncBackend.onMessage(m)
         }
     }
 
@@ -105,6 +106,7 @@ object RegionsBackend {
     fun tick(server: MinecraftServer) {
         if (!enabled) return
         BorderForwardBackend.tick(server)
+        GhostSyncBackend.tick(server)
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
         ticks++
         for (p in server.playerList.players) {
