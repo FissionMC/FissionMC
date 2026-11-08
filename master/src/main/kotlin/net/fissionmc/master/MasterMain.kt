@@ -8,7 +8,8 @@ import java.nio.file.Path
 
 /** Standalone master process: `fission.yml` with node.mode master, node.listen, node.authorized, node.world-root (every key: fission.default.yml). */
 fun main(args: Array<String>) {
-    val configFile = Path.of(args.firstOrNull() ?: "fission.yml").toAbsolutePath()
+    // "nogui" / "--nogui" are accepted and ignored so a Minecraft-style launcher line (java -jar server.jar nogui, e.g. a Pterodactyl egg) works; the first other argument is the config file
+    val configFile = Path.of(args.firstOrNull { it != "nogui" && !it.startsWith("-") } ?: "fission.yml").toAbsolutePath()
     if (FissionConfig.writeDefaultIfMissing(configFile, MasterMainResources.defaultConfig())) println("[master] no ${configFile.fileName}: wrote the commented default to $configFile")
     // every section is read up front; an unknown key, a wrong type or an invalid region map stops the master with the key path
     val mc = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } } catch (e: IllegalArgumentException) {
@@ -75,6 +76,20 @@ fun main(args: Array<String>) {
     if (dbgPackets) System.setProperty("fission.debug.packets", "1")
     if (dbgRelayProbe) registry.addListener(RelayProbe(relay, dbgRecordLimbo?.let { Path.of(it) }))
     Runtime.getRuntime().addShutdownHook(Thread { chunks?.let { println(it.statsLine()) }; stats.close(); clients?.close(); master.close(); transport.close() })
+    // the console: a hosting panel (Pterodactyl) sends "stop" to stdin and marks the server running when this line matches `)! For help, type "`
+    val startedAt = java.lang.management.ManagementFactory.getRuntimeMXBean().startTime
+    println("[master] Done (${"%.3f".format((System.currentTimeMillis() - startedAt) / 1000.0)}s)! For help, type \"help\"")
+    val console = java.io.BufferedReader(java.io.InputStreamReader(System.`in`))
+    while (true) {
+        val line = console.readLine() ?: break    // stdin closed (background run): keep serving
+        when (line.trim().lowercase().substringBefore(' ')) {
+            "" -> {}
+            "stop", "end", "exit", "quit" -> { println("[master] stopping"); kotlin.system.exitProcess(0) }
+            "list" -> println("[master] ${registry.all.size} backends: ${registry.all.joinToString { it.info.nodeId }.ifEmpty { "-" }}; ${clients?.onlinePlayers ?: 0} players")
+            "help", "?" -> println("[master] commands: stop, list, help")
+            else -> println("[master] unknown command '${line.trim()}', type help")
+        }
+    }
     Thread.currentThread().join()
 }
 

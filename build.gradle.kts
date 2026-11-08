@@ -57,3 +57,6 @@ configure(listOf(project(":craft"), project(":backend"))) {
         }
     }
 }
+
+// ./gradlew dist : runnable master.jar + backend.jar in build/dist (see dist.gradle.kts)
+apply(from = "dist.gradle.kts")
