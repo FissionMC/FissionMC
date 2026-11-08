@@ -62,6 +62,37 @@ public final class TestPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage("pdc set");
                 return true;
             }
+            // bulk edit simulations of what WorldEdit does (design/plugin-compat.md): <mode> = api (Block.setBlockData) | nms (LevelChunk.setBlockState through reflection, like WorldEdit's NMS adapters)
+            if (args.length == 7 && (args[0].equals("bulkset") || args[0].equals("bulkcount"))) {
+                org.bukkit.World w = getServer().getWorld(args[1]);
+                int x = Integer.parseInt(args[2]), y = Integer.parseInt(args[3]), z = Integer.parseInt(args[4]), n = Integer.parseInt(args[5]);
+                String[] mm = args[6].split(":"); // <api|nms>:<MATERIAL>
+                org.bukkit.Material mat = org.bukkit.Material.valueOf(mm[1]);
+                if (args[0].equals("bulkcount")) {
+                    int c = 0;
+                    for (int i = 0; i < n; i++) if (w.getBlockAt(x + i, y, z).getType() == mat) c++;
+                    getLogger().info("BULK count=" + c + " of " + n + " " + mat + " at " + x + "," + y + "," + z);
+                    sender.sendMessage("count=" + c);
+                    return true;
+                }
+                org.bukkit.block.data.BlockData data = mat.createBlockData();
+                if (mm[0].equals("api")) {
+                    for (int i = 0; i < n; i++) w.getBlockAt(x + i, y, z).setBlockData(data, false);
+                } else {
+                    Object level = Class.forName("org.bukkit.craftbukkit.CraftWorld").getMethod("getHandle").invoke(w);
+                    Class<?> bp = Class.forName("net.minecraft.core.BlockPos"), bs = Class.forName("net.minecraft.world.level.block.state.BlockState");
+                    Object state = Class.forName("org.bukkit.craftbukkit.block.data.CraftBlockData").getMethod("getState").invoke(data);
+                    java.lang.reflect.Method getChunkAt = Class.forName("net.minecraft.world.level.Level").getMethod("getChunkAt", bp);
+                    java.lang.reflect.Method set = Class.forName("net.minecraft.world.level.chunk.LevelChunk").getMethod("setBlockState", bp, bs, int.class);
+                    for (int i = 0; i < n; i++) {
+                        Object pos = bp.getConstructor(int.class, int.class, int.class).newInstance(x + i, y, z);
+                        set.invoke(getChunkAt.invoke(level, pos), pos, state, 2);
+                    }
+                }
+                getLogger().info("BULK set " + n + " " + mat + " via " + mm[0] + " at " + x + "," + y + "," + z);
+                sender.sendMessage("set " + n);
+                return true;
+            }
         } catch (Throwable t) { sender.sendMessage("fissiontest failed: " + t); getLogger().warning("fissiontest: " + t); }
         return false;
     }
