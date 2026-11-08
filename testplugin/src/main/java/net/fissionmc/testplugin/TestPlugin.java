@@ -96,6 +96,17 @@ public final class TestPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage("cmdperm bad=" + bad);
                 return true;
             }
+            // forces every mixin target class to load and transform: an injection that does not apply (defaultRequire 1) throws here instead of at some player's first use
+            if (args.length == 1 && args[0].equals("audit")) {
+                try {
+                    Class<?> env = Class.forName("org.spongepowered.asm.mixin.MixinEnvironment");
+                    Object cur = env.getMethod("getCurrentEnvironment").invoke(null);
+                    env.getMethod("audit").invoke(cur);
+                    getLogger().info("AUDIT done");
+                } catch (Throwable t) { getLogger().warning("AUDIT failed: " + t + (t.getCause() != null ? " / " + t.getCause() : "")); }
+                sender.sendMessage("audit finished");
+                return true;
+            }
             // bulk edit simulations of what WorldEdit does (design/plugin-compat.md): <mode> = api (Block.setBlockData) | nms (LevelChunk.setBlockState through reflection, like WorldEdit's NMS adapters)
             if (args.length == 7 && (args[0].equals("bulkset") || args[0].equals("bulkcount"))) {
                 org.bukkit.World w = getServer().getWorld(args[1]);
