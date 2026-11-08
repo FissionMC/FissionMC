@@ -154,7 +154,7 @@ class CentralFeaturesTest {
                 r.relay.handle(r.node(bob.node), GhostMeta(bob.uuid.mostSignificantBits, bob.uuid.leastSignificantBits, byteArrayOf(-1), ByteArray(0)))
                 r.relay.handle(r.node(alice.node), pose(alice, 0.0, 0.0)); r.relay.handle(r.node(bob.node), pose(bob, 30.0, 0.0))
                 val spawn = readUntil(alice) { ev -> if (ev.packetType == PacketType.Play.Server.SPAWN_ENTITY) WrapperPlayServerSpawnEntity(ev) else null }
-                assertEquals(bob.uuid, spawn.uuid.get()); assertEquals(GhostHub.GHOST_BASE, spawn.entityId); assertEquals(30.0, spawn.position.x)
+                assertEquals(GhostHub.ghostUuidOf(bob.uuid), spawn.uuid.get()); assertEquals(GhostHub.GHOST_BASE, spawn.entityId); assertEquals(30.0, spawn.position.x)
                 // out of range: removed
                 r.relay.handle(r.node(bob.node), pose(bob, 500.0, 0.0))
                 val ids = readUntil(alice) { ev -> if (ev.packetType == PacketType.Play.Server.DESTROY_ENTITIES) WrapperPlayServerDestroyEntities(ev).entityIds.toList() else null }

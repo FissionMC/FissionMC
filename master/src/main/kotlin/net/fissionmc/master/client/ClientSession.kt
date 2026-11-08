@@ -125,7 +125,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     override fun tabSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { cleanup.observe(frame); writeRelay(frame) } } }
     override val ghostUuid: java.util.UUID get() = prof!!.uuid
     override val ghostNode: String? get() = liveNode
-    override fun ghostSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) writeRelay(frame) } }
+    override fun ghostSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { cleanup.observe(frame); clientView.observe(frame); writeRelay(frame) } } }   // tab lines and the team are removed again by a transplant's cleanup
     override fun ghostAdded(clientId: Int) { channel.eventLoop().execute { idMap.onAdded(clientId, -1) } }
     override fun ghostRemoved(clientId: Int) { channel.eventLoop().execute { idMap.onRemoved(clientId) } }
     private val tabDecode: (ByteArray) -> com.github.retrooper.packetevents.event.PacketSendEvent? = { f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }

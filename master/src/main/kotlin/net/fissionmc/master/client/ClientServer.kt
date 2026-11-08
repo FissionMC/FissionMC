@@ -45,7 +45,7 @@ class ClientServer(
     val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
     /** The network wide tab list and the ghost players (see `.dev/docs/tablist-ghosts-commands.md`). */
     val tabs = TabListHub(log)
-    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { v, p -> tabs.holds(v, p) }, log)
+    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { p -> tabs.entry(p) }, log)
     val crossCommands = CrossCommands(settings.cross)
     init {
         if (settings.ghosts.enabled) {
