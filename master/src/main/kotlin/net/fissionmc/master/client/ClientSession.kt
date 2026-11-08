@@ -66,6 +66,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val buffer = ArrayList<ByteArray>(); var gotPosition = false; var timeout: ScheduledFuture<*>? = null
         /** Position hand-off: the first chunk batch is complete, the master told the new backend where the client really is (PlayerMoveTo), and its answering PlayerPosition arrived. */
         var batchDone = false; var sawBatch = false; var moveSent = false; var freshPosition = false
+        /** The EXACT position PlayerMoveTo put the new backend's player at; the confirming AcceptTeleportation carries the same numbers (the server snaps to its own, then moves by the difference). */
+        var handoff: net.fissionmc.master.seamless.PositionTracker.Pos? = null
         /** First entry (limbo): the backend's Login arrived before the limbo client said it is loaded; it and the frames behind it (in [buffer]) wait for [releaseHeld]. */
         var heldLogin: ByteArray? = null
     }
@@ -82,6 +84,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private val freshPosition: Boolean get() = server.settings.switchFreshPosition
     /** Login+Respawn fallback: the next PlayerPosition frames of the new backend are rewritten to the client's real position and momentum. */
     private var patchPositions = 0
+    /** The position sent to the new backend with PlayerMoveTo on the Login path; the patched PlayerPosition frames carry the same numbers, so the client's acknowledgement matches what the backend expects. */
+    private var patchPos: net.fissionmc.master.seamless.PositionTracker.Pos? = null
+    /** Keys, sprint, glide, flying and hotbar slot the client reported; replayed to the new backend after a transplant. */
+    private val inputState = net.fissionmc.master.seamless.ClientInputState()
     private val pPlayerPosition by lazy { net.fissionmc.master.seamless.PlayPacketIds.c("PlayerPosition") }
     private val seamless: Boolean get() = server.settings.switchMode == "seamless"
     /** ChunkBatchFinished frames forwarded whose ChunkBatchReceived the client has not sent yet; after a transplant that many acks still belong to the OLD backend and are swallowed. */
@@ -212,18 +218,17 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     // ---- static regions: a player that walks into another backend's region is moved there
     @Volatile var lastDimension: String = ""; @Volatile var lastX = 0; @Volatile var lastZ = 0
-    private var lastRegionSwitchNanos = 0L
+    private val regionPolicy by lazy { net.fissionmc.master.region.RegionSwitchPolicy(server.settings.regionMargin) }
 
     override fun playerMoved(dimension: String, x: Int, z: Int) { channel.eventLoop().execute {
         lastDimension = dimension; lastX = x; lastZ = z
         val regions = server.relay?.regions ?: return@execute
         if (!regions.enabled || mode != Mode.RELAY || switching != null || switchPending) return@execute
-        if (System.nanoTime() - lastRegionSwitchNanos < 3_000_000_000L) return@execute   // just arrived: let the new backend settle
         val cur = currentNodeId ?: return@execute
-        val target = regions.ownerWithHysteresis(dimension, x, z, cur, server.settings.regionMargin) ?: return@execute
-        if (target == cur) return@execute
+        val now = System.nanoTime()
+        val target = regionPolicy.decide(regions, dimension, x, z, cur, now) ?: return@execute   // cooldown, margin and ping-pong guard live in the policy
         if (server.relay?.liveNodeIds()?.contains(target) != true) return@execute   // the owner is not connected: stay where it is
-        lastRegionSwitchNanos = System.nanoTime()
+        regionPolicy.switched(cur, now)
         server.log("[regions] $playerName at $dimension $x,$z leaves $cur for $target")
         startSwitch(target) { why -> server.log("[regions] $playerName: cannot move to $target: $why") }
     } }
@@ -316,7 +321,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         var patched = rewritten
         if (patchPositions > 0 && state == ConnectionState.PLAY && id == pPlayerPosition) {
             patchPositions--
-            val p = posTracker.latest(2.0)
+            val p = patchPos ?: posTracker.latest(2.0)
             if (p != null) patched = net.fissionmc.master.seamless.PositionFrames.patchPlayerPosition(rewritten, p) else net.fissionmc.master.seamless.PositionFrames.observeTeleport(rewritten, posTracker)
         } else if (state == ConnectionState.PLAY && id == pPlayerPosition) net.fissionmc.master.seamless.PositionFrames.observeTeleport(rewritten, posTracker)   // the client was teleported (spawn, /tp, a switch): that is where it is now
         var frame = toClient(patched) ?: return
@@ -494,8 +499,11 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         // everything the new backend sends first is here: tell it where the client REALLY is now (the player data it loaded is as old as the start of the switch), as late as possible
         if (!sw.moveSent) {
             sw.moveSent = true
-            val p = if (freshPosition) posTracker.latest(1.5) else null
+            // the position the client was at when its last packet passed the master, NOT extrapolated: the backend's player gets exactly this spot (an extrapolated spot can lie inside a wall the client slides along,
+            // and a spot that differs from the one the confirmation carries makes the server's movement check teleport the player back); the next real movement packet closes the few ticks of lag
+            val p = if (freshPosition) posTracker.latest(0.0) else null
             if (p == null) { completeTransplant(sw); return }
+            sw.handoff = p
             val u = uuid
             if (u == null) { completeTransplant(sw); return }
             server.relay?.sendTo(sw.id, net.fissionmc.protocol.PlayerMoveTo(u.mostSignificantBits, u.leastSignificantBits, p.x, p.y, p.z, p.yaw, p.pitch))
@@ -529,7 +537,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val chunkish = setOf("LevelChunkWithLight", "LightUpdate", "ChunkBatchStart", "ChunkBatchFinished", "ForgetLevelChunk", "ChunksBiomes").map { net.fissionmc.master.seamless.PlayPacketIds.c(it) }.toSet()
         // the client was never told about the new backend's PlayerPosition: the master confirms the teleport itself with the client's real position (the 26.3 server applies the position
         // of AcceptTeleportation), so the player is not snapped back by speed x switch duration
-        val latest = if (freshPosition) posTracker.latest(1.0) else null
+        val latest = if (sw.freshPosition) sw.handoff else null   // without the backend's answer to PlayerMoveTo its own PlayerPosition (a stale spot) goes to the client, which acknowledges it itself
         val lastTeleportId = if (latest != null) sw.buffer.lastOrNull { Limbo.idOf(it) == pPlayerPosition }?.let { net.fissionmc.master.seamless.PositionFrames.teleportId(it) } else null
         val (chunkFrames, other0) = sw.buffer.partition { Limbo.idOf(it) in chunkish }
         val other = if (lastTeleportId != null) other0.filter { Limbo.idOf(it) != pPlayerPosition } else other0
@@ -546,6 +554,9 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         channel.flush()
         if (lastTeleportId != null && latest != null) server.relay?.toBackend(sw.id, net.fissionmc.master.seamless.PositionFrames.acceptTeleportation(lastTeleportId, latest.x, latest.y, latest.z, latest.yaw, latest.pitch))
         server.relay?.toBackend(sw.id, PlayIds.frame(PlayIds.playerLoaded))
+        // the new backend knows the client from the saved data only: tell it the keys, sprint, glide, flying and slot the client is in now (the server ignores these before PlayerLoaded)
+        val replayed = inputState.replay(login.playerId); replayed.forEach { server.relay?.toBackend(sw.id, it) }
+        if (net.fissionmc.net.FissionDebug.on) server.log("[client $playerName] transplant input replay: ${replayed.size} frames (sprint ${inputState.sprinting}, input ${inputState.input}, slot ${inputState.slot})")
         hubsPlaced(); runCommandAfterSwitch()
         announceArrival(sw.nodeId, if (old != null) before else null)
         server.log("[client] $playerName now on ${sw.nodeId} (transplant: no Login/Respawn, client keeps entity id ${idMap.clientSelf}, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, $removedEntities entities removed, ${removal.size} cleanup frames, ${sw.buffer.size} buffered frames, ${forgets.size} chunks forgotten, position hand-off ${if (lastTeleportId != null) "to the client's real position" else "off"})")
@@ -570,7 +581,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         idMap.start(selfEntityId); clientView.reset(); batchOutstanding = 0; staleBatchAcks = 0
         if (freshPosition && posTracker.known && posTracker.moved && old != null) {   // Login+Respawn path: the new backend's PlayerPosition frames show the client's real position and momentum, and the backend moves its player there
             patchPositions = 2
-            val p = posTracker.latest(1.5); val u = uuid
+            val p = posTracker.latest(1.5); patchPos = p; val u = uuid
             if (p != null && u != null) server.relay?.sendTo(sw.id, net.fissionmc.protocol.PlayerMoveTo(u.mostSignificantBits, u.leastSignificantBits, p.x, p.y, p.z, p.yaw, p.pitch))
         }
         currentSpawn = runCatching { net.fissionmc.master.seamless.SpawnInfo.parse(login) }.getOrNull()
@@ -613,7 +624,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 val id = relayId
                 if (tracker.clientState == ConnectionState.PLAY && interceptClient(bytes)) return
                 join?.let { j -> if (j.isForwarded && tracker.packetId(bytes) == PlayIds.playerLoaded) { j.playerLoaded(); server.log(j.line(playerName, currentNodeId)); join = null } }
-                posTracker.observe(bytes)
+                posTracker.observe(bytes); inputState.observe(bytes)
                 val tapped = fromClient(bytes)
                 val out = if (seamless && tapped != null) rewriter.toBackend(tapped) else tapped
                 if (id != null && out != null && !server.relay!!.toBackend(id, out)) pauseReading()
