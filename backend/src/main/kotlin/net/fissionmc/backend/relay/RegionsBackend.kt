@@ -96,7 +96,7 @@ object RegionsBackend {
         if (ticks % 100 == 0) {
             val l = "[fission] regions: stats ownedChunkTicks=${ownedChunkTicks.get()} ghostChunkTicksSkipped=${ghostChunkTicksSkipped.get()} ghostEntityTicksSkipped=${ghostEntityTicksSkipped.get()} " +
                 "ghostBlockTicksSkipped=${ghostBlockTicksSkipped.get()} ghostSpawnPassesSkipped=${ghostSpawnPassesSkipped.get()} generateJobs=${generatedCount.get()} handedOver=${handedOverCount.get()} handoversReceived=${receivedCount.get()}"
-            if (l != lastStats) { lastStats = l; log.info(l) }
+            if (l != lastStats) { lastStats = l; if (net.fissionmc.net.FissionDebug.on) log.info(l) }
         }
     }
 

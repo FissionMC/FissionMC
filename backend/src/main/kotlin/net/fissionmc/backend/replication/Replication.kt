@@ -132,7 +132,7 @@ object Replication {
                 try { level.setBlock(BlockPos(e.x, e.y, e.z), state, APPLY_FLAGS) } finally { applying.set(false) }
                 appliedCount++
                 val now = level.getBlockState(BlockPos(e.x, e.y, e.z))
-                log.info("[fission] applied seq=${m.seq} BlockChange from ${m.origin} ${e.dimension} ${e.x},${e.y},${e.z} -> $state (readback ${if (now == state) "ok" else "MISMATCH $now"})")
+                if (net.fissionmc.net.FissionDebug.on) log.info("[fission] applied seq=${m.seq} BlockChange from ${m.origin} ${e.dimension} ${e.x},${e.y},${e.z} -> $state (readback ${if (now == state) "ok" else "MISMATCH $now"})")
             }
             is EntityRemoved -> {
                 val level = level(server, e.dimension) ?: return
@@ -142,7 +142,7 @@ object Replication {
                     try { entity.discard() } finally { applying.set(false) }
                     appliedCount++
                 }
-                log.info("[fission] applied seq=${m.seq} EntityRemoved from ${m.origin} ${e.dimension} ${UUID(e.uuidHigh, e.uuidLow)} (${if (entity != null) "found" else "not loaded here"})")
+                if (net.fissionmc.net.FissionDebug.on) log.info("[fission] applied seq=${m.seq} EntityRemoved from ${m.origin} ${e.dimension} ${UUID(e.uuidHigh, e.uuidLow)} (${if (entity != null) "found" else "not loaded here"})")
             }
         }
     }

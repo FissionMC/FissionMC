@@ -151,7 +151,7 @@ object ChunkAuthorityBackend {
         val line = statsLine(f)
         if (onlyIfChanged && line == lastStats) return
         lastStats = line
-        log.info(line)
+        if (net.fissionmc.net.FissionDebug.on) log.info(line)
     }
 
     private fun statsLine(f: Long): String =

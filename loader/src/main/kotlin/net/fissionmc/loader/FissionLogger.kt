@@ -12,9 +12,12 @@ class FissionLogger(private val id: String) : ILogger {
         // The JVM's own stderr: the server later replaces System.out/err (log4j IoBuilder, Paper's SysoutCatcher, which
         // needs Bukkit.getServer()) while classes are still being transformed.
         val ERR: java.io.PrintStream = System.err
+        /** -Dfission.debug (or FISSION_DEBUG=1): Mixin's INFO/DEBUG/TRACE output; WARN and above is always shown. */
+        val DEBUG: Boolean = (System.getProperty("fission.debug") ?: System.getenv("FISSION_DEBUG"))?.let { it.isEmpty() || it.equals("true", true) || it == "1" } ?: false
     }
 
     private fun out(level: String, msg: String, args: Array<out Any?>) {
+        if (!DEBUG && level != "WARN" && level != "ERROR" && level != "FATAL") return
         ERR.println("[Mixin/$level] [$id] " + format(msg, args))
     }
 

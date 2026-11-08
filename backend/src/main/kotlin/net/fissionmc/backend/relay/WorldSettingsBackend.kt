@@ -171,7 +171,7 @@ object WorldSettingsBackend {
         for ((k, v) in state) if (cat(k) in categories && (holdUntil[k] ?: 0L) <= ticks) applyKey(s, k, v, exact)
     }
 
-    private fun count(key: String) { applied.incrementAndGet(); appliedByKey.computeIfAbsent(key) { AtomicLong() }.incrementAndGet(); log.info("[fission] world setting applied: $key") }
+    private fun count(key: String) { applied.incrementAndGet(); appliedByKey.computeIfAbsent(key) { AtomicLong() }.incrementAndGet(); if (net.fissionmc.net.FissionDebug.on) log.info("[fission] world setting applied: $key") }
 
     private fun applyKey(s: MinecraftServer, key: String, value: String, exact: Boolean) {
         applying = true

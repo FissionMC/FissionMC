@@ -62,7 +62,7 @@ class ChunkAuthority(
                 parked.incrementAndGet()
                 val first = waiting[key].isNullOrEmpty() && leases[key] == null
                 waiting.computeIfAbsent(key) { ArrayList() } += Waiter(node, m.reqId)
-                if (first) { generateJobs.incrementAndGet(); log("[chunks] generate ${key.dimension} ${key.x},${key.z} -> $genOwner (wanted by ${node.info.nodeId})"); registry[genOwner]?.link?.send(GenerateChunk(key.dimension, key.x, key.z)) }
+                if (first) { generateJobs.incrementAndGet(); if (net.fissionmc.net.FissionDebug.on) log("[chunks] generate ${key.dimension} ${key.x},${key.z} -> $genOwner (wanted by ${node.info.nodeId})"); registry[genOwner]?.link?.send(GenerateChunk(key.dimension, key.x, key.z)) }
             }
             return
         }
@@ -83,7 +83,7 @@ class ChunkAuthority(
     private fun grant(key: ChunkKey, node: RegisteredNode, reqId: Long) {
         leases[key] = Lease(node.info.nodeId, System.currentTimeMillis() + leaseMs)
         leasesGranted.incrementAndGet()
-        log("[chunks] lease ${key.dimension} ${key.x},${key.z} -> ${node.info.nodeId}")
+        if (net.fissionmc.net.FissionDebug.on) log("[chunks] lease ${key.dimension} ${key.x},${key.z} -> ${node.info.nodeId}")
         node.link.send(ChunkAbsent(reqId, true))
     }
 
