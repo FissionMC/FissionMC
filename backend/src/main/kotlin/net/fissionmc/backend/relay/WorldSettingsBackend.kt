@@ -133,12 +133,12 @@ object WorldSettingsBackend {
         if (synced && !inbox.isEmpty()) poll(server)   // local changes made since the last sample go out BEFORE a master snapshot can overwrite them
         while (true) {
             when (val m = inbox.poll() ?: break) {
-                is WorldSettingsState -> { categories = m.categories.split(',').filter { it.isNotEmpty() }.toSet(); lastStateNanos = System.nanoTime(); applyState(server, m.state, exact = false); if (!synced) { synced = true; log.info("[fission] world settings synced with the master (${categories.joinToString(",")})") } }
+                is WorldSettingsState -> { categories = m.categories.split(',').filter { it.isNotEmpty() }.toSet(); lastStateNanos = System.nanoTime(); applyState(server, m.state, exact = false); if (!synced) { synced = true; if (net.fissionmc.net.FissionDebug.on) log.info("[fission] world settings synced with the master (${categories.joinToString(",")})") } }
                 is WorldSettingApply -> { if ("" != m.key && cat(m.key) in categories) applyKey(server, m.key, m.value, exact = true) }
             }
         }
         if (synced && ticks % 10 == 0L) poll(server)
-        if (ticks % 100 == 0L) { val l = "reported=$reported applied=$applied adopted=$adopted synced=$synced"; if (l != lastStats) { lastStats = l; log.info("[fission] world settings: $l (${describeTime(server)})") } }
+        if (ticks % 100 == 0L) { val l = "reported=$reported applied=$applied adopted=$adopted synced=$synced"; if (l != lastStats && net.fissionmc.net.FissionDebug.on) { lastStats = l; log.info("[fission] world settings: $l (${describeTime(server)})") } }
     }
 
     private fun cat(key: String): String = when { key.startsWith("clock:") || key == "gametime" -> "time"; key == "weather" -> "weather"; key.startsWith("rule:") -> "gamerules"; key == "difficulty" -> "difficulty"; key == "gametype" -> "gamemode"; key == "spawn" -> "spawn"; key.startsWith("border:") -> "border"; else -> "" }
