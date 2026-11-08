@@ -72,6 +72,15 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         var heldLogin: ByteArray? = null
     }
     private var switching: Switch? = null
+    /** `/fission debug switch`: an action bar line on every backend switch (admins only, off by default). */
+    @Volatile var debugSwitch = false
+    private var switchReason = "command"; private var switchT0 = 0L
+    private fun debugSwitchLine(from: String?, to: String, kind: String) {
+        if (!debugSwitch) return
+        val ms = (System.nanoTime() - switchT0) / 1_000_000
+        val c = Component.text("Switched ${from ?: "limbo"} -> $to (${ms} ms, $switchReason, $kind, ${lastDimension} ${lastX},${lastZ})", net.kyori.adventure.text.format.NamedTextColor.YELLOW)
+        if (mode == Mode.RELAY && tracker.serverState == ConnectionState.PLAY) writeRelay(Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage(true, c)))
+    }
     // ---- seamless switching (no Login/Respawn between same-level backends)
     private val idMap = net.fissionmc.master.seamless.EntityIdMap()
     private val clientView = net.fissionmc.master.seamless.ClientView(idMap)
@@ -230,7 +239,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (server.relay?.liveNodeIds()?.contains(target) != true) return@execute   // the owner is not connected: stay where it is
         regionPolicy.switched(cur, now)
         server.log("[regions] $playerName at $dimension $x,$z leaves $cur for $target")
-        startSwitch(target) { why -> server.log("[regions] $playerName: cannot move to $target: $why") }
+        startSwitch(target, "region") { why -> server.log("[regions] $playerName: cannot move to $target: $why") }
     } }
 
     /** The master's permissions changed: tell the player's backend (it resends the command tree, which the master patches again). */
@@ -398,7 +407,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     /** Moves a limbo player to a backend (if one is alive), see [startSwitch]. */
-    fun tryAttach() { channel.eventLoop().execute { if (mode == Mode.LIMBO) startSwitch(null) } }   // timers and backend joins only ever move LIMBO players
+    fun tryAttach() { channel.eventLoop().execute { if (mode == Mode.LIMBO) startSwitch(null, "limbo") } }   // timers and backend joins only ever move LIMBO players
 
     /**
      * Moves the client to [nodeId] (round robin when null) without leaving the PLAY state. The new backend starts its CONFIGURATION with
@@ -406,7 +415,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
      * differs from the one the client got, the old StartConfiguration path is used for this switch ([classicAttach]).
      * [report] receives a short reason when nothing could be started.
      */
-    fun startSwitch(nodeId: String?, report: (String) -> Unit = {}) { channel.eventLoop().execute {
+    fun startSwitch(nodeId: String?, reason: String = "command", report: (String) -> Unit = {}) { channel.eventLoop().execute {
         if (!channel.isActive) return@execute
         if (mode == Mode.LIMBO && user.decoderState != ConnectionState.PLAY) return@execute
         if (switching != null || switchPending) { report("a switch is already running"); return@execute }
@@ -415,6 +424,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             // loaded (the real-client failure happened when StartConfiguration followed the limbo burst immediately), or the grace period is over: see onSwitchFrame / releaseHeld.
         } else if (mode != Mode.RELAY || tracker.clientState != ConnectionState.PLAY || tracker.serverState != ConnectionState.PLAY) { report("the player is busy"); return@execute }
         if (nodeId != null && nodeId == currentNodeId) { report("already on $nodeId"); return@execute }
+        switchReason = if (mode == Mode.LIMBO) "limbo" else reason; switchT0 = System.nanoTime()
         // leaving a backend: it saves the player first, so the next backend starts from the player's latest state (position, inventory, ...)
         val from = relayId; val id = uuid
         if (mode == Mode.RELAY && from != null && id != null && server.relay?.playerData != null) {
@@ -558,7 +568,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val replayed = inputState.replay(login.playerId); replayed.forEach { server.relay?.toBackend(sw.id, it) }
         if (net.fissionmc.net.FissionDebug.on) server.log("[client $playerName] transplant input replay: ${replayed.size} frames (sprint ${inputState.sprinting}, input ${inputState.input}, slot ${inputState.slot})")
         hubsPlaced(); runCommandAfterSwitch()
-        announceArrival(sw.nodeId, if (old != null) before else null)
+        announceArrival(sw.nodeId, if (old != null) before else null); debugSwitchLine(before, sw.nodeId, "transplant")
         server.log("[client] $playerName now on ${sw.nodeId} (transplant: no Login/Respawn, client keeps entity id ${idMap.clientSelf}, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, $removedEntities entities removed, ${removal.size} cleanup frames, ${sw.buffer.size} buffered frames, ${forgets.size} chunks forgotten, position hand-off ${if (lastTeleportId != null) "to the client's real position" else "off"})")
     }
 
@@ -591,7 +601,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         runCatching { RespawnFrames.fromLogin(login) }.onSuccess { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }.onFailure { server.log("[client $playerName] no Respawn after the Login: $it") }
         channel.flush()
         hubsPlaced(); runCommandAfterSwitch()
-        announceArrival(sw.nodeId, if (old != null) currentNodeIdBefore else null)
+        announceArrival(sw.nodeId, if (old != null) currentNodeIdBefore else null); debugSwitchLine(currentNodeIdBefore, sw.nodeId, "login")
         join?.let { j -> j.loginForwarded(); channel.eventLoop().schedule({ if (join === j) { server.log(j.line(playerName, sw.nodeId)); join = null } }, 20, TimeUnit.SECONDS) }
         server.log("[client] $playerName now on ${sw.nodeId} (Login entity id $selfEntityId, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, ${cleanupFrames.size} cleanup frames)")
     }

@@ -14,6 +14,7 @@ object MasterCommands {
                 "send" -> { send(session, server, parts.drop(2)); true }
                 "admin" -> { admin(session, server, parts.drop(2)); true }
                 "regions" -> { regions(session, server); true }
+                "debug" -> { debug(session, parts.drop(2)); true }
                 else -> false
             }
             else -> false
@@ -59,6 +60,19 @@ object MasterCommands {
         val owner = map.owner(s.lastDimension, s.lastX, s.lastZ)
         s.tell(Component.text("You are at ${s.lastDimension} ${s.lastX}, ${s.lastZ}: owner ${owner ?: "nobody"}, on ${s.currentNodeId}.", NamedTextColor.GRAY))
         map.describe().forEach { s.tell(Component.text("  $it", NamedTextColor.DARK_GRAY)) }
+    }
+
+    /** `/fission debug switch [on|off]`: toggles the action bar line shown at every backend switch (per player, admins only). */
+    private fun debug(s: ClientSession, args: List<String>) {
+        if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
+        when (args.getOrNull(0)?.lowercase()) {
+            "switch" -> {
+                s.debugSwitch = when (args.getOrNull(1)?.lowercase()) { "on" -> true; "off" -> false; else -> !s.debugSwitch }
+                s.tell(Component.text("Switch debug: ${if (s.debugSwitch) "on (action bar at every backend switch)" else "off"}", NamedTextColor.GRAY))
+            }
+            "entities" -> s.tell(Component.text("Entity ownership dump: run /fission debug entities on the backend console (needs -Dfission.debug)", NamedTextColor.GRAY))
+            else -> s.tell(Component.text("Usage: /fission debug switch [on|off]", NamedTextColor.RED))
+        }
     }
 
     private fun send(s: ClientSession, server: ClientServer, args: List<String>) {

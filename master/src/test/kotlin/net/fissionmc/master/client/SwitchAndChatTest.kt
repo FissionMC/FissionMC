@@ -86,6 +86,10 @@ class SwitchAndChatTest {
             val flags = b.readByte().toInt(); val kids = IntArray(VarInts.tryRead(b)!!) { VarInts.tryRead(b)!! }
             if (flags and 8 != 0) VarInts.tryRead(b)
             val name = if (flags and 3 == 1) { val l = VarInts.tryRead(b)!!; ByteArray(l).also { x -> b.readBytes(x) }.toString(Charsets.UTF_8) } else null
+            if (flags and 3 == 2) {   // argument: name, parser (brigadier:string = 5 + one varint), custom suggestions
+                val l = VarInts.tryRead(b)!!; b.skipBytes(l); VarInts.tryRead(b); VarInts.tryRead(b)
+                if (flags and 16 != 0) { val sl = VarInts.tryRead(b)!!; b.skipBytes(sl) }
+            }
             name to kids
         }
         return nodes to VarInts.tryRead(b)!!.also { assertEquals(0, b.readableBytes()) }
@@ -105,6 +109,16 @@ class SwitchAndChatTest {
         val chat = nodes[nodes[0].second.last()]
         assertEquals(listOf("global", "local", "toggle"), chat.second.map { nodes[it].first })
         assertNull(ChatCommandTree.patch(byteArrayOf(16, 1, 0, 5)), "not a root at index 0: unchanged")
+    }
+
+    @Test fun `admin tree has fission debug switch on off`() {
+        val b = Unpooled.buffer(); VarInts.write(b, PlayIds.commands); VarInts.write(b, 1)
+        b.writeByte(0); VarInts.write(b, 0); b.writeByte(0)
+        val (nodes, _) = readNodes(ChatCommandTree.patch(ByteArray(b.readableBytes()).also { b.readBytes(it) }, admin = true)!!)
+        assertEquals(20, nodes.size)
+        fun kid(i: Int, name: String) = nodes[i].second.first { nodes[it].first == name }
+        val dbg = kid(kid(0, "fission"), "debug"); val sw = kid(dbg, "switch")
+        assertEquals(listOf("on", "off"), nodes[sw].second.map { nodes[it].first })
     }
 
     @Test fun `the respawn after a login repeats its spawn info`() {
