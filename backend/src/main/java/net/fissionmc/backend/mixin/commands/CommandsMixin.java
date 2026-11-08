@@ -1,6 +1,11 @@
 package net.fissionmc.backend.mixin.commands;
 
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.ParseResults;
+import com.mojang.brigadier.tree.CommandNode;
+import net.minecraft.commands.CommandBuildContext;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.server.MinecraftServer;
@@ -127,7 +132,29 @@ public abstract class CommandsMixin {
     }
     // CraftBukkit end
 
-    // TODO(behaviour): constructor tail (vanilla permission fixes via ArgumentBuilder.defaultRequirement(),
-    // "minecraft:" namespaced copies), isRestricted RestrictedMarker check, sendCommands async building
+    @Shadow @Final private CommandDispatcher<CommandSourceStack> dispatcher;
+
+    // Paper - Vanilla command permission fixes + Brigadier Command API legacy "minecraft:" namespaced commands (constructor tail; Paper's `modern` overload is not added, see class doc)
+    @Inject(method = "<init>(Lnet/minecraft/commands/Commands$CommandSelection;Lnet/minecraft/commands/CommandBuildContext;)V", at = @At("TAIL"))
+    private void fission$vanillaPermissionFixes(final Commands.CommandSelection selection, final CommandBuildContext context, final CallbackInfo ci) {
+        for (final CommandNode<CommandSourceStack> node : this.dispatcher.getRoot().getChildren()) {
+            if (node.getRequirement() == com.mojang.brigadier.builder.ArgumentBuilder.<CommandSourceStack>defaultRequirement()) {
+                node.requirement = stack -> stack.source == net.minecraft.commands.CommandSource.NULL || stack.getBukkitSender().hasPermission(org.bukkit.craftbukkit.command.VanillaCommandWrapper.getPermission(node));
+            } else if (node.getRequirement() instanceof net.minecraft.server.permissions.PermissionProviderCheck<CommandSourceStack> check) {
+                net.fissionmc.backend.commands.VanillaCommandPermissions.register(check, node);
+            }
+        }
+        // Create legacy minecraft namespace commands (flattened redirecting node, Paper's non-modern behaviour)
+        for (final CommandNode<CommandSourceStack> node : new java.util.ArrayList<>(this.dispatcher.getRoot().getChildren())) {
+            CommandNode<CommandSourceStack> flattenedAliasTarget = node;
+            while (flattenedAliasTarget.getRedirect() != null) flattenedAliasTarget = flattenedAliasTarget.getRedirect();
+            this.dispatcher.register(
+                com.mojang.brigadier.builder.LiteralArgumentBuilder.<CommandSourceStack>literal("minecraft:" + node.getName())
+                    .executes(flattenedAliasTarget.getCommand())
+                    .requires(flattenedAliasTarget.getRequirement())
+                    .redirect(flattenedAliasTarget));
+        }
+    }
+    // TODO(behaviour): isRestricted RestrictedMarker check, sendCommands async building
     // (sendAsync/runSync on COMMAND_SENDING_POOL, clientNode, tab-complete=-1 empty packet), fillUsableCommands changes.
 }

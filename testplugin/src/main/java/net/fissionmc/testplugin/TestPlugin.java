@@ -62,6 +62,40 @@ public final class TestPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage("pdc set");
                 return true;
             }
+            // Vanilla command permission path (Paper "Vanilla command permission fixes"): evaluates the dispatcher requirements for a non-op sender
+            if (args.length == 1 && args[0].equals("cmdperm")) {
+                int bad = 0;
+                java.util.List<String> out = new java.util.ArrayList<>();
+                org.bukkit.command.CommandSender who = getServer().createCommandSender(c -> { });
+                Object dispatcher = Class.forName("net.minecraft.server.MinecraftServer").getMethod("getCommands").invoke(Class.forName("org.bukkit.craftbukkit.CraftServer").getMethod("getServer").invoke(getServer()));
+                dispatcher = dispatcher.getClass().getMethod("getDispatcher").invoke(dispatcher);
+                Object root = dispatcher.getClass().getMethod("getRoot").invoke(dispatcher);
+                Class<?> cn = Class.forName("com.mojang.brigadier.tree.CommandNode");
+                Object stack = Class.forName("org.bukkit.craftbukkit.command.VanillaCommandWrapper").getMethod("getListener", org.bukkit.command.CommandSender.class).invoke(null, who);
+                java.lang.reflect.Method getChild = cn.getMethod("getChild", String.class), canUse = cn.getMethod("canUse", Object.class);
+                java.util.function.BiFunction<String, org.bukkit.command.CommandSender, String> probe = (name, snd) -> {
+                    try {
+                        Object node = getChild.invoke(root, name);
+                        if (node == null) return "missing";
+                        Object st = Class.forName("org.bukkit.craftbukkit.command.VanillaCommandWrapper").getMethod("getListener", org.bukkit.command.CommandSender.class).invoke(null, snd);
+                        Object none = Class.forName("net.minecraft.server.permissions.PermissionSet").getField("NO_PERMISSIONS").get(null);
+                        st = st.getClass().getMethod("withPermission", Class.forName("net.minecraft.server.permissions.PermissionSet")).invoke(st, none); // like a non-op player: the vanilla level grants nothing
+                        return String.valueOf(canUse.invoke(node, st));
+                    } catch (Throwable t) { return "error " + t; }
+                };
+                org.bukkit.permissions.PermissionAttachment att = who.addAttachment(this); // the createCommandSender sender is op-like: deny explicitly
+                for (String denied : new String[] {"gamemode", "give", "op"}) att.setPermission("minecraft.command." + denied, false);
+                String[][] expect = {
+                    {"gamemode", "false"}, {"minecraft:gamemode", "false"}, {"give", "false"}, {"minecraft:give", "false"}, {"op", "false"}, {"me", "true"}, {"minecraft:me", "true"}, {"msg", "true"}};
+                for (String[] e : expect) { String r = probe.apply(e[0], who); boolean ok = r.equals(e[1]); if (!ok) bad++; out.add(e[0] + "=" + r + (ok ? "" : "(expected " + e[1] + ")")); }
+                att.setPermission("minecraft.command.gamemode", true);
+                att.setPermission("minecraft.command.me", false);
+                String[][] expect2 = {{"gamemode", "true"}, {"minecraft:gamemode", "true"}, {"give", "false"}, {"me", "false"}, {"minecraft:me", "false"}};
+                for (String[] e : expect2) { String r = probe.apply(e[0], who); boolean ok = r.equals(e[1]); if (!ok) bad++; out.add("attached " + e[0] + "=" + r + (ok ? "" : "(expected " + e[1] + ")")); }
+                getLogger().info("CMDPERM " + (bad == 0 ? "OK" : "FAIL") + " " + String.join(" ", out));
+                sender.sendMessage("cmdperm bad=" + bad);
+                return true;
+            }
             // bulk edit simulations of what WorldEdit does (design/plugin-compat.md): <mode> = api (Block.setBlockData) | nms (LevelChunk.setBlockState through reflection, like WorldEdit's NMS adapters)
             if (args.length == 7 && (args[0].equals("bulkset") || args[0].equals("bulkcount"))) {
                 org.bukkit.World w = getServer().getWorld(args[1]);
