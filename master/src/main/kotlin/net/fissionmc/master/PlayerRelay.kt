@@ -179,17 +179,17 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is GhostPose, is GhostMeta, is GhostSwing -> ghostHandler?.invoke(msg)
             is CommandCheckResult -> bindings[msg.playerId]?.takeIf { it.node === node }?.client?.commandChecked(msg.seq, msg.allowed, msg.present)
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
-            is PlayerPosition -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.let { it.dim = msg.dimension; it.x = msg.x; it.z = msg.z; it.known = true; it.client.playerMoved(msg.dimension, msg.x, msg.z) } }
-            is EntityHandover -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // owner -> new owner, as is
-            is BorderForward -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // ghost-edge ticks and neighbour updates: to the owner of the chunk, as is
-            is GhostDemand -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)   // viewer -> owner: keep these chunks ticking
-            is GhostSync -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)     // viewer -> owner: hashes of the ghost copy
-            is GhostFix -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)      // owner -> viewer: the sections that differ
-            is EntityHandoverAck -> registry[msg.origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned))
+            is PlayerPosition -> { net.fissionmc.net.trace.Trace.emit("player.position") { str("from", node.info.nodeId); player(null, msg.uuidHigh, msg.uuidLow); str("dim", msg.dimension); int("x", msg.x); int("z", msg.z) }; val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.let { it.dim = msg.dimension; it.x = msg.x; it.z = msg.z; it.known = true; it.client.playerMoved(msg.dimension, msg.x, msg.z) } }
+            is EntityHandover -> traceHandover(node, msg).let { registry[msg.toBackend] }?.link?.takeIf { it.isOpen }?.send(msg)   // owner -> new owner, as is
+            is BorderForward -> { net.fissionmc.net.trace.Trace.emit("border.forward") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("ticks", msg.ticks.size); int("neighbors", msg.neighbors.size); bool("delivered", registry[msg.toBackend]?.link?.isOpen == true) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }   // ghost-edge ticks and neighbour updates: to the owner of the chunk, as is
+            is GhostDemand -> traceGhost("ghost.demand", msg.origin, msg.toBackend, msg.dimension, msg.chunks.size).let { registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }   // viewer -> owner: keep these chunks ticking
+            is GhostSync -> { net.fissionmc.net.trace.Trace.emit("ghost.sync") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("cx", msg.cx); int("cz", msg.cz); int("sections", msg.hashes.size) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }     // viewer -> owner: hashes of the ghost copy
+            is GhostFix -> { net.fissionmc.net.trace.Trace.emit("ghost.fix") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("cx", msg.cx); int("cz", msg.cz); ints("sections", msg.sections.map { it.index }.toIntArray()) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }      // owner -> viewer: the sections that differ
+            is EntityHandoverAck -> { net.fissionmc.net.trace.Trace.emit("handover.ack") { str("origin", msg.origin); str("from", node.info.nodeId); int("spawned", msg.spawned.size) }; registry[msg.origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned)) }
             is PlayerFileSave -> playerData?.onFileSave(node.info.nodeId, java.util.UUID(msg.uuidHigh, msg.uuidLow), msg.kind, msg.bytes)
             is PlayerFlushed -> playerData?.flushed(java.util.UUID(msg.uuidHigh, msg.uuidLow))
-            is EntityTransfer -> { val u = java.util.UUID(msg.playerHigh, msg.playerLow); if (msg.blobs.isEmpty()) pendingEntities.remove(u) else pendingEntities[u] = Pending(node.info.nodeId, msg) }
-            is EntityTransferAck -> {
+            is EntityTransfer -> { net.fissionmc.net.trace.Trace.emit("travel.transfer") { str("from", node.info.nodeId); player(null, msg.playerHigh, msg.playerLow); int("entities", msg.blobs.size) }; val u = java.util.UUID(msg.playerHigh, msg.playerLow); if (msg.blobs.isEmpty()) pendingEntities.remove(u) else pendingEntities[u] = Pending(node.info.nodeId, msg) }
+            is EntityTransferAck -> { net.fissionmc.net.trace.Trace.emit("travel.transfer.ack") { str("from", node.info.nodeId); player(null, msg.playerHigh, msg.playerLow); int("spawned", msg.spawned.size) }
                 val u = java.util.UUID(msg.playerHigh, msg.playerLow); val origin = awaitingAck.remove(u)
                 if (origin != null && msg.spawned.isNotEmpty()) registry[origin]?.link?.takeIf { it.isOpen }?.send(EntityRemove(msg.spawned))
             }
@@ -199,6 +199,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
         }
         return true
     }
+
+    private fun traceHandover(node: RegisteredNode, m: EntityHandover) = net.fissionmc.net.trace.Trace.emit("handover") { str("from", node.info.nodeId); str("origin", m.origin); str("to", m.toBackend); str("dim", m.dimension); int("entities", m.blobs.size); ints("kinds", m.blobs.map { it.kind }.toIntArray()); strs("uuids", m.blobs.map { java.util.UUID(it.uuidHigh, it.uuidLow).toString() }) }
+    private fun traceGhost(type: String, from: String, to: String, dim: String, n: Int) = net.fissionmc.net.trace.Trace.emit(type) { str("from", from); str("to", to); str("dim", dim); int("chunks", n) }
 
     /** All players of a backend that left lose their session. */
     val listener = object : NodeRegistry.Listener {

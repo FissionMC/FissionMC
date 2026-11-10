@@ -41,6 +41,7 @@ object PermissionBackend {
                 val u = UUID(m.uuidHigh, m.uuidLow); byBinding[m.playerId] = u
                 val before = granted[u]?.level ?: 0
                 val grant = Grant(m.level.coerceIn(0, 4), m.nodes.toSet())
+                net.fissionmc.net.trace.Trace.emit("permission.grant") { player(null, u); int("level", grant.level); int("before", before); strs("nodes", grant.nodes) }
                 if (grant.level == 0 && grant.nodes.isEmpty()) granted.remove(u) else granted[u] = grant
                 server?.execute {
                     val p = server.playerList.getPlayer(u) ?: return@execute
@@ -75,6 +76,7 @@ object PermissionBackend {
     /** Mixin on the permission level packet: report what vanilla computes (after our override, so a granted admin reports 4). */
     @JvmStatic fun report(uuid: UUID, level: Int) {
         if (!PlayerDataBackend.isRelayed(uuid)) return
+        net.fissionmc.net.trace.Trace.emit("permission.report") { player(null, uuid); int("level", level) }
         NodeBootstrap.link?.takeIf { it.isOpen }?.send(PlayerPermissionReport(uuid.mostSignificantBits, uuid.leastSignificantBits, level))
     }
 }

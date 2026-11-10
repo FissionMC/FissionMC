@@ -1,5 +1,6 @@
 package net.fissionmc.backend.replication
 
+import net.fissionmc.master.traceEvent
 import net.fissionmc.backend.node.NodeBootstrap
 import net.fissionmc.backend.relay.RegionsBackend
 import net.fissionmc.net.NodeLink
@@ -106,6 +107,7 @@ object Replication {
     private fun submit(e: ReplicatedEvent): Boolean {
         val l = NodeBootstrap.link
         if (l == null || !l.isOpen) { droppedWhileDisconnected++; return false }
+        net.fissionmc.net.trace.Trace.emit("repl.submit") { traceEvent(this, e) }
         l.send(EventSubmit(e))
         return true
     }
@@ -143,6 +145,7 @@ object Replication {
         }
         lastApplied = m.seq
         val own = m.origin == nodeId
+        net.fissionmc.net.trace.Trace.emit("repl.apply") { long("seq", m.seq); str("origin", m.origin); bool("own", own); traceEvent(this, m.event) }
         when (val e = m.event) {
             is BlockChange -> {
                 val k = Key(e.dimension, e.x, e.y, e.z)
@@ -163,6 +166,7 @@ object Replication {
                     if (why != null) {
                         val cur = level.getBlockState(pos)
                         refused++
+                        net.fissionmc.net.trace.Trace.emit("repl.refused") { long("seq", m.seq); str("origin", m.origin); str("dim", e.dimension); int("x", e.x); int("y", e.y); int("z", e.z); str("state", state.toString()); str("why", why); str("answer", cur.toString()) }
                         log.info("[fission] refused a placement from ${m.origin} at ${e.dimension} ${e.x},${e.y},${e.z} ($state): $why; answering with $cur")
                         submit(BlockChange(e.dimension, e.x, e.y, e.z, Block.getId(cur), "fix"))
                         level.chunkSource.blockChanged(pos)
@@ -171,6 +175,7 @@ object Replication {
                 }
                 val now = applyRemote(level, pos, state)
                 appliedCount++
+                net.fissionmc.net.trace.Trace.emit("repl.applied") { long("seq", m.seq); str("dim", e.dimension); int("x", e.x); int("y", e.y); int("z", e.z); str("wanted", state.toString()); str("readback", now.toString()); bool("match", now == state) }
                 if (net.fissionmc.net.FissionDebug.on) log.info("[fission] applied seq=${m.seq} BlockChange(${e.cause}) from ${m.origin} ${e.dimension} ${e.x},${e.y},${e.z} -> $state (readback ${if (now == state) "ok" else "MISMATCH $now"})")
                 // the readback differs from what the writer asked for (a plugin or the block itself changed it): the owner's result is the truth for everybody
                 if (!own && now != state && RegionsBackend.ownsBlock(e.dimension, e.x, e.z)) submit(BlockChange(e.dimension, e.x, e.y, e.z, Block.getId(now), "fix"))
@@ -180,6 +185,7 @@ object Replication {
                 val entity = level.getEntityInAnyDimension(UUID(e.uuidHigh, e.uuidLow))
                 if (entity != null && entity !is Player && !entity.isRemoved) {
                     applying.set(true)
+                    net.fissionmc.net.trace.Trace.emit("entity.remove.remote") { long("seq", m.seq); str("origin", m.origin); str("entity", entity.uuid.toString()); str("type", entity.type.descriptionId); str("cause", e.cause) }
                     try { entity.discard() } finally { applying.set(false) }
                     appliedCount++
                 }

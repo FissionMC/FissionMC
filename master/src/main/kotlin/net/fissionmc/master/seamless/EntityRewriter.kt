@@ -10,6 +10,11 @@ object PlayPacketIds {
         .filter { it.startsWith("$dir ") }.associate { val p = it.split(' '); p[2].removePrefix(if (dir == "C") "Clientbound" else "Serverbound").removeSuffix("Packet") to p[1].toInt() }
     val clientbound: Map<String, Int> by lazy { load("C") }
     val serverbound: Map<String, Int> by lazy { load("S") }
+    private val cNames: Map<Int, String> by lazy { clientbound.entries.associate { it.value to it.key } }
+    private val sNames: Map<Int, String> by lazy { serverbound.entries.associate { it.value to it.key } }
+    /** Name of a PLAY packet id for the flight recorder (`#id` when unknown). */
+    fun nameC(id: Int): String = cNames[id] ?: "#$id"
+    fun nameS(id: Int): String = sNames[id] ?: "#$id"
     fun c(name: String): Int = clientbound[name] ?: error("no clientbound packet $name")
     fun s(name: String): Int = serverbound[name] ?: error("no serverbound packet $name")
 }
@@ -37,21 +42,27 @@ class EntityIdMap {
     /** A transplant: a new backend whose own player id is [newBackendSelf]. Everything of the old generation must have been removed from the client before. */
     fun transplantTo(newBackendSelf: Int) { identity = false; backendSelf = newBackendSelf; b2c.clear(); c2b.clear(); held.clear(); types.clear() }
 
+    /** Flight recorder: the (from, to) pairs of the ids translated since [traceN] was last set to 0 (flat; at most 8 pairs). Only filled while tracing is on. */
+    @JvmField var traceN = 0
+    @JvmField val traceIds = IntArray(16)
+    private fun rec(from: Int, to: Int): Int { if (net.fissionmc.net.trace.Trace.on && traceN < 8) { traceIds[traceN * 2] = from; traceIds[traceN * 2 + 1] = to; traceN++ }; return to }
+    fun traceList(): IntArray = traceIds.copyOf(traceN * 2)
+
     fun toClient(b: Int): Int {
-        if (identity) return b
-        if (b == backendSelf) return clientSelf
-        return b2c.getOrPut(b) { var c = next++; if (c == clientSelf) c = next++; c2b[c] = b; c }
+        if (identity) return rec(b, b)
+        if (b == backendSelf) return rec(b, clientSelf)
+        return rec(b, b2c.getOrPut(b) { var c = next++; if (c == clientSelf) c = next++; c2b[c] = b; c })
     }
     /** The backend id behind a client id, or null for an entity this generation never told the client about. */
     fun toBackend(c: Int): Int? {
-        if (c == clientSelf) return backendSelf
-        if (identity) return c
-        return c2b[c]
+        val r = if (c == clientSelf) backendSelf else if (identity) c else c2b[c]
+        rec(c, r ?: -1)
+        return r
     }
     fun release(b: Int) { if (identity) return; b2c.remove(b)?.let { c2b.remove(it) } }
 
-    fun onAdded(clientId: Int, type: Int) { if (clientId != clientSelf) { held += clientId; types[clientId] = type } }
-    fun onRemoved(clientId: Int) { held -= clientId; types.remove(clientId) }
+    fun onAdded(clientId: Int, type: Int) { net.fissionmc.net.trace.Trace.emit("entity.client.add") { int("clientId", clientId); int("type", type) }; if (clientId != clientSelf) { held += clientId; types[clientId] = type } }
+    fun onRemoved(clientId: Int) { net.fissionmc.net.trace.Trace.emit("entity.client.remove") { int("clientId", clientId) }; held -= clientId; types.remove(clientId) }
     fun typeOf(clientId: Int): Int? = types[clientId]
     fun heldIds(): List<Int> = held.toList()
 

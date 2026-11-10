@@ -87,6 +87,7 @@ object GhostSyncBackend {
                 val chunk = loaded[c.key] ?: continue
                 val cx = ChunkPos.getX(c.key); val cz = ChunkPos.getZ(c.key)
                 val owner = RegionsBackend.chunkOwner(dim, cx, cz) ?: continue
+                net.fissionmc.net.trace.Trace.emit("ghost.sync.out") { str("to", owner); str("dim", dim); int("cx", cx); int("cz", cz) }
                 link.send(GhostSync(RegionsBackend.youId(), owner, dim, cx, cz, hashes(chunk))); syncsSent.incrementAndGet()
             }
         }
@@ -112,6 +113,7 @@ object GhostSyncBackend {
             n++
         }
         demandTicketsHeld.addAndGet(n.toLong())
+        net.fissionmc.net.trace.Trace.emit("ghost.demand.in") { str("from", m.origin); str("dim", m.dimension); int("chunks", m.chunks.size); int("owned", n) }
         if (net.fissionmc.net.FissionDebug.on && n > 0) log.info("[fission] ghost demand from ${m.origin}: $n chunks of ${m.dimension} kept ticking")
     }
 
@@ -124,6 +126,7 @@ object GhostSyncBackend {
         for (i in m.hashes.indices) { val ids = stateIds(chunk, i); if (SectionCodec.hash(ids) != m.hashes[i]) bad += GhostSection(i, SectionCodec.encode(ids)) }
         if (bad.isEmpty()) { if (net.fissionmc.net.FissionDebug.on) log.fine("[fission] ghost sync ${m.dimension} ${m.cx},${m.cz} from ${m.origin}: identical"); return }
         syncsMismatched.incrementAndGet()
+        net.fissionmc.net.trace.Trace.emit("ghost.sync.mismatch") { str("from", m.origin); str("dim", m.dimension); int("cx", m.cx); int("cz", m.cz); ints("sections", bad.map { it.index }.toIntArray()) }
         if (net.fissionmc.net.FissionDebug.on) log.info("[fission] ghost sync ${m.dimension} ${m.cx},${m.cz}: ${m.origin}'s copy differs in sections ${bad.map { it.index }}, sending the owner's blocks")
         NodeBootstrap.link?.takeIf { it.isOpen }?.send(GhostFix(RegionsBackend.youId(), m.origin, m.dimension, m.cx, m.cz, bad))
     }
@@ -150,6 +153,7 @@ object GhostSyncBackend {
             }
         }
         blocksFixed.addAndGet(fixed.toLong())
+        net.fissionmc.net.trace.Trace.emit("ghost.fix.applied") { str("from", m.origin); str("dim", m.dimension); int("cx", m.cx); int("cz", m.cz); int("sections", m.sections.size); int("blocks", fixed) }
         if (fixed > 0) log.info("[fission] ghost sync: ${m.origin} owns ${m.dimension} chunk ${m.cx},${m.cz}; $fixed blocks of this ghost copy were out of date and are repaired")
         scheduler.recheck(ChunkPos.pack(m.cx, m.cz))
     }

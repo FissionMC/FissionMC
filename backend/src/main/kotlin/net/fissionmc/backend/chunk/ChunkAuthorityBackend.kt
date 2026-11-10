@@ -52,6 +52,12 @@ object ChunkAuthorityBackend {
 
     /** Node link thread. */
     fun onMessage(m: NodeMessage) {
+        net.fissionmc.net.trace.Trace.emit("chunk.msg") { str("msg", m.javaClass.simpleName); when (m) {
+            is ChunkData -> { long("req", m.reqId); int("status", m.status); long("version", m.version); blob("data", m.bytes) }
+            is ChunkAbsent -> { long("req", m.reqId); bool("lease", m.lease) }
+            is ChunkStored -> { str("dim", m.dimension); int("kind", m.kind); int("x", m.x); int("z", m.z); bool("accepted", m.accepted); long("version", m.version) }
+            is ChunkAvailable -> { str("dim", m.dimension); int("kind", m.kind); int("x", m.x); int("z", m.z); long("version", m.version) }
+            else -> {} } }
         when (m) {
             is ChunkData -> pending.remove(m.reqId)?.future?.complete(Reply(m, false))
             is ChunkAbsent -> pending.remove(m.reqId)?.future?.complete(Reply(null, m.lease))

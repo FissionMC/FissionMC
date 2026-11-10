@@ -36,6 +36,7 @@ class ReplicationHub(val log: EventLog = EventLog(), val epoch: Long = java.util
 
     fun submit(origin: String, event: ReplicatedEvent): SequencedEvent = synchronized(lock) {
         val e = log.append(origin, event)
+        net.fissionmc.net.trace.Trace.emit("repl.event") { long("seq", e.seq); str("origin", origin); traceEvent(this, event) }
         for ((id, l) in live) if (l.isOpen) l.send(e) else logger.fine("skip closed link to $id")
         e
     }
@@ -51,5 +52,13 @@ class ReplicationHub(val log: EventLog = EventLog(), val epoch: Long = java.util
         }
         live[node.info.nodeId] = link
         if (from < log.lastSeq) logger.info("${node.info.nodeId} resumed from seq $from (log at ${log.lastSeq})")
+    }
+}
+
+/** The fields of a replicated event for the flight recorder (shared with the backend). */
+fun traceEvent(e: net.fissionmc.net.trace.TraceEvent, ev: net.fissionmc.protocol.ReplicatedEvent) {
+    when (ev) {
+        is net.fissionmc.protocol.BlockChange -> { e.str("kind", "block").str("dim", ev.dimension).int("x", ev.x).int("y", ev.y).int("z", ev.z).int("state", ev.stateId).str("cause", ev.cause) }
+        is net.fissionmc.protocol.EntityRemoved -> { e.str("kind", "entityRemoved").str("dim", ev.dimension).str("entity", java.util.UUID(ev.uuidHigh, ev.uuidLow).toString()).str("cause", ev.cause) }
     }
 }

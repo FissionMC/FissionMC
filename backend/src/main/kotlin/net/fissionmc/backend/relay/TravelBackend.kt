@@ -119,6 +119,7 @@ object TravelBackend {
         val player = server.playerList.getPlayer(uuid) ?: return
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
         val blobs = try { travelers(player, petRadius).mapNotNull { (k, e) -> if (k == EntityBlobKind.MOUNT) mountBlob(player, e) else blob(k, e) } } catch (t: Throwable) { log.warning("[fission] collecting the entities of ${player.gameProfile.name()} failed: $t"); emptyList() }
+        net.fissionmc.net.trace.Trace.emit("travel.collect") { player(player.gameProfile.name(), uuid); int("entities", blobs.size); ints("kinds", blobs.map { it.kind }.toIntArray()); strs("uuids", blobs.map { UUID(it.uuidHigh, it.uuidLow).toString() }) }
         link.send(EntityTransfer(uuid.mostSignificantBits, uuid.leastSignificantBits, blobs))   // empty list clears an older pending transfer
         if (blobs.isNotEmpty()) log.info("[fission] ${player.gameProfile.name()} takes ${blobs.size} entities along: ${blobs.size} (${travelersSummary(player, petRadius)})")
     }
@@ -157,6 +158,7 @@ object TravelBackend {
             if (e == null) { log.warning("[fission] could not spawn a traveling entity ${b.uuidHigh.toString(16)} for ${player.gameProfile.name()}"); continue }
             if (b.kind == EntityBlobKind.RIDER) e.startRiding(player, true, false)
             for (x in listOf(e) + e.indirectPassengers) { spawned += x.uuid.mostSignificantBits; spawned += x.uuid.leastSignificantBits }
+            net.fissionmc.net.trace.Trace.emit("entity.spawn.transferred") { str("entity", e.uuid.toString()); str("type", e.type.descriptionId); int("id", e.id); str("dim", level.dimension().identifier().toString()); double("x", e.x); double("y", e.y); double("z", e.z); int("passengers", e.indirectPassengers.count()) }
         }
         log.info("[fission] ${player.gameProfile.name()}: ${spawned.size / 2} traveling entities spawned")
         NodeBootstrap.link?.takeIf { it.isOpen }?.send(EntityTransferAck(player.uuid.mostSignificantBits, player.uuid.leastSignificantBits, spawned))
@@ -208,6 +210,7 @@ object TravelBackend {
      * ServerboundMoveVehicle; the vanilla check "moved too quickly" compares against the vehicle's position), a plain passenger only gets the teleport handshake. The teleport answer is what the master waits for.
      */
     fun handoff(player: ServerPlayer, x: Double, y: Double, z: Double, yaw: Float, pitch: Float) {
+        net.fissionmc.net.trace.Trace.emit("handoff.position") { player(player.gameProfile.name(), player.uuid); double("x", x); double("y", y); double("z", z); double("yaw", yaw.toDouble()); double("pitch", pitch.toDouble()); bool("vehicle", player.rootVehicle !== player) }
         val root = player.rootVehicle
         if (root !== player && root.controllingPassenger === player && root.distanceToSqr(x, y, z) < 64.0 * 64.0) {
             root.absSnapTo(x, y, z, root.yRot, root.xRot)
@@ -268,6 +271,7 @@ object TravelBackend {
             val u = UUID(pairs[i * 2], pairs[i * 2 + 1])
             for (level in server.allLevels) { val e = level.getEntity(u); if (e != null && e !is ServerPlayer) { e.discard(); n++; break } }
         }
+        net.fissionmc.net.trace.Trace.emit("entity.remove.moved") { int("requested", pairs.size / 2); int("removed", n) }
         log.info("[fission] removed $n entities that moved to another backend")
     }
 }

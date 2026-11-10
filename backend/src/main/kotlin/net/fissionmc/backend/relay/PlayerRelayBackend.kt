@@ -139,12 +139,12 @@ object PlayerRelayBackend {
         while (true) {
             when (val m = inbox.poll() ?: break) {
                 is PlayerClientInfo -> infos[m.playerId] = m
-                is PlayerAttach -> { pendingFrames[m.playerId] = ArrayList(); preLogin(m, infos.remove(m.playerId)) }
+                is PlayerAttach -> { net.fissionmc.net.trace.Trace.emit("player.attach") { player(m.name, m.uuidHigh, m.uuidLow); long("pid", m.playerId); int("protocol", m.protocol) }; pendingFrames[m.playerId] = ArrayList(); preLogin(m, infos.remove(m.playerId)) }
                 is PlayerPacketToBackend -> {
                     val v = sessions[m.playerId]
                     if (v != null) feed(v, m.bytes) else pendingFrames[m.playerId]?.add(m.bytes)
                 }
-                is PlayerDetach -> { pendingFrames.remove(m.playerId); infos.remove(m.playerId); sessions.remove(m.playerId)?.channel?.close() }
+                is PlayerDetach -> { net.fissionmc.net.trace.Trace.emit("player.detach") { long("pid", m.playerId); str("reason", m.reason) }; pendingFrames.remove(m.playerId); infos.remove(m.playerId); sessions.remove(m.playerId)?.channel?.close() }
             }
         }
         // players whose async pre-login finished

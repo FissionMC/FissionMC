@@ -51,6 +51,7 @@ class ChunkAuthority(
     }
 
     private fun request(node: RegisteredNode, m: ChunkRequest) {
+        net.fissionmc.net.trace.Trace.emit("chunk.request") { str("node", node.info.nodeId); str("dim", m.dimension); int("kind", m.kind); int("x", m.x); int("z", m.z); bool("peek", m.peek); long("req", m.reqId) }
         requests.incrementAndGet()
         val key = ChunkKey(m.dimension, m.kind, m.x, m.z)
         val have = store.get(key)
@@ -85,6 +86,7 @@ class ChunkAuthority(
     private fun grant(key: ChunkKey, node: RegisteredNode, reqId: Long) {
         leases[key] = Lease(node.info.nodeId, System.currentTimeMillis() + leaseMs)
         leasesGranted.incrementAndGet()
+        net.fissionmc.net.trace.Trace.emit("chunk.lease") { str("dim", key.dimension); int("x", key.x); int("z", key.z); str("node", node.info.nodeId); long("req", reqId) }
         if (net.fissionmc.net.FissionDebug.on) log("[chunks] lease ${key.dimension} ${key.x},${key.z} -> ${node.info.nodeId}")
         node.link.send(ChunkAbsent(reqId, true))
     }
@@ -105,6 +107,7 @@ class ChunkAuthority(
     }
 
     private fun push(node: RegisteredNode, m: ChunkPush) {
+        net.fissionmc.net.trace.Trace.emit("chunk.push") { str("node", node.info.nodeId); str("dim", m.dimension); int("kind", m.kind); int("x", m.x); int("z", m.z); long("base", m.baseVersion); blob("data", m.bytes) }
         bytesIn.addAndGet(m.bytes.size.toLong())
         synchronized(lock) { progress[node.info.nodeId] = System.currentTimeMillis() }
         val key = ChunkKey(m.dimension, m.kind, m.x, m.z)

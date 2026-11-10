@@ -49,7 +49,7 @@ object MasterCommands {
         } else {
             s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in permissions.players of fission.yml: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
         }
-        server.log("[master] ${s.playerName}: admin $action $who ($uuid)")
+        server.tlog("[master] ${s.playerName}: admin $action $who ($uuid)")
         online?.pushPermission()
     }
 
@@ -84,7 +84,7 @@ object MasterCommands {
         if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
         val hub = server.relay?.trace ?: run { s.tell(Component.text("No backend relay here.", NamedTextColor.RED)); return }
         val say: (String) -> Unit = { line -> s.tell(Component.text(line, NamedTextColor.GRAY)) }
-        server.log("[master] ${s.playerName}: /fission trace ${args.joinToString(" ")}")
+        server.tlog("[master] ${s.playerName}: /fission trace ${args.joinToString(" ")}")
         when (args.getOrNull(0)?.lowercase()) {
             "start" -> hub.start(s.playerName, say)
             "stop" -> hub.stop(s.playerName, say)
@@ -102,7 +102,7 @@ object MasterCommands {
         if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
         if (args.size != 2) { s.tell(Component.text("Usage: /fission send <player> <backend>", NamedTextColor.RED)); return }
         val target = server.findByName(args[0]) ?: run { s.tell(Component.text("No such player: ${args[0]}", NamedTextColor.RED)); return }
-        server.log("[master] ${s.playerName} sends ${target.playerName} to ${args[1]}")
+        server.tlog("[master] ${s.playerName} sends ${target.playerName} to ${args[1]}")
         target.startSwitch(args[1]) { why -> s.tell(Component.text("Cannot send ${target.playerName} to ${args[1]}: $why", NamedTextColor.RED)) }
         s.tell(Component.text("Sending ${target.playerName} to ${args[1]}...", NamedTextColor.GRAY))
         val map = server.relay?.regions

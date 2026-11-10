@@ -27,7 +27,7 @@ object RegionsBackend {
 
     fun onMessage(m: NodeMessage, server: MinecraftServer?) {
         when (m) {
-            is RegionMap -> { val changed = you != m.you || rules != m.rules; you = m.you; rules = m.rules; if (changed) log.info("[fission] regions: I am ${m.you}, ${m.rules.size} rules") }   // the master resends every 5 s (a first send can precede the handlers)
+            is RegionMap -> { net.fissionmc.net.trace.Trace.emit("region.map") { str("you", m.you); int("rules", m.rules.size) }; val changed = you != m.you || rules != m.rules; you = m.you; rules = m.rules; if (changed) log.info("[fission] regions: I am ${m.you}, ${m.rules.size} rules") }   // the master resends every 5 s (a first send can precede the handlers)
             is GenerateChunk -> server?.execute { generate(server, m) }
             is EntityHandover -> server?.execute { spawnHandover(server, m) }
             is BorderForward -> BorderForwardBackend.onMessage(m)
@@ -83,6 +83,7 @@ object RegionsBackend {
         if (!enabled) return true
         val level = entity.level() as? ServerLevel ?: return true
         val ok = ownsBlock(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)
+        if (!ok) net.fissionmc.net.trace.Trace.emit("entity.notloaded") { str("entity", entity.uuid.toString()); str("type", entity.type.descriptionId); int("x", entity.blockX); int("z", entity.blockZ); str("owner", ownerOf(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)) }
         if (!ok && net.fissionmc.net.FissionDebug.on) log.info("[fission] entities: not loading ${entity.type.descriptionId} ${entity.uuid} at ${entity.blockX},${entity.blockY},${entity.blockZ} (${level.dimension().identifier()}): owned by ${ownerOf(level.dimension().identifier().toString(), entity.blockX, entity.blockZ)}")
         return ok
     }
@@ -158,6 +159,7 @@ object RegionsBackend {
                 if (target == you) continue
                 val b = TravelBackend.blobFor(EntityBlobKind.HANDOVER, e) ?: continue
                 byTarget.computeIfAbsent(target) { ArrayList() } += b; handingOver[e.uuid] = now; handedOverCount.incrementAndGet()
+                net.fissionmc.net.trace.Trace.emit("entity.handover.out") { str("entity", e.uuid.toString()); str("type", e.type.descriptionId); str("dim", dim); int("x", e.blockX); int("y", e.blockY); int("z", e.blockZ); str("to", target); int("id", e.id) }
                 if (net.fissionmc.net.FissionDebug.on) log.info("[fission] entities: handing ${e.type.descriptionId} ${e.uuid} at ${e.blockX},${e.blockY},${e.blockZ} over to $target")
             }
             for ((target, blobs) in byTarget) blobs.chunked(MAX_ENTITY_BLOBS).forEach { link.send(EntityHandover(you, target, dim, it)) }
@@ -167,6 +169,7 @@ object RegionsBackend {
     private fun spawnHandover(server: MinecraftServer, m: EntityHandover) {
         val level = server.allLevels.firstOrNull { it.dimension().identifier().toString() == m.dimension } ?: return
         val spawned = TravelBackend.spawnAt(level, m.blobs); receivedCount.addAndGet((spawned.size / 2).toLong())
+        net.fissionmc.net.trace.Trace.emit("entity.handover.in") { str("from", m.origin); str("dim", m.dimension); int("offered", m.blobs.size); int("spawned", spawned.size / 2) }
         NodeBootstrap.link?.takeIf { it.isOpen }?.send(EntityHandoverAck(m.origin, spawned))
     }
 }

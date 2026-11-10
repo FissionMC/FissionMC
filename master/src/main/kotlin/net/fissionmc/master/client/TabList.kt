@@ -69,6 +69,7 @@ class TabListHub(private val log: (String) -> Unit = {}) {
             val u = viewer.tabUuid
             if (members[u]?.viewer !== viewer) return@locked
             members.remove(u); table.remove(u)
+            net.fissionmc.net.trace.Trace.emit("tab.unregister") { str("uuid", u.toString()); int("holders", members.values.count { it.shown.contains(u) }) }
             val frame = Limbo.encode(WrapperPlayServerPlayerInfoRemove(listOf(u)))
             for (m in members.values) if (m.shown.remove(u)) m.viewer.tabSend(frame)
         }
@@ -79,6 +80,7 @@ class TabListHub(private val log: (String) -> Unit = {}) {
         locked {
             val u = viewer.tabUuid
             if (table.remove(u) == null) return@locked
+            net.fissionmc.net.trace.Trace.emit("tab.hidden") { str("uuid", u.toString()) }
             val frame = Limbo.encode(WrapperPlayServerPlayerInfoRemove(listOf(u)))
             for (m in members.values) if (m.viewer !== viewer && m.shown.remove(u)) m.viewer.tabSend(frame)
         }
@@ -108,6 +110,7 @@ class TabListHub(private val log: (String) -> Unit = {}) {
                 else -> {}
             }
             table[viewer.tabUuid] = e
+            net.fissionmc.net.trace.Trace.emit("tab.update") { str("uuid", viewer.tabUuid.toString()); str("name", e.name); strs("actions", w.actions.map { it.name }); bool("changed", changed); bool("listed", e.listed); int("latency", e.latency) }
             if (changed) push(viewer, e, w.actions)
         } catch (t: Throwable) { log("[tab] cannot merge a PlayerInfoUpdate of ${viewer.tabUuid}: $t") }
         frame

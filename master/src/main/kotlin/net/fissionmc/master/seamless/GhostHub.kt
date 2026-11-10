@@ -161,6 +161,7 @@ class GhostHub(
 
     private fun drop(v: Member, player: UUID) {
         val sp = v.ghosts.remove(player) ?: return
+        net.fissionmc.net.trace.Trace.emit("ghost.despawn") { str("viewer", v.viewer.ghostUuid.toString()); str("viewerNode", v.viewer.ghostNode); str("ghostOf", player.toString()); str("name", sp.name); int("clientId", sp.clientId) }
         if (v.viewer.ghostNode != null) {
             v.viewer.ghostSend(GhostFrames.remove(sp.clientId))
             v.viewer.ghostSend(GhostFrames.tabRemove(ghostUuidOf(player)))
@@ -191,6 +192,7 @@ class GhostHub(
             val id = v.nextId++
             val g = Spawned(id, entry.name, sp.x, sp.y, sp.z, sp.yaw, sp.pitch, sp.headYaw, sp.onGround)
             v.ghosts[uuid] = g; v.viewer.ghostAdded(id)
+            net.fissionmc.net.trace.Trace.emit("ghost.spawn") { str("viewer", v.viewer.ghostUuid.toString()); str("viewerNode", vn); str("ghostOf", uuid.toString()); str("name", entry.name); str("sourceNode", sn); int("clientId", id); double("x", sp.x); double("y", sp.y); double("z", sp.z); str("dim", sp.dimension) }
             // order matters: the tab line and the team first, then the entity (the client looks the skin and the team up when the entity appears)
             v.viewer.ghostSend(GhostFrames.tabAdd(ghostUuidOf(uuid), entry))
             if (!v.teamSent) { v.teamSent = true; v.viewer.ghostSend(GhostFrames.teamCreate(listOf(entry.name))) } else v.viewer.ghostSend(GhostFrames.teamAdd(entry.name))

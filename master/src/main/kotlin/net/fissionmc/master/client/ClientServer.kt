@@ -41,11 +41,13 @@ class ClientServer(
     /** Global chat (needs the relay). */
     init { relay?.localAnnouncements = settings.announcements.local; relay?.petRadius = settings.petRadius }
     init { relay?.grantedLevel = { p -> settings.permissions.levelOf(p.uuid) }; relay?.grantedNodes = { p -> settings.permissions.nodesOf(p.uuid).toList() } }
+    /** [log] that also records every line in the flight recorder (the decisions the master logs: switches, regions, cross commands, tab list, ghosts). */
+    val tlog: (String) -> Unit = { s -> net.fissionmc.net.trace.Trace.emit("log") { str("line", s) }; log(s) }
     /** Global chat (needs the relay). */
-    val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, log).also { h -> r.chatResultHandler = h::onResult } }
+    val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, tlog).also { h -> r.chatResultHandler = h::onResult } }
     /** The network wide tab list and the ghost players (see `.dev/docs/tablist-ghosts-commands.md`). */
-    val tabs = TabListHub(log)
-    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { p -> tabs.entry(p) }, log)
+    val tabs = TabListHub(tlog)
+    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { p -> tabs.entry(p) }, tlog)
     val crossCommands = CrossCommands(settings.cross)
     init {
         if (settings.ghosts.enabled) {

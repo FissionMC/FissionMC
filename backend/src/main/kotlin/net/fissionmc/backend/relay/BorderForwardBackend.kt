@@ -63,7 +63,7 @@ object BorderForwardBackend {
     fun tick(server: MinecraftServer) {
         serverTicks++
         val link = NodeBootstrap.link?.takeIf { it.isOpen }
-        for (f in batcher.drain()) link?.send(f)
+        for (f in batcher.drain()) { net.fissionmc.net.trace.Trace.emit("border.send") { str("to", f.toBackend); str("dim", f.dimension); int("ticks", f.ticks.size); int("neighbors", f.neighbors.size); bool("linkUp", link != null) }; link?.send(f) }
         while (true) {
             val m = inbox.poll() ?: break
             val level = server.allLevels.firstOrNull { it.dimension().identifier().toString() == m.dimension } ?: continue
@@ -75,6 +75,7 @@ object BorderForwardBackend {
                 val cx = net.minecraft.world.level.ChunkPos.getX(k); val cz = net.minecraft.world.level.ChunkPos.getZ(k)
                 if (RegionsBackend.ownsChunk(level, cx, cz)) level.chunkSource.addTicketWithRadius(net.minecraft.server.level.TicketType.ENDER_PEARL, net.minecraft.world.level.ChunkPos(cx, cz), 2)
             }
+            net.fissionmc.net.trace.Trace.emit("border.recv") { str("from", m.origin); str("dim", m.dimension); int("ticks", m.ticks.size); int("neighbors", m.neighbors.size); int("chunks", chunks.size) }
             m.ticks.forEach { pendingTicks.addLast(DueTick(serverTicks + HOLD_TICKS, m.dimension, it)) }
             m.neighbors.forEach { pendingNeighbors.addLast(Due(serverTicks + NEIGHBOR_DELAY, serverTicks + HOLD_TICKS, m.dimension, it)) }
             if (net.fissionmc.net.FissionDebug.on) { val l = "[fission] border: from ${m.origin} ${m.ticks.size} ticks ${m.neighbors.size} neighbour updates (total applied ticks=${ticksApplied.get()} neighbours=${neighborsApplied.get()}, forwarded ticks=${batcher.forwardedTicks} neighbours=${batcher.forwardedNeighbors}, dropped=${dropped.get()})"; if (l != lastDebug) { lastDebug = l; log.info(l) } }
