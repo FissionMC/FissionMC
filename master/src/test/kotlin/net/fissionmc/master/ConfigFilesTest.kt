@@ -33,7 +33,7 @@ class ConfigFilesTest {
     }
 
     @Test fun `the commented examples of the default parse once uncommented`() {
-        var text = Files.readString(repo.resolve("master/src/main/resources/fission.default.yml"))
+        var text = Files.readString(repo.resolve("master/src/main/resources/fission.default.yml")).lines().filter { it != "debug: false" }.joinToString("\n")   // the example `debug:` section replaces the plain flag
         // uncomment the regions and debug examples and the two chat templates
         text = text.lines().joinToString("\n") { l -> if (l.startsWith("# ") && (l.startsWith("#   ") || l.startsWith("# regions:") || l.startsWith("# debug:"))) l.removePrefix("# ") else l }
         val c = MasterConfig.read(FissionConfig.parse(text), repo.resolve("run-master"))

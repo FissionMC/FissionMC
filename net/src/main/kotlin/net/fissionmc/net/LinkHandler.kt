@@ -82,14 +82,14 @@ internal class LinkHandler(
                     return reject(ctx, "node ${hello.nodeId} failed authentication")
                 val session = sessionIds.incrementAndGet()
                 ctx.writeAndFlush(Welcome(PROTOCOL_VERSION, me.nodeId, me.role, session))
-                ready.complete(PeerInfo(hello.nodeId, hello.role, session, hello.mcVersion))
+                ctx.channel().attr(PEER_ATTR).set(hello.nodeId); ready.complete(PeerInfo(hello.nodeId, hello.role, session, hello.mcVersion))
             }
             is Welcome -> {
                 val ch = peerChallenge
                 if (!initiator || ch == null || ready.isDone) return reject(ctx, "unexpected Welcome")
                 if (msg.protocol != PROTOCOL_VERSION) return reject(ctx, "protocol ${msg.protocol} != $PROTOCOL_VERSION")
                 if (msg.nodeId != ch.nodeId) return reject(ctx, "node id changed during handshake")
-                ready.complete(PeerInfo(msg.nodeId, msg.role, msg.sessionId, null))
+                ctx.channel().attr(PEER_ATTR).set(msg.nodeId); ready.complete(PeerInfo(msg.nodeId, msg.role, msg.sessionId, null))
             }
             is Ping -> ctx.writeAndFlush(Pong(msg.seq, msg.sentNanos))
             is Pong -> latencyNanos = System.nanoTime() - msg.sentNanos

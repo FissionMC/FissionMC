@@ -26,3 +26,15 @@ node:
 # plugins:
 #   replicate: true            # false = do not pull the master's plugins
 #   conflict: local            # a plugin of the same name that you installed yourself: local = yours wins (the master's is skipped), master = the master's wins (yours is renamed to <jar>.fission-shadowed, restored later)
+
+# Debug logging: chatty diagnostics (per-chunk leases, every replicated block, periodic stats). Same as -Dfission.debug / FISSION_DEBUG=1, which force it on. Live: a changed value applies at once.
+debug: false
+
+# Flight recorder: a structured trace (JSON lines) of everything this backend does, to reconstruct an incident afterwards. Off = one boolean check per call site, nothing else.
+# On: events go to an in-memory ring (last ring-seconds) and to trace/<node>-<date>.jsonl next to this file (rotated at max-file-mb, the 4 newest rotated files are kept).
+# -Dfission.trace / FISSION_TRACE=1 force it on. Live: a changed value applies at once. The master's `/fission trace start|stop|dump|mark` also drives this backend.
+# See .dev/docs/trace.md
+trace:
+  enabled: false
+  ring-seconds: 300
+  max-file-mb: 64

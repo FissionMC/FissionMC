@@ -115,8 +115,8 @@ class PlayerDataTest {
         for (w in listOf("fission", "send", "status", "player", "backend", "minecraft:ask_server", "chat")) assertTrue(text.contains(w), w)
         val p = String(plain, Charsets.ISO_8859_1)
         assertTrue(p.contains("chat") && !p.contains("fission") && !p.contains("ask_server"))
-        // node count: 2 + chat(4) + fission(3) + two arguments(2) + admin add/remove (5), regions, debug switch on off (4) for admins
-        assertEquals(2 + 19, Unpooled.wrappedBuffer(admin).also { VarInts.tryRead(it) }.let { VarInts.tryRead(it)!! })
+        // node count: 2 + chat(4) + fission(3) + two arguments(2) + admin add/remove (5), regions, debug switch on off (4), trace start stop dump mark seconds text (7) for admins
+        assertEquals(2 + 26, Unpooled.wrappedBuffer(admin).also { VarInts.tryRead(it) }.let { VarInts.tryRead(it)!! })
         assertEquals(0, admin.last().toInt())
     }
 

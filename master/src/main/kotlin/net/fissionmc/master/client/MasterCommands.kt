@@ -15,6 +15,7 @@ object MasterCommands {
                 "admin" -> { admin(session, server, parts.drop(2)); true }
                 "regions" -> { regions(session, server); true }
                 "debug" -> { debug(session, parts.drop(2)); true }
+                "trace" -> { trace(session, server, command.trim().split(Regex("\\s+"), 4).drop(2)); true }
                 else -> false
             }
             else -> false
@@ -72,6 +73,28 @@ object MasterCommands {
             }
             "entities" -> s.tell(Component.text("Entity ownership dump: run /fission debug entities on the backend console (needs -Dfission.debug)", NamedTextColor.GRAY))
             else -> s.tell(Component.text("Usage: /fission debug switch [on|off]", NamedTextColor.RED))
+        }
+    }
+
+    /**
+     * `/fission trace start|stop|dump [seconds]|mark <text>` (admins): the flight recorder on the master and on every backend, see .dev/docs/trace.md.
+     * `dump` writes each node's ring to its own file and lists the paths as the backends answer.
+     */
+    private fun trace(s: ClientSession, server: ClientServer, args: List<String>) {
+        if (!s.isAdmin) { s.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)); return }
+        val hub = server.relay?.trace ?: run { s.tell(Component.text("No backend relay here.", NamedTextColor.RED)); return }
+        val say: (String) -> Unit = { line -> s.tell(Component.text(line, NamedTextColor.GRAY)) }
+        server.log("[master] ${s.playerName}: /fission trace ${args.joinToString(" ")}")
+        when (args.getOrNull(0)?.lowercase()) {
+            "start" -> hub.start(s.playerName, say)
+            "stop" -> hub.stop(s.playerName, say)
+            "dump" -> {
+                val secs = args.getOrNull(1)?.let { it.toIntOrNull()?.takeIf { n -> n >= 0 } ?: run { s.tell(Component.text("Usage: /fission trace dump [seconds]", NamedTextColor.RED)); return } } ?: 0
+                hub.dump(secs, s.playerName, say)
+            }
+            "mark" -> { val text = args.getOrNull(1)?.trim().orEmpty(); if (text.isEmpty()) s.tell(Component.text("Usage: /fission trace mark <text>", NamedTextColor.RED)) else hub.mark(text, s.playerName, say) }
+            null -> say(net.fissionmc.net.trace.Trace.status())
+            else -> s.tell(Component.text("Usage: /fission trace start|stop|dump [seconds]|mark <text>", NamedTextColor.RED))
         }
     }
 

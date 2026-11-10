@@ -123,8 +123,22 @@ playerdata:
 #     the_nether:
 #       - { owner: backend-a }                              # no area = everything
 
-# Debugging (remove when done)
+# Debug logging: chatty diagnostics (per-chunk leases, every replicated block, periodic stats). Same as -Dfission.debug / FISSION_DEBUG=1, which force it on. Live: a changed value applies at once.
+# `debug` may also be a section with `enabled:` plus the tools below.
+debug: false
+
+# Flight recorder: a structured trace (JSON lines) of everything that happens, to reconstruct an incident afterwards. Off = one boolean check per call site, nothing else.
+# On: events go to an in-memory ring (last ring-seconds) and to trace/<node>-<date>.jsonl (rotated at max-file-mb, the 4 newest rotated files are kept).
+# -Dfission.trace / FISSION_TRACE=1 force it on. Live: a changed value applies at once. /fission trace start|stop|dump [seconds]|mark <text> (admins) works on the master and all backends.
+# See .dev/docs/trace.md
+trace:
+  enabled: false
+  ring-seconds: 300
+  max-file-mb: 64
+
+# Debugging tools (remove when done; these go into the same `debug:` key as a section, see above)
 # debug:
+#   enabled: false
 #   packets: false
 #   dump-client-stream: /tmp/fission-dump
 #   relay-probe: false

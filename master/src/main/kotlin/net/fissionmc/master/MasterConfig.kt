@@ -18,6 +18,9 @@ data class MasterConfig(
     val debugPackets: Boolean, val debugDumpClientStream: String?, val debugRelayProbe: Boolean, val debugRecordLimbo: String?,
     val worldSettings: net.fissionmc.master.worldsettings.WorldSettingsConfig = net.fissionmc.master.worldsettings.WorldSettingsConfig(),
     val plugins: net.fissionmc.net.plugins.PluginsConfig = net.fissionmc.net.plugins.PluginsConfig(),
+    /** `debug: true` (or `debug: {enabled: true, ...}`): the same as -Dfission.debug, live. */
+    val debug: Boolean = false,
+    val trace: net.fissionmc.net.trace.TraceConfig = net.fissionmc.net.trace.TraceConfig(),
 ) {
     companion object {
         fun read(root: ConfigSection, dir: Path, fileName: String = "fission.yml", log: (String) -> Unit = {}): MasterConfig {
@@ -34,10 +37,10 @@ data class MasterConfig(
             val chunkAuthority = c.bool("authority", true); val lease = c.long("lease-seconds", 60L); val stats = c.long("stats-interval", 30L)
             val storeDir = c.string("store-dir", "chunkstore").ifBlank { "chunkstore" }
             val playerDir = root.section("playerdata").string("dir", "playerdata").ifBlank { "playerdata" }
-            val d = root.section("debug")
+            val (debug, d) = root.flagOrSection("debug", false)
             val cfg = MasterConfig(node, client, settings, regions, ghost, strip, chunkAuthority, det, lease, stats, storeDir, playerDir,
                 d.bool("packets", false), d.optString("dump-client-stream")?.takeIf { it.isNotBlank() }, d.bool("relay-probe", false), d.optString("record-limbo")?.takeIf { it.isNotBlank() },
-                net.fissionmc.master.worldsettings.WorldSettingsConfig.from(root), net.fissionmc.net.plugins.PluginsConfig.from(root))
+                net.fissionmc.master.worldsettings.WorldSettingsConfig.from(root), net.fissionmc.net.plugins.PluginsConfig.from(root), debug, net.fissionmc.net.trace.TraceConfig.from(root))
             root.finish()
             return cfg
         }

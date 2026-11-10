@@ -70,6 +70,7 @@ object PlayerRelayBackend {
             val bytes = v.tap?.let { synchronized(it) { it.toClient(raw) } } ?: raw.takeIf { v.tap == null }
             if (bytes == null) { promise.setSuccess(); return }
             val l = NodeBootstrap.link
+            net.fissionmc.net.trace.Trace.emit("pkt.out") { player(v.name, null); long("pid", v.id); int("id", net.fissionmc.net.trace.TraceEvent.packetId(bytes)); int("size", bytes.size); int("crc", net.fissionmc.net.trace.TraceEvent.crc(bytes)); bool("sent", l != null && l.isOpen) }
             if (l != null && l.isOpen) {
                 l.send(PlayerPacketToClient(v.id, bytes))
                 if (!l.isWritable && ++v.blocked > MAX_UNWRITABLE_FRAMES) { log.warning("[fission] relay to master is saturated, dropping ${v.name}"); ctx.channel().close() }
@@ -89,6 +90,7 @@ object PlayerRelayBackend {
             if (m is RegionMap || m is GenerateChunk || m is EntityHandover || m is BorderForward || m is GhostDemand || m is GhostSync || m is GhostFix) RegionsBackend.onMessage(m, serverRef)
             if (m is PlayerMoveTo) serverRef?.let { srv -> srv.execute { srv.playerList.getPlayer(java.util.UUID(m.uuidHigh, m.uuidLow))?.let { TravelBackend.handoff(it, m.x, m.y, m.z, m.yaw, m.pitch) } } }   // position hand-off: where the client really is
             if (m is ChatFormat) LocalChatBackend.onMessage(m)
+            if (m is TraceDump) TraceBackend.onMessage(m)
             if (m is CommandCheck) serverRef?.let { srv -> GhostBackend.checkCommand(srv, m, synchronized(sessions) { sessions[m.playerId]?.name }) }
             if (m is WorldSettingsState || m is WorldSettingApply) WorldSettingsBackend.onMessage(m)
             if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)
@@ -159,7 +161,8 @@ object PlayerRelayBackend {
 
     /** A client frame for [v] through the packet bus into vanilla's connection (server thread). */
     private fun feed(v: Virtual, bytes: ByteArray) {
-        val frame = v.tap?.let { synchronized(it) { it.fromClient(bytes) } } ?: bytes.takeIf { v.tap == null } ?: return
+        val frame = v.tap?.let { synchronized(it) { it.fromClient(bytes) } } ?: bytes.takeIf { v.tap == null } ?: run { net.fissionmc.net.trace.Trace.emit("pkt.in.drop") { player(v.name, null); int("id", net.fissionmc.net.trace.TraceEvent.packetId(bytes)); str("why", "packet bus listener") }; return }
+        net.fissionmc.net.trace.Trace.emit("pkt.in") { player(v.name, null); long("pid", v.id); int("id", net.fissionmc.net.trace.TraceEvent.packetId(frame)); int("size", frame.size); int("crc", net.fissionmc.net.trace.TraceEvent.crc(frame)) }
         // Replies to a closed channel are dropped; a decoding error is handled by vanilla's Connection.exceptionCaught.
         if (v.channel.isOpen) { v.channel.runPendingTasks(); v.channel.writeInbound(HiddenByteBuf.pack(Unpooled.wrappedBuffer(frame))); v.channel.runPendingTasks() }
     }

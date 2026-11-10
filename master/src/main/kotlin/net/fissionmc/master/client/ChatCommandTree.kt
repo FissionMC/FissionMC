@@ -33,7 +33,7 @@ object ChatCommandTree {
         require(count in 1..100_000)
         val out = Unpooled.buffer(frame.size + 64)
         out.writeBytes(frame, 0, node0Start - VarInts.size(count))      // packet id
-        VarInts.write(out, count + (if (admin) 19 else 4))
+        VarInts.write(out, count + (if (admin) 26 else 4))
         // root with one more child: the new `chat` literal (index = old count)
         out.writeByte(flags); VarInts.write(out, n + (if (admin) 2 else 1)); children.forEach { VarInts.write(out, it) }; VarInts.write(out, count)
         if (admin) VarInts.write(out, count + 4)       // `fission` (admins only)
@@ -46,7 +46,7 @@ object ChatCommandTree {
         literal("global", true, IntArray(0)); literal("local", true, IntArray(0)); literal("toggle", true, IntArray(0))
         if (admin) {
             // fission (+4) -> send (+5) -> <player> (+7) -> <backend> (+8) ; status (+6) ; admin (+9) -> add (+10) -> <player> (+12) , remove (+11) -> <player> (+13)
-            literal("fission", true, intArrayOf(count + 5, count + 6, count + 9, count + 14, count + 15))
+            literal("fission", true, intArrayOf(count + 5, count + 6, count + 9, count + 14, count + 15, count + 19))
             literal("send", false, intArrayOf(count + 7)); literal("status", true, IntArray(0))
             fun argument(name: String, executable: Boolean, kids: IntArray) {
                 out.writeByte(2 or 16 or (if (executable) 4 else 0)); VarInts.write(out, kids.size); kids.forEach { VarInts.write(out, it) }
@@ -59,6 +59,15 @@ object ChatCommandTree {
             argument("player", true, IntArray(0)); argument("player", true, IntArray(0))
             literal("regions", true, IntArray(0))
             literal("debug", false, intArrayOf(count + 16)); literal("switch", true, intArrayOf(count + 17, count + 18)); literal("on", true, IntArray(0)); literal("off", true, IntArray(0))
+            // trace (+19) -> start (+20), stop (+21), dump (+22) -> [seconds] (+24), mark (+23) -> <text> (+25, greedy)
+            literal("trace", true, intArrayOf(count + 20, count + 21, count + 22, count + 23))
+            literal("start", true, IntArray(0)); literal("stop", true, IntArray(0)); literal("dump", true, intArrayOf(count + 24)); literal("mark", false, intArrayOf(count + 25))
+            fun plainArgument(name: String, executable: Boolean, stringType: Int) {
+                out.writeByte(2 or (if (executable) 4 else 0)); VarInts.write(out, 0)
+                val nb = name.toByteArray(); VarInts.write(out, nb.size); out.writeBytes(nb)
+                VarInts.write(out, STRING_PARSER); VarInts.write(out, stringType)
+            }
+            plainArgument("seconds", true, 0); plainArgument("text", true, 2)      // brigadier:string, SINGLE_WORD / GREEDY_PHRASE, no suggestions
         }
         out.writeByte(0)                                                  // root index
         return ByteArray(out.readableBytes()).also { out.readBytes(it) }

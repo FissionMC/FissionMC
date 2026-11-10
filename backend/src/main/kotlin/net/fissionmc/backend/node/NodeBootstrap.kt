@@ -64,7 +64,10 @@ object NodeBootstrap {
         val parsed = NodeConfig.from(root, file.parent)
         if (parsed.mode == NodeMode.COMBINED) combinedClientCfg = net.fissionmc.master.client.ClientConfig.from(root)
         val pluginsCfg = net.fissionmc.net.plugins.PluginsConfig.from(root)
+        val debugOn = root.bool("debug", false)
+        val traceCfg = net.fissionmc.net.trace.TraceConfig.from(root)
         root.finish()
+        net.fissionmc.net.FissionDebug.fromConfig(debugOn)
         // the backend id: node.id by hand wins; otherwise a random one is generated once and saved (net/NodeIds.kt), so it survives restarts
         val cfg = if (parsed.mode == NodeMode.STANDALONE) parsed else {
             val r = net.fissionmc.net.NodeIds.resolve(file, parsed.nodeId.ifBlank { null }, persistInYml = parsed.mode != NodeMode.COMBINED)
@@ -75,6 +78,8 @@ object NodeBootstrap {
             nodeId = r.id
             parsed.copy(nodeId = r.id)
         }
+        net.fissionmc.net.trace.Trace.init(cfg.nodeId.ifBlank { "standalone" }, file.parent.resolve("trace")); net.fissionmc.net.trace.Trace.apply(traceCfg)
+        if (net.fissionmc.net.trace.Trace.on) log.info(net.fissionmc.net.trace.Trace.status())
         if (cfg.mode == NodeMode.STANDALONE) return
         networked = true
         require(net.fissionmc.net.world.WorldFiles.safeRelative(levelName)) { "level-name '$levelName' is not usable for node sync" }
@@ -111,15 +116,24 @@ object NodeBootstrap {
         closeables += client
         // config reload: a changed node.master makes the backend drop the link and dial the new master address; everything else in fission.yml applies after a restart
         // (the Minecraft port/ip of a backend is vanilla's server.properties and is not live-reloadable)
-        if (cfg.mode == NodeMode.BACKEND) closeables += net.fissionmc.net.ConfigWatcher(file, { log.warning(it) }) { oldText, newText ->
+        if (cfg.mode == NodeMode.BACKEND || cfg.mode == NodeMode.COMBINED) closeables += net.fissionmc.net.ConfigWatcher(file, { log.warning(it) }) { oldText, newText ->
             val changed = net.fissionmc.net.ConfigWatcher.changedKeys(oldText, newText)
             log.info("fission.yml changed (${changed.joinToString().ifEmpty { "comments only" }})")
-            if ("node.master" in changed) {
+            val liveDiag = changed.filter { it == "debug" || it.startsWith("trace.") }
+            if (liveDiag.isNotEmpty()) {
+                try {
+                    val fresh = net.fissionmc.net.FissionConfig.load(file)
+                    val d = fresh.bool("debug", false); val t = net.fissionmc.net.trace.TraceConfig.from(fresh)
+                    net.fissionmc.net.FissionDebug.fromConfig(d); net.fissionmc.net.trace.Trace.apply(t)
+                    log.info("applied live: ${liveDiag.joinToString()}; debug is ${if (net.fissionmc.net.FissionDebug.on) "on" else "off"}; ${net.fissionmc.net.trace.Trace.status()}")
+                } catch (e: Exception) { log.warning("fission.yml reload failed, keeping debug/trace as they are: ${e.message}") }
+            }
+            if ("node.master" in changed && cfg.mode == NodeMode.BACKEND) {
                 val to = try { NodeConfig.from(net.fissionmc.net.FissionConfig.load(file), file.parent).master } catch (e: Exception) { log.warning("fission.yml reload failed, keeping node.master as it is: ${e.message}"); return@ConfigWatcher }
                 if (to == null) log.warning("node.master was removed: restart required") else { log.info("node.master is now ${to.host}:${to.port}: reconnecting"); client.redirect(to) }
             }
-            val later = changed.filter { it != "node.master" }
-            if (later.isNotEmpty()) log.info("needs a restart to take effect: ${later.joinToString()}")
+            val later = changed.filter { it != "node.master" && it !in liveDiag }
+            if (later.isNotEmpty() && cfg.mode == NodeMode.BACKEND) log.info("needs a restart to take effect: ${later.joinToString()}")
         }.start()
         val l = try { ready.get(CONNECT_TIMEOUT_S, TimeUnit.SECONDS) }
         catch (e: java.util.concurrent.TimeoutException) { stop(); error("Could not reach the master at $address within ${CONNECT_TIMEOUT_S}s") }

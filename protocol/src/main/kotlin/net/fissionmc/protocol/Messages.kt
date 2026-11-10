@@ -54,6 +54,9 @@ class MessageRegistry {
         (codec as MessageCodec<NodeMessage>).encode(msg, out)
     }
 
+    /** The wire id of [msg]'s type, or -1 when it is not registered (used by the flight recorder). */
+    fun idOf(msg: NodeMessage): Int = byType[msg.javaClass]?.first ?: -1
+
     fun decode(buf: ByteBuf): NodeMessage {
         val id = buf.readVarInt()
         val codec = byId[id] ?: error("Unknown message id $id")

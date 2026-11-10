@@ -43,6 +43,9 @@ class PlayerRelay(private val registry: NodeRegistry) {
 
     val attached: Int get() = bindings.size
 
+    /** `/fission trace ...` across the master and all backends. */
+    val trace = TraceHub(registry)
+
     // relay counters for MasterStats (client -> backend = "in")
     val framesIn = java.util.concurrent.atomic.AtomicLong(); val bytesIn = java.util.concurrent.atomic.AtomicLong()
     val framesOut = java.util.concurrent.atomic.AtomicLong(); val bytesOut = java.util.concurrent.atomic.AtomicLong()
@@ -172,6 +175,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerPacketToClient -> { framesOut.incrementAndGet(); bytesOut.addAndGet(msg.bytes.size.toLong()); bindings[msg.playerId]?.takeIf { it.node === node }?.let { it.client.deliverFrom(it.id, msg.bytes) } }
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
             is GlobalChatResult -> chatResultHandler?.invoke(msg)
+            is TraceDump -> trace.onReply(node, msg)
             is GhostPose, is GhostMeta, is GhostSwing -> ghostHandler?.invoke(msg)
             is CommandCheckResult -> bindings[msg.playerId]?.takeIf { it.node === node }?.client?.commandChecked(msg.seq, msg.allowed, msg.present)
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }

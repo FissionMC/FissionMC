@@ -54,6 +54,17 @@ class ConfigSection internal constructor(val path: String, private val map: Map<
         }
     }.also { if (it !in children) children += it }
 
+    /**
+     * A key that is either a plain true/false or a section with an `enabled` key (`debug: true` or `debug: {enabled: true, packets: true}`): the flag, and the section
+     * (empty for the plain form) for the other keys.
+     */
+    fun flagOrSection(k: String, default: Boolean): Pair<Boolean, ConfigSection> {
+        val v = map[k]
+        if (v is Boolean) { consumed += k; return v to ConfigSection(full(k), emptyMap()) }
+        val s = section(k)
+        return s.bool("enabled", default) to s
+    }
+
     /** A list of sections (`- owner: backend-a` items). Empty when missing. */
     fun sectionList(k: String): List<ConfigSection> = when (val v = raw(k)) {
         null -> emptyList()

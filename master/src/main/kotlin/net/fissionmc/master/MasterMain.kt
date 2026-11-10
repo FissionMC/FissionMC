@@ -34,6 +34,9 @@ private fun runMaster(args: Array<String>) {
     val mc = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } } catch (e: IllegalArgumentException) {
         println("[master] CONFIG ERROR, master not started: ${e.message}"); System.err.println("[master] CONFIG ERROR, master not started: ${e.message}"); kotlin.system.exitProcess(2)
     }
+    // flight recorder + debug flag (both live: see the config reload below)
+    FissionDebug.fromConfig(mc.debug); net.fissionmc.net.trace.Trace.init("master", configFile.parent.resolve("trace")); net.fissionmc.net.trace.Trace.apply(mc.trace)
+    if (net.fissionmc.net.trace.Trace.on) println("[master] ${net.fissionmc.net.trace.Trace.status()}")
     val cfg = mc.node; val regions = mc.regions; val clientCfg = mc.client; val settings = mc.settings; val ghostZone = mc.ghostZone; val stripChunks = mc.borderStrip
     val chunkAuthorityOn = mc.chunkAuthority; val chunkDeterministic = mc.chunkDeterministic; val leaseSeconds = mc.leaseSeconds; val statsSeconds = mc.chunkStatsSeconds
     val chunkStoreDir = mc.chunkStoreDir; val playerDataDir = mc.playerDataDir
@@ -126,7 +129,12 @@ private fun runMaster(args: Array<String>) {
             clients.rebind(fresh.client)?.let { println("[master] client listener: cannot apply ${fresh.client.host}:${fresh.client.port}: $it (still on ${clients.config.host}:${clients.config.port})") }
                 ?: run { applied += changed.filter { it.startsWith("client.") && it in reloadable } }
         }
-        val later = changed.filter { it !in reloadable }
+        val liveDiag = changed.filter { it == "debug" || it == "debug.enabled" || it.startsWith("trace.") }
+        if (liveDiag.isNotEmpty()) {
+            FissionDebug.fromConfig(fresh.debug); net.fissionmc.net.trace.Trace.apply(fresh.trace)
+            println("[master] debug is ${if (FissionDebug.on) "on" else "off"}; ${net.fissionmc.net.trace.Trace.status()}"); applied += liveDiag
+        }
+        val later = changed.filter { it !in reloadable && it !in liveDiag }
         if (applied.isNotEmpty()) println("[master] applied live: ${applied.joinToString()}")
         if (later.isNotEmpty()) println("[master] needs a restart to take effect: ${later.joinToString()}")
     }.start()
