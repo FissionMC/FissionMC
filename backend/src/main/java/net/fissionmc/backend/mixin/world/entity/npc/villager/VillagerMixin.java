@@ -62,4 +62,14 @@ public abstract class VillagerMixin extends AbstractVillager {
         return net.fissionmc.backend.blocks.PaperContext.convert(self, type, params, wrapped, org.bukkit.event.entity.EntityTransformEvent.TransformReason.LIGHTNING, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.LIGHTNING); // CraftBukkit
     }
     // Paper end - Add EntityZapEvent
+
+    // CraftBukkit start - VillagerReplenishTradeEvent (restock and catchUpDemand)
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = {"restock", "catchUpDemand"}, at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/world/item/trading/MerchantOffer;resetUses()V"))
+    private void fission$replenishTradeEvent(final net.minecraft.world.item.trading.MerchantOffer offer, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Void> original) {
+        org.bukkit.event.entity.VillagerReplenishTradeEvent event = new org.bukkit.event.entity.VillagerReplenishTradeEvent((org.bukkit.entity.Villager) ((net.minecraft.world.entity.npc.villager.Villager) (Object) this).getBukkitEntity(), offer.asBukkit());
+        if (event.callEvent()) {
+            original.call(offer);
+        }
+    }
+    // CraftBukkit end
 }

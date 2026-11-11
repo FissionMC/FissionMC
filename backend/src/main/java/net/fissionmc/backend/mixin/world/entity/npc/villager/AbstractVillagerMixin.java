@@ -91,4 +91,28 @@ public abstract class AbstractVillagerMixin {
             }
         }
     }
+
+    // Paper start - VillagerAcquireTradeEvent (Paper passes the villager to the static helpers; here it is the THIS_ENTITY parameter of the loot context they already get)
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = {"addOffersFromItemListings", "addOffersFromItemListingsWithoutDuplicates"}, at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/world/item/trading/MerchantOffers;add(Ljava/lang/Object;)Z"))
+    private static boolean fission$tryAcquireTrade(final MerchantOffers merchantOffers, final Object offer, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<Boolean> original, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) final LootContext lootContext) {
+        if (!(lootContext.getOptional(LootContextParams.THIS_ENTITY) instanceof AbstractVillager villager) || !(offer instanceof net.minecraft.world.item.trading.MerchantOffer merchantOffer)) {
+            return original.call(merchantOffers, offer);
+        }
+        // CraftBukkit start
+        org.bukkit.event.entity.VillagerAcquireTradeEvent event = new org.bukkit.event.entity.VillagerAcquireTradeEvent((org.bukkit.entity.AbstractVillager) villager.getBukkitEntity(), merchantOffer.asBukkit());
+        // Suppress during worldgen
+        if (villager.valid) {
+            event.callEvent();
+        }
+        if (!event.isCancelled()) {
+            // Paper start - Fix crash from invalid ingredient list
+            final org.bukkit.craftbukkit.inventory.CraftMerchantRecipe craftMerchantRecipe = org.bukkit.craftbukkit.inventory.CraftMerchantRecipe.fromBukkit(event.getRecipe());
+            if (craftMerchantRecipe.getIngredients().isEmpty()) return false;
+            merchantOffers.add(craftMerchantRecipe.toMinecraft());
+            // Paper end - Fix crash from invalid ingredient list
+        }
+        // CraftBukkit end
+        return true;
+    }
+    // Paper end
 }

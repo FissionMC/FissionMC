@@ -181,6 +181,13 @@ final class EventProbe implements Listener {
         ds.getInventory().addItem(new ItemStack(Material.IRON_HELMET));
         spawn(org.bukkit.entity.ArmorStand.class, 10, 2);
         notes.add("dispenser dispense()=" + ds.dispense());
+        // villager with a profession: trades are generated (VillagerAcquireTradeEvent), restock resets them (VillagerReplenishTradeEvent)
+        org.bukkit.entity.Villager farmer = spawn(org.bukkit.entity.Villager.class, 7, 10);
+        farmer.setProfession(org.bukkit.entity.Villager.Profession.FARMER);
+        farmer.setVillagerLevel(2);
+        notes.add("farmer recipes=" + farmer.getRecipes().size());
+        Object nmsFarmer = handle(farmer);
+        nmsFarmer.getClass().getMethod("restock").invoke(nmsFarmer);
         // whitelist events: toggle on/off, add/remove an offline profile
         org.bukkit.Server srv = plugin.getServer();
         srv.setWhitelist(true); srv.setWhitelist(false);
@@ -242,6 +249,8 @@ final class EventProbe implements Listener {
             check("portal create (fire)", "PortalCreateEvent");
             check("dispenser armor", "BlockDispenseArmorEvent");
             check("whitelist", "WhitelistToggleEvent,WhitelistStateUpdateEvent");
+            check("villager trades", "VillagerAcquireTradeEvent,VillagerReplenishTradeEvent");
+            check("effects", "EntityEffectTickEvent");
         });
         later(500, () -> {
             check("resources reload", "ServerResourcesReloadedEvent");
