@@ -318,6 +318,15 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
         return this.options == null;
     }
 
+    // CraftBukkit: "Run tasks that are waiting on processing" (async pre-login events, console commands, ...) before the levels tick
+    @Inject(method = "tickChildren", at = @At(value = "CONSTANT", args = "stringValue=levels"))
+    private void craftbukkit$processQueue(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {
+        Runnable task;
+        while ((task = this.processQueue.poll()) != null) {
+            task.run();
+        }
+    }
+
     // tickChildren: after getPlayerList().getPlayers().forEach(p -> p.connection.suspendFlushing())
     @Inject(method = "tickChildren", at = @At(value = "INVOKE", target = "Ljava/util/List;forEach(Ljava/util/function/Consumer;)V", ordinal = 0, shift = At.Shift.AFTER))
     private void paper$tickSchedulers(java.util.function.BooleanSupplier haveTime, CallbackInfo ci) {

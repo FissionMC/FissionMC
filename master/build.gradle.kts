@@ -48,6 +48,16 @@ tasks.register<JavaExec>("clientProbe") {
     doFirst { args(project.property("port") as String, project.property("out") as String) }
 }
 
+// ./gradlew :master:netBot -Pport=25584 [-Pout=<dir>] : packet-level bot for the network-side Paper port (see NetBotMain, .dev/scripts/net-test.sh)
+tasks.register<JavaExec>("netBot") {
+    group = "fission"
+    dependsOn("testClasses")
+    dependsOn(adventurePatch)
+    classpath = files(adventurePatch) + sourceSets["test"].runtimeClasspath
+    mainClass = "net.fissionmc.master.client.NetBotMainKt"
+    doFirst { args(listOfNotNull(project.property("port") as String, project.findProperty("out") as String?)) }
+}
+
 // Writes the class path of the scripted probes to build/probe.classpath, so scripts can run them with plain java (no Gradle) while servers run.
 tasks.register("probeClasspath") {
     group = "fission"

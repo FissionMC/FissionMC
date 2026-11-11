@@ -16,6 +16,7 @@ public final class TestPlugin extends JavaPlugin implements Listener {
         // marker file plugins/FissionTest/audit-on-enable (events-test.sh): a mixin that fails to apply is reported before the worlds load
         // (a failing class load inside a chunk worker would only show as a hung "Preparing spawn area")
         if (new java.io.File(getDataFolder(), "audit-on-enable").exists()) audit("EARLYAUDIT");
+        if (new java.io.File(getDataFolder(), "net-probe").exists()) { net = new NetProbe(this); net.register(); } // net-test.sh
     }
     /** forces every mixin target class to load and transform; logs "<tag> done" or "<tag> failed: <cause chain>". */
     private void audit(String tag) {
@@ -30,6 +31,7 @@ public final class TestPlugin extends JavaPlugin implements Listener {
             getLogger().warning(tag + " failed:" + sb);
         }
     }
+    private NetProbe net;
     private EventProbe events; // created by the first /fissiontest ev* command (events-test.sh): counts every event, see EventProbe
     @Override public void onDisable() { getLogger().info("disabled"); }
 
@@ -79,6 +81,7 @@ public final class TestPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage("pdc set");
                 return true;
             }
+            if (args.length >= 1 && args[0].startsWith("net") && net != null) return net.command(sender, args);
             if (args.length >= 1 && args[0].startsWith("ev")) {
                 if (events == null) { events = new EventProbe(this); events.register(); }
                 switch (args[0]) {
