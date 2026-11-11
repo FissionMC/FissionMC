@@ -46,4 +46,20 @@ public abstract class VillagerMixin extends AbstractVillager {
         }
         return false; // Paper - More vanilla friendly methods to update trades
     }
+
+    // Paper start - Add EntityZapEvent (a cancelled event cancels the conversion: vanilla then runs super.thunderHit), LIGHTNING reasons
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "thunderHit", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/world/entity/npc/villager/Villager;convertTo(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/ConversionParams;Lnet/minecraft/world/entity/ConversionParams$AfterConversion;)Lnet/minecraft/world/entity/Mob;"))
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private net.minecraft.world.entity.Mob paper$zapEvent(final net.minecraft.world.entity.npc.villager.Villager self, final net.minecraft.world.entity.EntityType<?> type, final net.minecraft.world.entity.ConversionParams params, final net.minecraft.world.entity.ConversionParams.AfterConversion afterConversion, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<net.minecraft.world.entity.Mob> original,
+                                   @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) final net.minecraft.world.entity.LightningBolt lightningBolt) {
+        final net.minecraft.world.entity.ConversionParams.AfterConversion<net.minecraft.world.entity.Mob> wrapped = w -> {
+            if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityZapEvent(self, lightningBolt, w).isCancelled()) {
+                net.fissionmc.backend.blocks.PaperContext.CONVERSION_CANCELLED.set(Boolean.TRUE);
+                return;
+            }
+            afterConversion.finalizeConversion(w);
+        };
+        return net.fissionmc.backend.blocks.PaperContext.convert(self, type, params, wrapped, org.bukkit.event.entity.EntityTransformEvent.TransformReason.LIGHTNING, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.LIGHTNING); // CraftBukkit
+    }
+    // Paper end - Add EntityZapEvent
 }

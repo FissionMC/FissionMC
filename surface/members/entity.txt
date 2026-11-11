@@ -116,6 +116,9 @@ net.minecraft.world.entity.Mob: protected boolean guaranteedToDropUndamaged(net.
 net.minecraft.world.entity.Mob: public <T extends net.minecraft.world.entity.Mob> T convertTo(net.minecraft.world.entity.EntityType<T> entityType, net.minecraft.world.entity.ConversionParams params, net.minecraft.world.entity.EntitySpawnReason spawnReason, net.minecraft.world.entity.ConversionParams$AfterConversion<T> afterConversion, org.bukkit.event.entity.EntityTransformEvent$TransformReason transformReason, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)
 net.minecraft.world.entity.Mob: public <T extends net.minecraft.world.entity.Mob> T convertTo(net.minecraft.world.entity.EntityType<T> entityType, net.minecraft.world.entity.ConversionParams params, net.minecraft.world.entity.ConversionParams$AfterConversion<T> afterConversion, org.bukkit.event.entity.EntityTransformEvent$TransformReason transformReason, org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason creatureSpawnReason)
 
+# Paper: sources/net/minecraft/world/entity/ConversionTracker.java.patch
+net.minecraft.world.entity.ConversionTracker: public net.minecraft.world.entity.ConversionTracker setEventReasons(org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason spawnReason, org.bukkit.event.entity.EntityTransformEvent$TransformReason transformReason)
+
 # Paper: sources/net/minecraft/world/entity/ai/goal/Goal.java.patch
 net.minecraft.world.entity.ai.goal.Goal: public boolean hasFlag(net.minecraft.world.entity.ai.goal.Goal$Flag flag)
 net.minecraft.world.entity.ai.goal.Goal: public void addFlag(net.minecraft.world.entity.ai.goal.Goal$Flag flag)

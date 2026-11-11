@@ -113,8 +113,42 @@ public abstract class MobMixin extends LivingEntity {
     @Unique private EntityTransformEvent.@Nullable TransformReason fission$transformReason = EntityTransformEvent.TransformReason.UNKNOWN;
     @Unique private CreatureSpawnEvent.@Nullable SpawnReason fission$creatureSpawnReason = CreatureSpawnEvent.SpawnReason.DEFAULT;
 
-    // TODO(behaviour): vanilla convertTo must fire EntityTransformEvent with fission$transformReason (skip when null), add the new mob with
-    // fission$creatureSpawnReason and discard with Cause.TRANSFORMATION (Paper - entity zap event)
+    // vanilla convertTo fires EntityTransformEvent with fission$transformReason (a null reason returns the new mob un-added: slime split, pig lightning),
+    // adds the new mob with fission$creatureSpawnReason and discards with Cause.TRANSFORMATION; PaperContext.CONVERSION_CANCELLED = Paper's CancellingAfterConversion
+    @Inject(method = "convertTo(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/ConversionParams;Lnet/minecraft/world/entity/EntitySpawnReason;Lnet/minecraft/world/entity/ConversionParams$AfterConversion;)Lnet/minecraft/world/entity/Mob;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/ConversionParams$AfterConversion;finalizeConversion(Lnet/minecraft/world/entity/Mob;)V", shift = At.Shift.AFTER), cancellable = true)
+    private void paper$transformEvent(final EntityType<?> entityType, final ConversionParams params, final EntitySpawnReason spawnReason, final ConversionParams.AfterConversion<?> afterConversion, final CallbackInfoReturnable<Mob> cir,
+                                      @com.llamalad7.mixinextras.sugar.Local(index = 5) final Mob newMob) {
+        if (net.fissionmc.backend.blocks.PaperContext.CONVERSION_CANCELLED.get() != null) { // Paper - entity zap event - return null if conversion was cancelled
+            net.fissionmc.backend.blocks.PaperContext.CONVERSION_CANCELLED.remove();
+            cir.setReturnValue(null);
+            return;
+        }
+        // CraftBukkit start
+        if (this.fission$transformReason == null) {
+            // Special handling for slime split and pig lightning
+            cir.setReturnValue(newMob);
+            return;
+        }
+
+        if (org.bukkit.craftbukkit.event.CraftEventFactory.callEntityTransformEvent(this, newMob, this.fission$transformReason).isCancelled()) {
+            cir.setReturnValue(null);
+        }
+        // CraftBukkit end
+    }
+
+    @WrapOperation(method = "convertTo(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/ConversionParams;Lnet/minecraft/world/entity/EntitySpawnReason;Lnet/minecraft/world/entity/ConversionParams$AfterConversion;)Lnet/minecraft/world/entity/Mob;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;addFreshEntity(Lnet/minecraft/world/entity/Entity;)Z"))
+    private boolean paper$transformSpawnReason(final ServerLevel level, final net.minecraft.world.entity.Entity newMob, final Operation<Boolean> original) {
+        return level.addFreshEntity(newMob, this.fission$creatureSpawnReason); // CraftBukkit
+    }
+
+    @WrapOperation(method = "convertTo(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/ConversionParams;Lnet/minecraft/world/entity/EntitySpawnReason;Lnet/minecraft/world/entity/ConversionParams$AfterConversion;)Lnet/minecraft/world/entity/Mob;",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Mob;discard()V"))
+    private void paper$transformDiscard(final Mob self, final Operation<Void> original) {
+        self.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.TRANSFORMATION); // CraftBukkit - add Bukkit remove cause
+    }
+
     public <T extends Mob> @Nullable T convertTo(
         EntityType<T> entityType, ConversionParams params, EntitySpawnReason spawnReason, ConversionParams.AfterConversion<T> afterConversion, EntityTransformEvent.@Nullable TransformReason transformReason, CreatureSpawnEvent.@Nullable SpawnReason creatureSpawnReason
     ) {

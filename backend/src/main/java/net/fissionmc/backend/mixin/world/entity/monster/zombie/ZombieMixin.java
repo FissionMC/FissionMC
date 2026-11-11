@@ -92,4 +92,10 @@ public abstract class ZombieMixin {
             target.igniteForSeconds(event.getDuration(), false);
         }
     }
+
+    // Paper - Spawn reason for drownned
+    @org.spongepowered.asm.mixin.injection.Inject(method = "<init>(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/level/Level;)V", at = @org.spongepowered.asm.mixin.injection.At("TAIL"))
+    private void paper$trackerReasons(final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        ((Zombie) (Object) this).drowningTracker.setEventReasons(org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DROWNED, org.bukkit.event.entity.EntityTransformEvent.TransformReason.DROWNED);
+    }
 }

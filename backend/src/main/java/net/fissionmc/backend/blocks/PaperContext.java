@@ -22,6 +22,17 @@ public final class PaperContext {
     public static final ThreadLocal<net.minecraft.world.item.@Nullable ItemStack> COMPOST_STACK = new ThreadLocal<>();
     public static final ThreadLocal<@Nullable Boolean> COMPOST_CANCELLED = new ThreadLocal<>();
 
+    /** Paper's ConversionParams.CancellingAfterConversion: set by an after-conversion step to make Mob.convertTo return null (entity zap event). */
+    public static final ThreadLocal<@Nullable Boolean> CONVERSION_CANCELLED = new ThreadLocal<>();
+
+    /** Mob.convertTo(type, params, afterConversion, transformReason, creatureSpawnReason) for call-site mixins (raw generics). */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static net.minecraft.world.entity.@Nullable Mob convert(final net.minecraft.world.entity.Mob self, final net.minecraft.world.entity.EntityType type, final net.minecraft.world.entity.ConversionParams params,
+                                                                   final net.minecraft.world.entity.ConversionParams.AfterConversion afterConversion,
+                                                                   final org.bukkit.event.entity.EntityTransformEvent.@Nullable TransformReason transformReason, final org.bukkit.event.entity.CreatureSpawnEvent.@Nullable SpawnReason creatureSpawnReason) {
+        return self.convertTo(type, params, afterConversion, transformReason, creatureSpawnReason);
+    }
+
     public static boolean takeCompostCancelled() {
         final boolean cancelled = COMPOST_CANCELLED.get() != null;
         COMPOST_CANCELLED.remove();

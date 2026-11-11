@@ -33,4 +33,15 @@ public abstract class ZombieVillagerMixin {
         if (broadcastEntityEvent) self.level().broadcastEntityEvent(self, EntityEvent.ZOMBIE_CONVERTING); // Paper - missing entity behaviour api - converting without entity event
     }
     // Paper end - missing entity behaviour api - converting without entity event
+
+    // CraftBukkit start - CURED reasons; SPIGOT-5208: End conversion to stop event spam
+    @com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation(method = "finishConversion", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/world/entity/monster/zombie/ZombieVillager;convertTo(Lnet/minecraft/world/entity/EntityType;Lnet/minecraft/world/entity/ConversionParams;Lnet/minecraft/world/entity/ConversionParams$AfterConversion;)Lnet/minecraft/world/entity/Mob;"))
+    private net.minecraft.world.entity.Mob paper$curedReasons(final ZombieVillager self, final net.minecraft.world.entity.EntityType<?> type, final net.minecraft.world.entity.ConversionParams params, final net.minecraft.world.entity.ConversionParams.AfterConversion<?> afterConversion, final com.llamalad7.mixinextras.injector.wrapoperation.Operation<net.minecraft.world.entity.Mob> original) {
+        final net.minecraft.world.entity.Mob converted = net.fissionmc.backend.blocks.PaperContext.convert(self, type, params, afterConversion, org.bukkit.event.entity.EntityTransformEvent.TransformReason.CURED, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.CURED);
+        if (converted == null) {
+            ((org.bukkit.entity.ZombieVillager) self.getBukkitEntity()).setConversionTime(-1); // SPIGOT-5208: End conversion to stop event spam
+        }
+        return converted;
+    }
+    // CraftBukkit end
 }
