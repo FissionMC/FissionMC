@@ -97,6 +97,11 @@ public abstract class ServerCommonPacketListenerImplMixin {
 
     @Inject(method = "handleCustomPayload", at = @At("HEAD"))
     private void paper$handleCustomPayload(final ServerboundCustomPayloadPacket packet, final CallbackInfo ci) {
+        this.fission$handleCustomPayload(packet);
+    }
+
+    // FissionMC: the play listener overrides handleCustomPayload (empty), so ServerGamePacketListenerImplMixin calls this too
+    public void fission$handleCustomPayload(final ServerboundCustomPayloadPacket packet) {
         // Paper start
         if (!(packet.payload() instanceof final net.minecraft.network.protocol.common.custom.DiscardedPayload discardedPayload)) {
             return;

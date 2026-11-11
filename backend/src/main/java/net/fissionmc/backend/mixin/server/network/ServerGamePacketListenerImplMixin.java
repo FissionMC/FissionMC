@@ -1207,6 +1207,12 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
         // CraftBukkit end
     }
 
+    // Paper: plugin messages (register/unregister channels, brand, Messenger dispatch); the play listener overrides the common (empty) handler
+    @Inject(method = "handleCustomPayload", at = @At("HEAD"))
+    private void paper$handleCustomPayloadPlay(final net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket packet, final CallbackInfo ci) {
+        ((net.minecraft.server.network.ServerCommonPacketListenerImpl) (Object) this).fission$handleCustomPayload(packet);
+    }
+
     // ---- handlePlayerAction ----
     @Inject(method = "handlePlayerAction", at = @At(value = "INVOKE", target = ENSURE, shift = At.Shift.AFTER), cancellable = true)
     private void paper$actionImmobile(final net.minecraft.network.protocol.game.ServerboundPlayerActionPacket packet, final CallbackInfo ci) {

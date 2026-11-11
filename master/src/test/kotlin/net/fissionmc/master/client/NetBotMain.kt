@@ -48,7 +48,7 @@ class NetBot(val port: Int) {
         vi(hand); pos(x, y, z); vi(face); writeFloat(0.5f); writeFloat(if (face == 1) 1.0f else 0.5f); writeFloat(0.5f); writeBoolean(false); writeBoolean(false); vi(seq++)
     }
     fun useItem(hand: Int = 0, yaw: Float = 0f, pitch: Float = 0f) = pkt("UseItem") { vi(hand); vi(seq++); writeFloat(yaw); writeFloat(pitch) }
-    /** ServerboundPlayerAction: 0 start destroy, 1 abort, 2 stop destroy, 3 drop all, 4 drop item, 5 release use item, 6 swap offhand */
+    /** ServerboundPlayerAction (26.3): 0 start destroy, 1 change destroy direction, 2 abort, 3 stop destroy, 4 drop all, 5 drop item, 6 release use item, 7 swap offhand, 8 stab */
     fun action(action: Int, x: Int = 0, y: Int = 0, z: Int = 0, face: Int = 0) = pkt("PlayerAction") { vi(action); pos(x, y, z); writeByte(face); vi(seq++) }
     fun interact(entityId: Int, hand: Int = 0, secondary: Boolean = false) = pkt("Interact") { vi(entityId); vi(hand); writeByte(0) /* LpVec3 zero */; writeBoolean(secondary) }
     fun attack(entityId: Int) = pkt("Attack") { vi(entityId) }
@@ -61,7 +61,7 @@ class NetBot(val port: Int) {
     fun creativeSlot(slot: Int, itemId: Int = 1) = pkt("SetCreativeModeSlot") { writeShort(slot); vi(1); vi(itemId); vi(0); vi(0) }
     // ---- misc
     fun payload(channel: String, data: ByteArray) = pkt("CustomPayload") { str(channel); writeBytes(data) }
-    fun signUpdate(x: Int, y: Int, z: Int, front: Boolean, lines: List<String>) = pkt("SignUpdate") { pos(x, y, z); writeBoolean(front); lines.forEach { str(it) } }
+    fun signUpdate(x: Int, y: Int, z: Int, front: Boolean, lines: List<String>) = pkt("SignUpdate") { pos(x, y, z); lines.forEach { str(it) }; vi(if (front) 0 else 1) }
     fun editBook(slot: Int, pages: List<String>, title: String?) = pkt("EditBook") { vi(slot); vi(pages.size); pages.forEach { str(it) }; writeBoolean(title != null); if (title != null) str(title) }
     /** ServerboundResourcePack: 0 loaded, 1 declined, 2 failed download, 3 accepted, 4 downloaded */
     fun resourcePack(id: UUID, action: Int) = pkt("ResourcePack") { writeLong(id.mostSignificantBits); writeLong(id.leastSignificantBits); vi(action) }
@@ -105,15 +105,15 @@ fun runNetBot(port: Int, out: String) {
         step("held slot") { n.held(1); n.held(0) }
         step("place block") { n.useItemOn(floor[0] + 1, floor[1], floor[2], 1) }
         step("use item (snowball)") { n.held(2); n.sleep(150); n.useItem() }
-        step("drop item") { n.held(1); n.sleep(150); n.action(4) }
-        step("swap hands") { n.action(6) }
+        step("drop item") { n.held(4); n.sleep(150); n.action(5) }
+        step("swap hands") { n.held(1); n.sleep(150); n.action(7) }
         step("sneak/sprint") { n.input(32); n.sleep(120); n.input(0); n.playerCommand(b.selfId, 1); n.sleep(120); n.playerCommand(b.selfId, 2) }
         step("jump input") { n.input(16); n.sleep(120); n.input(0) }
         step("interact cow") { n.interact(cow) }
-        step("interact armor stand") { n.interact(stand) }
+        step("interact armor stand") { n.held(1); n.sleep(150); n.interact(stand) }
         step("attack cow") { n.attack(cow) }
         step("inventory click") { n.click(0, 36, 0, 0); n.click(0, 37, 0, 0); n.click(0, 9, 0, 1); n.click(0, 38, 1, 4) }
-        step("inventory drag") { n.click(0, -999, 0, 5); n.click(0, 10, 1, 5); n.click(0, 11, 1, 5); n.click(0, -999, 2, 5) }
+        step("inventory drag") { n.click(0, 10, 0, 0); n.click(0, -999, 0, 5); n.click(0, 12, 1, 5); n.click(0, 13, 1, 5); n.click(0, -999, 2, 5) }
         step("open chest") { n.useItemOn(chest[0], chest[1], chest[2], 1) }
         n.await(5000) { n.lastOpenWindow() != null }
         val win = n.lastOpenWindow()
@@ -126,10 +126,12 @@ fun runNetBot(port: Int, out: String) {
         step("sign edit", 600) { n.signUpdate(sign[0], sign[1], sign[2], true, listOf("net", "bot", "", "")) }
         step("book edit") { n.held(3); n.sleep(150); n.editBook(3, listOf("page one"), null) }
         step("resource pack") { n.command("fissiontest netpack"); n.sleep(800); n.resourcePack(UUID(0, 5), 3); n.resourcePack(UUID(0, 5), 0) }
+        step("dig (survival)") { n.held(1); n.sleep(150); n.action(0, floor[0] + 2, floor[1], floor[2], 1); n.sleep(150); n.action(2, floor[0] + 2, floor[1], floor[2], 1) }
         step("gamemode creative") { n.command("gamemode creative") }
         step("creative slot") { n.creativeSlot(40, 1); n.creativeSlot(-1, 1) }
-        step("dig (creative)") { n.action(0, floor[0] + 1, floor[1] + 1, floor[2], 1); n.sleep(100); n.action(2, floor[0] + 1, floor[1] + 1, floor[2], 1) }
+        step("dig (creative)") { n.action(0, floor[0] + 1, floor[1] + 1, floor[2], 1); n.sleep(100); n.action(3, floor[0] + 1, floor[1] + 1, floor[2], 1) }
         step("teleport command") { n.command("tp NetBot ${floor[0] + 0.5} ${floor[1] + 1} ${floor[2] + 2.5}") }
+        step("jump move") { val p = b.pos!!; n.moveTo(p[0], p[1] + 0.42, p[2], false); n.sleep(60); n.moveTo(p[0], p[1], p[2], true) }
         step("move") { val p = b.pos!!; repeat(6) { n.moveTo(p[0] + 0.1 * (it + 1), p[1], p[2]); n.sleep(60) } }
         step("move rot") { n.look(90f, 10f) }
         step("kill + respawn", 1500) { n.command("kill NetBot") }

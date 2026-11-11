@@ -45,10 +45,10 @@ final class NetProbe implements Listener {
     }
 
     private void seen(Event e) {
-        counts.merge(e.getClass().getSimpleName(), 1, Integer::sum);
+        for (Class<?> c = e.getClass(); c != null && c != Event.class && c != Object.class; c = c.getSuperclass()) counts.merge(c.getSimpleName(), 1, Integer::sum); // parents count too (PlayerInteractEntityEvent via PlayerInteractAtEntityEvent)
         if (e instanceof org.bukkit.event.player.PlayerTeleportEvent t) counts.merge("PlayerTeleportEvent:" + t.getCause(), 1, Integer::sum);
         if (e instanceof org.bukkit.event.inventory.InventoryClickEvent c) counts.merge("InventoryClickEvent:" + c.getClick(), 1, Integer::sum);
-        if (e instanceof org.bukkit.event.player.PlayerInteractEvent i) counts.merge("PlayerInteractEvent:" + i.getAction(), 1, Integer::sum);
+        if (e instanceof org.bukkit.event.player.PlayerInteractEvent i) { counts.merge("PlayerInteractEvent:" + i.getAction(), 1, Integer::sum); counts.merge("PlayerInteractEvent:" + i.getAction() + ":" + i.getPlayer().getGameMode() + ":item=" + i.useItemInHand() + ":block=" + i.useInteractedBlock() + ":cancelled=" + i.isCancelled(), 1, Integer::sum); }
         if (e instanceof org.bukkit.event.player.PlayerResourcePackStatusEvent s) counts.merge("PlayerResourcePackStatusEvent:" + s.getStatus(), 1, Integer::sum);
         if (e instanceof org.bukkit.event.player.PlayerQuitEvent) counts.merge("PlayerQuitEvent", 0, Integer::sum);
     }
@@ -57,10 +57,12 @@ final class NetProbe implements Listener {
     public void onJoin(org.bukkit.event.player.PlayerJoinEvent e) {
         Player p = e.getPlayer();
         p.setOp(true);
+        p.setGameMode(org.bukkit.GameMode.SURVIVAL); // the standalone test server joins players in creative
         p.getInventory().setItem(0, new ItemStack(Material.STONE, 64));
         p.getInventory().setItem(1, new ItemStack(Material.DIAMOND_SWORD));
         p.getInventory().setItem(2, new ItemStack(Material.SNOWBALL, 16));
         p.getInventory().setItem(3, new ItemStack(Material.WRITABLE_BOOK));
+        p.getInventory().setItem(4, new ItemStack(Material.APPLE, 5));
         p.getInventory().setItem(9, new ItemStack(Material.APPLE, 5));
         p.getInventory().setItem(10, new ItemStack(Material.APPLE, 5));
     }

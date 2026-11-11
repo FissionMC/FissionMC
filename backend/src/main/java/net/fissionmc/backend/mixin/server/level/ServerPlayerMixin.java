@@ -173,6 +173,182 @@ public abstract class ServerPlayerMixin extends Player {
     }
     // Paper end - Post effects API
 
+    // Paper/CraftBukkit: ServerPlayer.teleport(TeleportTransition) hunks. The PlayerTeleportEvent is fired at HEAD (vanilla's isRemoved check and missing-respawn-block message
+    // run after it instead of before; harmless), a changed destination re-enters with the new transition; vanilla's connection.teleport calls become internalTeleport (no second event).
+    // TODO(behaviour): PlayerTeleportEndGatewayEvent branch, oldLevelTypeKey/getTypeKey nether check, restartClientLoadTimerAfterRespawn, portalProcess reset, shield blocking reset
+    private boolean fission$teleportEventDone = false;
+    private @Nullable ServerLevel fission$teleportOldLevel;
+
+    @Inject(method = "teleport(Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/server/level/ServerPlayer;", at = @At("HEAD"), cancellable = true)
+    private void paper$teleportEvent(final TeleportTransition transitionIn, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<ServerPlayer> cir) {
+        if (this.fission$teleportEventDone) {
+            this.fission$teleportEventDone = false;
+            return; // re-entry with the destination a plugin chose: the event already ran
+        }
+        if (this.isSleeping()) { // CraftBukkit - SPIGOT-3154
+            cir.setReturnValue(null);
+            return;
+        }
+        if (this.isRemoved()) {
+            cir.setReturnValue(null);
+            return;
+        }
+        // CraftBukkit start
+        TeleportTransition transition = transitionIn;
+        ServerLevel newLevel = transition.newLevel();
+        ServerLevel oldLevel = fission$self().level();
+        this.fission$teleportOldLevel = oldLevel;
+        org.bukkit.Location enter = this.getBukkitEntity().getLocation();
+        PositionMoveRotation absolutePosition = PositionMoveRotation.calculateAbsolute(PositionMoveRotation.of(this), PositionMoveRotation.of(transition), transition.relatives());
+        org.bukkit.Location exit = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(absolutePosition.position(), newLevel, absolutePosition.yRot(), absolutePosition.xRot());
+        final org.bukkit.event.player.PlayerTeleportEvent tpEvent = new org.bukkit.event.player.PlayerTeleportEvent(this.getBukkitEntity(), enter, exit.clone(), transition.cause());
+        org.bukkit.Bukkit.getServer().getPluginManager().callEvent(tpEvent);
+        org.bukkit.Location newExit = tpEvent.getTo();
+        if (tpEvent.isCancelled()) {
+            cir.setReturnValue(null);
+            return;
+        }
+        if (!newExit.equals(exit)) {
+            newLevel = ((org.bukkit.craftbukkit.CraftWorld) newExit.getWorld()).getHandle();
+            transition = transition.withChangedLocation(newExit).withVelocity(Vec3.ZERO).withRelatives(java.util.Set.of());
+            this.fission$teleportEventDone = true;
+            cir.setReturnValue(fission$self().teleport(transition));
+        } else {
+            this.fission$teleportEventDone = false;
+        }
+        // CraftBukkit end
+    }
+
+    @Redirect(method = "teleport(Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/server/level/ServerPlayer;", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;teleport(Lnet/minecraft/world/entity/PositionMoveRotation;Ljava/util/Set;)V"))
+    private void paper$teleportInternal(final ServerGamePacketListenerImpl connection, final PositionMoveRotation destination, final java.util.Set<Relative> relatives) {
+        connection.internalTeleport(destination, relatives); // CraftBukkit - use internal teleport without event
+    }
+
+    @Inject(method = "teleport(Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/server/level/ServerPlayer;", at = @At("RETURN"))
+    private void paper$changedWorld(final TeleportTransition transition, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<ServerPlayer> cir) {
+        final ServerLevel oldLevel = this.fission$teleportOldLevel;
+        this.fission$teleportOldLevel = null;
+        if (cir.getReturnValue() == null || oldLevel == null || oldLevel == fission$self().level()) {
+            return;
+        }
+        // CraftBukkit start
+        org.bukkit.event.player.PlayerChangedWorldEvent changeEvent = new org.bukkit.event.player.PlayerChangedWorldEvent(this.getBukkitEntity(), oldLevel.getWorld());
+        fission$self().level().getCraftServer().getPluginManager().callEvent(changeEvent);
+        // CraftBukkit end
+        // Paper start - Reset shield blocking on dimension change
+        if (this.isBlocking()) {
+            this.stopUsingItem();
+        }
+        // Paper end - Reset shield blocking on dimension change
+    }
+
+    // Paper: InventoryOpenEvent hooks (replaced bodies of openMenu, openHorseInventory, openNautilusInventory)
+    @Shadow private void initMenu(final net.minecraft.world.inventory.AbstractContainerMenu menu) { throw new AssertionError(); }
+
+    @Inject(method = "openMenu", at = @At("HEAD"), cancellable = true)
+    private void paper$openMenu(final net.minecraft.world.@Nullable MenuProvider provider, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<java.util.OptionalInt> cir) {
+        if (provider == null) {
+            cir.setReturnValue(java.util.OptionalInt.empty());
+            return;
+        }
+        // if (false && this.containerMenu != this.inventoryMenu) { this.closeContainer(); } // CraftBukkit - SPIGOT-6552: Handle inventory closing in CraftEventFactory#callInventoryOpenEventWithTitle(...)
+        this.fission$nextContainerCounter();
+        net.minecraft.world.inventory.AbstractContainerMenu menu = provider.createMenu(this.containerCounter, this.getInventory(), this);
+        Component title = null; // Paper - Add titleOverride to InventoryOpenEvent
+        // CraftBukkit start - Inventory open hook
+        if (menu != null) {
+            menu.setTitle(provider.getDisplayName());
+
+            boolean cancelled = false;
+            // Paper start - Add titleOverride to InventoryOpenEvent
+            final com.mojang.datafixers.util.Pair<net.kyori.adventure.text.Component, net.minecraft.world.inventory.AbstractContainerMenu> result = org.bukkit.craftbukkit.event.CraftEventFactory.callInventoryOpenEventWithTitle(fission$self(), menu, cancelled);
+            menu = result.getSecond();
+            title = io.papermc.paper.adventure.PaperAdventure.asVanilla(result.getFirst());
+            // Paper end - Add titleOverride to InventoryOpenEvent
+            if (menu == null && !cancelled) { // Let pre-cancelled events fall through
+                // SPIGOT-5263 - close chest if cancelled
+                if (provider instanceof net.minecraft.world.Container container) {
+                    container.stopOpen(this);
+                } else if (provider instanceof org.bukkit.craftbukkit.inventory.CraftInventoryDoubleChest.Provider doubleChestProvider) {
+                    // SPIGOT-5355 - double chests too :(
+                    doubleChestProvider.container.stopOpen(this);
+                    // Paper start - Fix InventoryOpenEvent cancellation
+                } else if (!this.getEnderChestInventory().isActiveChest(null)) {
+                    this.getEnderChestInventory().stopOpen(this);
+                    // Paper end - Fix InventoryOpenEvent cancellation
+                }
+                cir.setReturnValue(java.util.OptionalInt.empty());
+                return;
+            }
+        }
+        // CraftBukkit end
+        if (menu == null) {
+            if (this.isSpectator()) {
+                this.sendOverlayMessage(Component.translatable("container.spectatorCantOpen").withStyle(net.minecraft.ChatFormatting.RED));
+            }
+
+            cir.setReturnValue(java.util.OptionalInt.empty());
+        } else {
+            // CraftBukkit start
+            this.containerMenu = menu; // Moved up
+            if (!this.isImmobile()) {
+                this.connection.send(new net.minecraft.network.protocol.game.ClientboundOpenScreenPacket(menu.containerId, menu.getType(), java.util.Objects.requireNonNullElseGet(title, menu::getTitle))); // Paper - Add titleOverride to InventoryOpenEvent
+            }
+            // CraftBukkit end
+            this.initMenu(menu);
+            // CraftBukkit - moved up
+            cir.setReturnValue(java.util.OptionalInt.of(this.containerCounter));
+        }
+    }
+
+    @Inject(method = "openHorseInventory", at = @At("HEAD"), cancellable = true)
+    private void paper$openHorseInventory(final net.minecraft.world.entity.animal.equine.AbstractHorse horse, final net.minecraft.world.Container container, final CallbackInfo ci) {
+        ci.cancel();
+        // CraftBukkit start - Inventory open hook
+        this.fission$nextContainerCounter(); // Moved up from below
+        net.minecraft.world.inventory.AbstractContainerMenu menu = new net.minecraft.world.inventory.HorseInventoryMenu(this.containerCounter, this.getInventory(), container, horse, horse.getInventoryColumns());
+        menu.setTitle(horse.getDisplayName());
+        menu = org.bukkit.craftbukkit.event.CraftEventFactory.callInventoryOpenEvent(fission$self(), menu);
+
+        if (menu == null) {
+            container.stopOpen(this);
+            return;
+        }
+        // CraftBukkit end
+        if (this.containerMenu != this.inventoryMenu) {
+            this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.OPEN_NEW); // Paper - Inventory close reason
+        }
+
+        int inventoryColumns = horse.getInventoryColumns();
+        this.connection.send(new net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket(this.containerCounter, inventoryColumns, horse.getId()));
+        this.containerMenu = menu; // CraftBukkit
+        this.initMenu(this.containerMenu);
+    }
+
+    @Inject(method = "openNautilusInventory", at = @At("HEAD"), cancellable = true)
+    private void paper$openNautilusInventory(final net.minecraft.world.entity.animal.nautilus.AbstractNautilus nautilus, final net.minecraft.world.Container container, final CallbackInfo ci) {
+        ci.cancel();
+        // Paper start - Inventory open hook
+        this.fission$nextContainerCounter(); // moved up from below
+        net.minecraft.world.inventory.AbstractContainerMenu menu = new net.minecraft.world.inventory.NautilusInventoryMenu(this.containerCounter, this.getInventory(), container, nautilus, nautilus.getInventoryColumns());
+        menu.setTitle(nautilus.getDisplayName());
+        menu = org.bukkit.craftbukkit.event.CraftEventFactory.callInventoryOpenEvent(fission$self(), menu);
+
+        if (menu == null) {
+            container.stopOpen(this);
+            return;
+        }
+        // Paper end
+        if (this.containerMenu != this.inventoryMenu) {
+            this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.UNKNOWN);
+        }
+
+        int inventoryColumns = nautilus.getInventoryColumns();
+        this.connection.send(new net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket(this.containerCounter, inventoryColumns, nautilus.getId()));
+        this.containerMenu = menu; // Paper - Moved up declaration
+        this.initMenu(this.containerMenu);
+    }
+
     // Paper start - Inventory close reason
     public void closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason reason) {
         org.bukkit.craftbukkit.event.CraftEventFactory.handleInventoryCloseEvent(this, reason); // CraftBukkit
@@ -595,6 +771,163 @@ public abstract class ServerPlayerMixin extends Player {
         return false; // this.recipeBook.copyOverData(oldPlayer.recipeBook); // CraftBukkit
     }
     // Paper end
+
+    // Paper: replaced body of die(DamageSource) (cancellable PlayerDeathEvent, getItemsToKeep, expanded death API); the tail after the scoreboard is vanilla's
+    @Shadow protected abstract void tellNeutralMobsThatIDied();
+    @Shadow public abstract void setCamera(Entity entity);
+
+    // Paper start - PlayerDeathEvent#getItemsToKeep
+    private static boolean fission$shouldKeepDeathEventItem(final org.bukkit.event.entity.PlayerDeathEvent event, final net.minecraft.world.item.ItemStack item) {
+        final List<org.bukkit.inventory.ItemStack> itemsToKeep = event.getItemsToKeep();
+        if (EnchantmentHelper.has(item, net.minecraft.world.item.enchantment.EnchantmentEffectComponents.PREVENT_EQUIPMENT_DROP) || itemsToKeep.isEmpty() || item.isEmpty()) {
+            return false;
+        }
+        final org.bukkit.inventory.ItemStack bukkitStack = org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitMirror(item);
+        final java.util.Iterator<org.bukkit.inventory.ItemStack> iterator = itemsToKeep.iterator();
+        while (iterator.hasNext()) {
+            final org.bukkit.inventory.ItemStack itemStack = iterator.next();
+            if (bukkitStack.equals(itemStack)) {
+                iterator.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+    // Paper end - PlayerDeathEvent#getItemsToKeep
+
+    // Paper start - Expand PlayerDeathEvent API
+    private void fission$sendCombatKill(boolean displayMessage, Component deathMessage) {
+        if (displayMessage && deathMessage != net.minecraft.network.chat.CommonComponents.EMPTY) {
+            this.connection.send(new net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket(this.getId(), deathMessage),
+                net.minecraft.network.PacketSendListener.exceptionallySend(() -> {
+                    String s = deathMessage.getString(256);
+                    Component component1 = Component.translatable("death.attack.message_too_long", Component.literal(s).withStyle(net.minecraft.ChatFormatting.YELLOW));
+                    Component component2 = Component.translatable("death.attack.even_more_magic", this.getDisplayName()).withStyle(style -> style.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(component1)));
+                    return new net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket(this.getId(), component2);
+                }));
+        } else {
+            this.connection.send(new net.minecraft.network.protocol.game.ClientboundPlayerCombatKillPacket(this.getId(), net.minecraft.network.chat.CommonComponents.EMPTY));
+        }
+    }
+    // Paper end - Expand PlayerDeathEvent API
+
+    @Inject(method = "die", at = @At("HEAD"), cancellable = true)
+    private void paper$die(final net.minecraft.world.damagesource.DamageSource source, final CallbackInfo ci) {
+        ci.cancel();
+        final ServerPlayer self = fission$self();
+        final ServerLevel level = self.level();
+        boolean showDeathMessage = level.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.SHOW_DEATH_MESSAGES);
+        // CraftBukkit start - fire PlayerDeathEvent
+        if (this.isRemoved()) {
+            return;
+        }
+        List<net.fissionmc.craft.compat.DefaultDrop> loot = new java.util.ArrayList<>(this.getInventory().getContainerSize()); // Paper - Restore vanilla drops behavior
+        boolean keepInventory = level.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.KEEP_INVENTORY) || this.isSpectator();
+        if (!keepInventory) {
+            for (net.minecraft.world.item.ItemStack item : this.getInventory().getContents()) {
+                if (!item.isEmpty() && !EnchantmentHelper.has(item, net.minecraft.world.item.enchantment.EnchantmentEffectComponents.PREVENT_EQUIPMENT_DROP)) {
+                    loot.add(new net.fissionmc.craft.compat.DefaultDrop(item, stack -> this.drop(stack, false, net.minecraft.util.Prediction.PREDICTED, true, false, null))); // Paper - Restore vanilla drops behavior; drop function taken from Inventory#dropAll (don't fire drop event)
+                }
+            }
+        }
+        if (!this.isSpectator() && this.shouldDropLoot(level)) { // Paper - fix player loottables running when mob loot gamerule is false
+            // SPIGOT-5071: manually add player loot tables (SPIGOT-5195 - ignores keepInventory rule)
+            this.deathDropItems = new java.util.ArrayList<>();
+            this.dropFromLootTable(level, source, this.lastHurtByPlayerMemoryTime > 0);
+            loot.addAll(this.deathDropItems);
+            this.deathDropItems = null;
+        }
+
+        Component defaultMessage = this.getCombatTracker().getDeathMessage();
+
+        this.keepLevel = keepInventory; // SPIGOT-2222: pre-set keepLevel
+        org.bukkit.event.entity.PlayerDeathEvent event = org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerDeathEvent(self, source, loot, io.papermc.paper.adventure.PaperAdventure.asAdventure(defaultMessage), showDeathMessage, keepInventory); // Paper - Adventure; Expand PlayerDeathEvent API
+        // Paper start - cancellable death event
+        if (event.isCancelled()) {
+            // make compatible with plugins that might have already set the health in an event listener
+            if (this.getHealth() <= 0) {
+                this.setHealth((float) event.getReviveHealth());
+            }
+            return;
+        }
+        this.gameEvent(net.minecraft.world.level.gameevent.GameEvent.ENTITY_DIE); // moved from the top of this method
+        // Paper end
+
+        // SPIGOT-943 - only call if they have an inventory open
+        if (this.containerMenu != this.inventoryMenu) {
+            this.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.DEATH); // Paper - Inventory close reason
+        }
+
+        net.kyori.adventure.text.Component apiDeathMessage = event.deathMessage() != null ? event.deathMessage() : net.kyori.adventure.text.Component.empty(); // Paper - Adventure
+        Component deathScreenMessage = io.papermc.paper.adventure.PaperAdventure.asVanilla(event.deathScreenMessageOverride() != null ? event.deathScreenMessageOverride() : apiDeathMessage); // Paper - Expand PlayerDeathEvent API
+
+        if (apiDeathMessage != null && apiDeathMessage != net.kyori.adventure.text.Component.empty() && event.getShowDeathMessages()) { // Paper - Adventure; Expand PlayerDeathEvent API
+            Component deathMessage = io.papermc.paper.adventure.PaperAdventure.asVanilla(apiDeathMessage); // Paper - Adventure
+            this.fission$sendCombatKill(event.getShowDeathMessages(), deathScreenMessage); // Paper - Expand PlayerDeathEvent
+            net.minecraft.world.scores.Team team = this.getTeam();
+            if (team == null || team.getDeathMessageVisibility() == net.minecraft.world.scores.Team.Visibility.ALWAYS) {
+                this.server.getPlayerList().broadcastSystemMessage(deathMessage, false);
+            } else if (team.getDeathMessageVisibility() == net.minecraft.world.scores.Team.Visibility.HIDE_FOR_OTHER_TEAMS) {
+                this.server.getPlayerList().broadcastSystemToTeam(this, deathMessage);
+            } else if (team.getDeathMessageVisibility() == net.minecraft.world.scores.Team.Visibility.HIDE_FOR_OWN_TEAM) {
+                this.server.getPlayerList().broadcastSystemToAllExceptTeam(this, deathMessage);
+            }
+        } else {
+            this.fission$sendCombatKill(event.getShowDeathMessages(), deathScreenMessage); // Paper - Expand PlayerDeathEvent
+        }
+
+        this.removeEntitiesOnShoulder();
+        if (level.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.FORGIVE_DEAD_PLAYERS)) {
+            this.tellNeutralMobsThatIDied();
+        }
+
+        // SPIGOT-5478 must be called manually now
+        if (event.shouldDropExperience()) this.dropExperience(level, source.getEntity()); // Paper - tie to event
+        // we clean the player's inventory after the EntityDeathEvent is called so plugins can get the exact state of the inventory.
+        if (!event.getKeepInventory()) {
+            // Paper start - PlayerDeathEvent#getItemsToKeep
+            for (int i = 0; i < this.getInventory().getNonEquipmentItems().size(); i++) {
+                if (!fission$shouldKeepDeathEventItem(event, this.getInventory().getNonEquipmentItems().get(i))) {
+                    this.getInventory().getNonEquipmentItems().set(i, net.minecraft.world.item.ItemStack.EMPTY);
+                }
+            }
+            for (final net.minecraft.world.entity.EquipmentSlot value : net.minecraft.world.entity.EquipmentSlot.VALUES) {
+                if (!this.getInventory().fission$equipment().get(value).isEmpty() && !fission$shouldKeepDeathEventItem(event, this.getInventory().fission$equipment().get(value))) {
+                    this.getInventory().fission$equipment().set(value, net.minecraft.world.item.ItemStack.EMPTY);
+                }
+            }
+
+            // remainder of items left in toKeep - plugin added stuff on death that wasn't in the initial loot?
+            if (!event.getItemsToKeep().isEmpty()) {
+                for (org.bukkit.inventory.ItemStack itemStack : event.getItemsToKeep()) {
+                    event.getEntity().getInventory().addItem(itemStack);
+                }
+            }
+            // Paper end - PlayerDeathEvent#getItemsToKeep
+        }
+
+        this.setCamera(this); // Remove spectated target
+        // CraftBukkit end
+
+        this.level().getCraftServer().getScoreboardManager().forAllObjectives(net.minecraft.world.scores.criteria.ObjectiveCriteria.DEATH_COUNT, this, net.minecraft.world.scores.ScoreAccess::increment); // CraftBukkit - Get our scores instead
+        net.minecraft.world.entity.LivingEntity killer = this.getKillCredit();
+        if (killer != null) {
+            this.awardStat(net.minecraft.stats.Stats.ENTITY_KILLED_BY.get(killer.getType()));
+            killer.awardKillScore(this, source);
+            this.createWitherRose(killer);
+        }
+
+        this.level().broadcastEntityEvent(this, (byte) 3);
+        this.awardStat(net.minecraft.stats.Stats.DEATHS);
+        this.resetStat(net.minecraft.stats.Stats.CUSTOM.get(net.minecraft.stats.Stats.TIME_SINCE_DEATH));
+        this.resetStat(net.minecraft.stats.Stats.CUSTOM.get(net.minecraft.stats.Stats.TIME_SINCE_REST));
+        this.clearFire();
+        this.setTicksFrozen(0);
+        this.setSharedFlagOnFire(false);
+        this.getCombatTracker().recheckStatus();
+        this.setLastDeathLocation(Optional.of(net.minecraft.core.GlobalPos.of(this.level().dimension(), this.blockPosition())));
+        this.connection.markClientUnloadedAfterDeath();
+    }
 
     // CraftBukkit start - reset the reused player on respawn
     public void reset() {

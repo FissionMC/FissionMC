@@ -17,6 +17,7 @@ public abstract class InventoryMixin {
     @Shadow @Final private NonNullList<ItemStack> items;
     @Shadow @Final public Player player;
     @Shadow @Final private EntityEquipment equipment;
+    public EntityEquipment fission$equipment() { return this.equipment; } // FissionMC: Paper makes the field public
     @Shadow private int selected;
 
     @Shadow public abstract ItemStack getItem(int slot);
