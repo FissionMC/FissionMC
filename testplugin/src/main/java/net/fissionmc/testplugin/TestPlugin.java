@@ -14,6 +14,7 @@ public final class TestPlugin extends JavaPlugin implements Listener {
         getLogger().info("enabled on " + getServer().getName() + " " + getServer().getVersion());
         getServer().getPluginManager().registerEvents(this, this);
     }
+    private EventProbe events; // created by the first /fissiontest ev* command (events-test.sh): counts every event, see EventProbe
     @Override public void onDisable() { getLogger().info("disabled"); }
 
     private org.bukkit.entity.Entity tagged(String tag) {
@@ -60,6 +61,16 @@ public final class TestPlugin extends JavaPlugin implements Listener {
                 org.bukkit.entity.Entity e = tagged(args[1]);
                 e.getPersistentDataContainer().set(new org.bukkit.NamespacedKey("fissiontest", args[2]), org.bukkit.persistence.PersistentDataType.STRING, args[3]);
                 sender.sendMessage("pdc set");
+                return true;
+            }
+            if (args.length >= 1 && args[0].startsWith("ev")) {
+                if (events == null) { events = new EventProbe(this); events.register(); }
+                switch (args[0]) {
+                    case "evrun" -> events.run();
+                    case "evreport" -> events.report();
+                    default -> { return false; }
+                }
+                getLogger().info("EVDONE " + String.join(" ", args));
                 return true;
             }
             // Vanilla command permission path (Paper "Vanilla command permission fixes"): evaluates the dispatcher requirements for a non-op sender
