@@ -188,6 +188,15 @@ final class EventProbe implements Listener {
         notes.add("farmer recipes=" + farmer.getRecipes().size());
         Object nmsFarmer = handle(farmer);
         nmsFarmer.getClass().getMethod("restock").invoke(nmsFarmer);
+        // snow golem (2 snow blocks + carved pumpkin) and wither (soul sand T + 3 skulls, spawn check run by hand: API placement does not call it)
+        base.getRelative(11, 0, 9).setType(Material.SNOW_BLOCK, false); base.getRelative(11, 1, 9).setType(Material.SNOW_BLOCK, false);
+        base.getRelative(11, 2, 9).setType(Material.CARVED_PUMPKIN);
+        base.getRelative(7, 0, 9).setType(Material.SOUL_SAND, false);
+        for (int x = 6; x <= 8; x++) { base.getRelative(x, 1, 9).setType(Material.SOUL_SAND, false); base.getRelative(x, 2, 9).setType(Material.WITHER_SKELETON_SKULL, false); }
+        Object nmsLevel = Class.forName("org.bukkit.craftbukkit.CraftWorld").getMethod("getHandle").invoke(w);
+        Class<?> bpc = Class.forName("net.minecraft.core.BlockPos");
+        Object skullPos = bpc.getConstructor(int.class, int.class, int.class).newInstance(base.getX() + 7, base.getY() + 2, base.getZ() + 9);
+        Class.forName("net.minecraft.world.level.block.WitherSkullBlock").getMethod("checkSpawn", Class.forName("net.minecraft.world.level.Level"), bpc).invoke(null, nmsLevel, skullPos);
         // whitelist events: toggle on/off, add/remove an offline profile
         org.bukkit.Server srv = plugin.getServer();
         srv.setWhitelist(true); srv.setWhitelist(false);
@@ -251,6 +260,8 @@ final class EventProbe implements Listener {
             check("whitelist", "WhitelistToggleEvent,WhitelistStateUpdateEvent");
             check("villager trades", "VillagerAcquireTradeEvent,VillagerReplenishTradeEvent");
             check("effects", "EntityEffectTickEvent");
+            check("golem build", "EntityConstructEvent,CreatureSpawnEvent:BUILD_SNOWMAN,CreatureSpawnEvent:BUILD_WITHER");
+            for (org.bukkit.entity.Wither wi : base.getWorld().getEntitiesByClass(org.bukkit.entity.Wither.class)) wi.remove(); // it would blow up the scenarios when its spawn invulnerability ends
         });
         later(500, () -> {
             check("resources reload", "ServerResourcesReloadedEvent");
