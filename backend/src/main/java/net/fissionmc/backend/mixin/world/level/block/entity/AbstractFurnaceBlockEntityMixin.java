@@ -17,6 +17,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** Paper: sources/net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java.patch */
 @Mixin(AbstractFurnaceBlockEntity.class)
@@ -54,8 +55,87 @@ public abstract class AbstractFurnaceBlockEntityMixin {
     }
     // CraftBukkit end
 
-    // TODO(behaviour): load/save "Paper.CookSpeedMultiplier", FurnaceStartSmeltEvent, FurnaceExtractEvent/BlockExpEvent (awardUsedRecipesAndPopExperience / createExperience), fillStackedContents.
-    // Done: FurnaceBurnEvent, FurnaceSmeltEvent (burn returns boolean again: setRecipeUsed is skipped), cookSpeedMultiplier in cook time.
+    // Done: FurnaceBurnEvent, FurnaceSmeltEvent (burn returns boolean again: setRecipeUsed is skipped), cookSpeedMultiplier in cook time,
+    // "Paper.CookSpeedMultiplier" load/save, FurnaceStartSmeltEvent, FurnaceExtractEvent/BlockExpEvent (extra arguments through PaperContext), fillStackedContents.
+
+    // Paper start - cook speed multiplier API
+    @Inject(method = "loadAdditional", at = @At("TAIL"))
+    private void paper$loadCookSpeed(final net.minecraft.world.level.storage.ValueInput input, final CallbackInfo ci) {
+        this.cookSpeedMultiplier = input.getDoubleOr("Paper.CookSpeedMultiplier", 1);
+    }
+
+    @Inject(method = "saveAdditional", at = @At("TAIL"))
+    private void paper$saveCookSpeed(final net.minecraft.world.level.storage.ValueOutput output, final CallbackInfo ci) {
+        output.putDouble("Paper.CookSpeedMultiplier", this.cookSpeedMultiplier);
+    }
+    // Paper end - cook speed multiplier API
+
+    // CraftBukkit start - FurnaceStartSmeltEvent: right before the lit branch's cookingTimer++
+    @Inject(method = "serverTick", at = @At(value = "FIELD", target = "Lnet/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity;cookingTimer:I", opcode = org.objectweb.asm.Opcodes.GETFIELD, ordinal = 2))
+    private static void paper$startSmelt(final ServerLevel level, final BlockPos pos, final net.minecraft.world.level.block.state.BlockState state, final AbstractFurnaceBlockEntity entity, final CallbackInfo ci,
+                                         @com.llamalad7.mixinextras.sugar.Local final RecipeHolder<? extends AbstractCookingRecipe> recipe) {
+        if (entity.cookingTimer == 0) {
+            org.bukkit.event.inventory.FurnaceStartSmeltEvent smeltEvent = new org.bukkit.event.inventory.FurnaceStartSmeltEvent(
+                org.bukkit.craftbukkit.block.CraftBlock.at(level, pos),
+                org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitMirror(((AbstractFurnaceBlockEntityMixin) (Object) entity).items.get(0)),
+                (org.bukkit.inventory.CookingRecipe<?>) recipe.toBukkitRecipe(),
+                getTotalCookTime(recipe, entity)
+            );
+            smeltEvent.callEvent();
+
+            entity.cookingTotalTime = smeltEvent.getTotalCookTime();
+        }
+    }
+    // CraftBukkit end
+
+    // CraftBukkit start - fire FurnaceExtractEvent / BlockExpEvent
+    @Inject(method = "getRecipesToAwardAndPopExperience", at = @At("HEAD"))
+    private void paper$expPos(final CallbackInfoReturnable<java.util.List<RecipeHolder<?>>> cir) {
+        net.fissionmc.backend.blocks.PaperContext.FURNACE_POS.set(((net.minecraft.world.level.block.entity.BlockEntity) (Object) this).getBlockPos());
+    }
+
+    @Inject(method = "getRecipesToAwardAndPopExperience", at = @At("RETURN"))
+    private void paper$expPosEnd(final CallbackInfoReturnable<java.util.List<RecipeHolder<?>>> cir) {
+        net.fissionmc.backend.blocks.PaperContext.FURNACE_POS.remove();
+    }
+
+    @WrapOperation(method = "createExperience", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/ExperienceOrb;award(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/phys/Vec3;I)V"))
+    private static void paper$expEvents(final ServerLevel level, final net.minecraft.world.phys.Vec3 position, int xpReward, final Operation<Void> original) {
+        final BlockPos blockPos = net.fissionmc.backend.blocks.PaperContext.FURNACE_POS.get();
+        final net.fissionmc.backend.blocks.PaperContext.FurnaceExtract extract = net.fissionmc.backend.blocks.PaperContext.FURNACE_EXTRACT.get();
+        if (blockPos == null) { // not reached through getRecipesToAwardAndPopExperience
+            original.call(level, position, xpReward);
+            return;
+        }
+        org.bukkit.event.block.BlockExpEvent event;
+        if (extract != null && extract.amount() != 0) {
+            event = new org.bukkit.event.inventory.FurnaceExtractEvent(
+                extract.player().getBukkitEntity(),
+                org.bukkit.craftbukkit.block.CraftBlock.at(level, blockPos),
+                org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(extract.stack()),
+                extract.amount(),
+                xpReward
+            );
+        } else {
+            event = new org.bukkit.event.block.BlockExpEvent(
+                org.bukkit.craftbukkit.block.CraftBlock.at(level, blockPos),
+                xpReward
+            );
+        }
+        event.callEvent();
+        xpReward = event.getExpToDrop();
+        net.minecraft.world.entity.ExperienceOrb.awardWithDirection(level, position, net.minecraft.world.phys.Vec3.ZERO, xpReward, org.bukkit.entity.ExperienceOrb.SpawnReason.FURNACE, extract != null ? extract.player() : null, null); // Paper
+    }
+    // CraftBukkit end
+
+    // Paper start - don't account fuel stack (fixes MC-243057)
+    @Inject(method = "fillStackedContents", at = @At("HEAD"), cancellable = true)
+    private void paper$fillStackedContents(final net.minecraft.world.entity.player.StackedItemContents contents, final CallbackInfo ci) {
+        contents.accountStack(this.items.get(0));
+        contents.accountStack(this.items.get(2));
+        ci.cancel();
+    }
+    // Paper end - don't account fuel stack (fixes MC-243057)
 
     private static final ThreadLocal<org.bukkit.event.inventory.FurnaceBurnEvent> fission$burnEvent = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> fission$burned = new ThreadLocal<>();

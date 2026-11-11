@@ -9,6 +9,9 @@ net.minecraft.world.Container: public org.bukkit.inventory.InventoryHolder getOw
 net.minecraft.world.Container: public void setMaxStackSize(int size)
 net.minecraft.world.Container: public org.bukkit.Location getLocation()
 
+# Paper: sources/net/minecraft/world/SimpleContainer.java.patch (protected in Paper; set by the composter containers)
+net.minecraft.world.SimpleContainer: public org.bukkit.inventory.InventoryHolder bukkitOwner
+
 # Paper: sources/net/minecraft/world/RandomizableContainer.java.patch
 net.minecraft.world.RandomizableContainer: public void unpackLootTable(net.minecraft.world.entity.player.Player player, boolean forceClearLootTable)
 net.minecraft.world.RandomizableContainer: public com.destroystokyo.paper.loottable.PaperLootableInventoryData lootableData()
