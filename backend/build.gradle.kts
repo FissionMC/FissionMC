@@ -68,6 +68,7 @@ tasks.register<JavaExec>("run") {
     )
     doFirst {
         systemProperty("fission.classpath", gameCp.asPath)
+        (project.findProperty("jvmArg") as String?)?.let { jvmArgs(it) } // e.g. -PjvmArg=-Dpaper.disableOldApiSupport=true
         // ./gradlew :backend:run -PcheckLimbo=/abs/path/limbo-play.bin : decode the master limbo frames with vanilla codecs (LimboCheck)
         (project.findProperty("checkLimbo") as String?)?.let { systemProperty("fission.check-limbo", it) }
         (project.findProperty("checkIds") as String?)?.let { systemProperty("fission.check-ids", it) }
