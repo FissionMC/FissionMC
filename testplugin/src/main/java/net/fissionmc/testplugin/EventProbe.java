@@ -43,6 +43,8 @@ final class EventProbe implements Listener {
         counts.merge(e.getClass().getSimpleName(), 1, Integer::sum);
         if (e instanceof org.bukkit.event.entity.EntityTransformEvent t) counts.merge("EntityTransformEvent:" + t.getTransformReason(), 1, Integer::sum);
         else if (e instanceof org.bukkit.event.entity.CreatureSpawnEvent c) counts.merge("CreatureSpawnEvent:" + c.getSpawnReason(), 1, Integer::sum);
+        else if (e instanceof org.bukkit.event.entity.EntityRemoveEvent r) counts.merge("EntityRemoveEvent:" + r.getEntityType() + ":" + r.getCause(), 1, Integer::sum);
+        else if (e instanceof org.bukkit.event.entity.EntityDeathEvent d) counts.merge("EntityDeathEvent:" + d.getEntityType(), 1, Integer::sum);
         try { tweak(e); } catch (Throwable t) { notes.add("tweak " + e.getClass().getSimpleName() + ": " + t); }
     }
 
@@ -51,9 +53,14 @@ final class EventProbe implements Listener {
         if (e instanceof org.bukkit.event.block.BrewingStartEvent b) b.setBrewingTime(2);
         else if (e instanceof org.bukkit.event.inventory.FurnaceStartSmeltEvent f) f.setTotalCookTime(2);
         else if (e instanceof org.bukkit.event.block.CampfireStartEvent c) c.setTotalCookTime(2);
+        // portals: never really travel (the other dimensions would be generated); the ender portal is refused at the enter event (its destination builds the platform before any event)
+        else if (e instanceof com.destroystokyo.paper.event.entity.TurtleGoHomeEvent th) th.setCancelled(true); // lets the egg-laying goal finish (and exercises the cancel path)
+        else if (e instanceof org.bukkit.event.entity.EntityPortalEvent pe) pe.setCancelled(true);
+        else if (e instanceof org.bukkit.event.entity.EntityPortalEnterEvent pe && pe.getPortalType() == org.bukkit.PortalType.ENDER) pe.setCancelled(true);
     }
 
     private Block base;
+    private org.bukkit.entity.Turtle turtleRef;
 
     void setup() throws Exception {
         World w = plugin.getServer().getWorlds().get(0);
@@ -136,6 +143,51 @@ final class EventProbe implements Listener {
         spawn(org.bukkit.entity.Slime.class, 3, 10).setSize(1); // wanders: slime pathfinder events
     }
 
+    /** witch potion events, turtle goals, portal blocks and a fire-lit portal frame, a dispenser feeding armor, whitelist and resource reload. */
+    void setupMore() throws Exception {
+        World w = base.getWorld();
+        // witch: low health makes it drink a healing potion (WitchReadyPotionEvent, WitchConsumePotionEvent); performRangedAttack throws (WitchThrowPotionEvent)
+        org.bukkit.entity.Witch drinker = spawn(org.bukkit.entity.Witch.class, 1, 6);
+        drinker.setHealth(1);
+        org.bukkit.entity.Witch thrower = spawn(org.bukkit.entity.Witch.class, 3, 6);
+        org.bukkit.entity.Pig target = spawn(org.bukkit.entity.Pig.class, 5, 6);
+        Object nmsThrower = handle(thrower);
+        for (java.lang.reflect.Method m : nmsThrower.getClass().getMethods())
+            if (m.getName().equals("performRangedAttack") && m.getParameterCount() == 2) { m.invoke(nmsThrower, handle(target), 1.0F); break; }
+        // turtle with an egg next to sand: GoHome, StartDigging, LayEgg
+        base.getRelative(11, -1, 0).setType(Material.SAND);
+        org.bukkit.entity.Turtle turtle = spawn(org.bukkit.entity.Turtle.class, 11, 0);
+        turtleRef = turtle;
+        Object nmsTurtle = handle(turtle);
+        nmsTurtle.getClass().getMethod("setHasEgg", boolean.class).invoke(nmsTurtle, true);
+        try {
+            java.lang.reflect.Field f = nmsTurtle.getClass().getDeclaredField("homePos"); f.setAccessible(true);
+            Object pos = Class.forName("net.minecraft.core.BlockPos").getConstructor(int.class, int.class, int.class).newInstance(base.getX() + 11, base.getY(), base.getZ() + 0);
+            f.set(nmsTurtle, pos);
+        } catch (Throwable t) { notes.add("turtle homePos: " + t); }
+        // portal blocks with an entity inside: EntityInsideBlockEvent, EntityPortalEnterEvent (+ EntityPortalReadyEvent, EntityPortalEvent for the nether portal)
+        base.getRelative(1, 0, 11).setType(Material.NETHER_PORTAL, false);
+        spawn(org.bukkit.entity.Pig.class, 1, 11);
+        base.getRelative(3, 0, 11).setType(Material.END_PORTAL, false);
+        spawn(org.bukkit.entity.Pig.class, 3, 11);
+        // obsidian frame lit with fire: PortalCreateEvent (FIRE)
+        for (int x = 5; x <= 8; x++) for (int y = 0; y <= 4; y++) if (x == 5 || x == 8 || y == 0 || y == 4) base.getRelative(x, y, 11).setType(Material.OBSIDIAN, false);
+        base.getRelative(6, 1, 11).setType(Material.FIRE);
+        // dispenser facing east into an armor stand: BlockDispenseArmorEvent
+        Block disp = base.getRelative(9, 0, 2);
+        disp.setType(Material.DISPENSER, false);
+        org.bukkit.block.data.Directional dd = (org.bukkit.block.data.Directional) disp.getBlockData(); dd.setFacing(org.bukkit.block.BlockFace.EAST); disp.setBlockData(dd, false);
+        org.bukkit.block.Dispenser ds = (org.bukkit.block.Dispenser) disp.getState(false);
+        ds.getInventory().addItem(new ItemStack(Material.IRON_HELMET));
+        spawn(org.bukkit.entity.ArmorStand.class, 10, 2);
+        notes.add("dispenser dispense()=" + ds.dispense());
+        // whitelist events: toggle on/off, add/remove an offline profile
+        org.bukkit.Server srv = plugin.getServer();
+        srv.setWhitelist(true); srv.setWhitelist(false);
+        org.bukkit.OfflinePlayer op = srv.getOfflinePlayer(java.util.UUID.nameUUIDFromBytes("OfflinePlayer:FissionBot".getBytes()));
+        op.setWhitelisted(true); op.setWhitelisted(false);
+    }
+
     private static Object nmsBlockEntity(Object level, Block b) throws Exception {
         Class<?> bp = Class.forName("net.minecraft.core.BlockPos");
         Object pos = bp.getConstructor(int.class, int.class, int.class).newInstance(b.getX(), b.getY(), b.getZ());
@@ -164,6 +216,8 @@ final class EventProbe implements Listener {
         fails = 0;
         later(1, this::setup);
         later(2, this::setupMobs);
+        later(3, this::setupMore);
+        later(150, () -> plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), "minecraft:reload"));
         later(100, () -> {
             check("brewing stand", "BrewingStandFuelEvent,BrewingStartEvent,BrewEvent");
             check("furnace", "FurnaceBurnEvent,FurnaceStartSmeltEvent,FurnaceSmeltEvent");
@@ -181,7 +235,22 @@ final class EventProbe implements Listener {
             check("sheep", "SheepRegrowWoolEvent");
             check("zombified piglin", "PigZombieAngerEvent");
         });
-        later(110, () -> {
+        later(100, () -> {
+            check("hopper search", "HopperInventorySearchEvent");
+            check("witch potions", "WitchReadyPotionEvent,WitchConsumePotionEvent,WitchThrowPotionEvent");
+            check("portal blocks", "EntityInsideBlockEvent,EntityPortalEnterEvent,EntityPortalReadyEvent,EntityPortalEvent");
+            check("portal create (fire)", "PortalCreateEvent");
+            check("dispenser armor", "BlockDispenseArmorEvent");
+            check("whitelist", "WhitelistToggleEvent,WhitelistStateUpdateEvent");
+        });
+        later(500, () -> {
+            check("resources reload", "ServerResourcesReloadedEvent");
+            if (turtleRef != null) try { Object t = handle(turtleRef); java.lang.reflect.Field f = t.getClass().getDeclaredField("layEggCounter"); f.setAccessible(true); notes.add("turtle layEggCounter=" + f.get(t) + " layingEgg=" + t.getClass().getMethod("isLayingEgg").invoke(t)); } catch (Throwable x) { notes.add("turtle reflect " + x); }
+            if (turtleRef != null) notes.add("turtle valid=" + turtleRef.isValid() + " loc=" + turtleRef.getLocation().toVector() + " hasEgg=" + turtleRef.hasEgg() + " ai=" + turtleRef.hasAI() + " home=" + turtleRef.getHome());
+            check("turtle go home", "TurtleGoHomeEvent");
+            notes.add("turtle digging/laying (timing dependent, not asserted): StartDigging=" + counts.getOrDefault("TurtleStartDiggingEvent", 0) + " LayEgg=" + counts.getOrDefault("TurtleLayEggEvent", 0));
+        });
+        later(1110, () -> {
             report();
             plugin.getLogger().info("EVCHECK DONE fails=" + fails);
         });

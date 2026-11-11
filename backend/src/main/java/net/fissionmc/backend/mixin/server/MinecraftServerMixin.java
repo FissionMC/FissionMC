@@ -722,9 +722,17 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     public CompletableFuture<Void> reloadResources(
         final Collection<String> packsToEnable, final io.papermc.paper.event.server.ServerResourcesReloadedEvent.Cause cause
     ) {
-        // TODO(behaviour): reloadResources hunks (moveBukkitCommands, commands lifecycle event, help map, fire ServerResourcesReloadedEvent(paper$reloadCause))
+        // TODO(behaviour): reloadResources hunks (moveBukkitCommands, commands lifecycle event, help map; the ServerResourcesReloadedEvent below is ported)
         this.paper$reloadCause = cause;
         return this.reloadResources(packsToEnable);
+    }
+
+    // Paper - Add ServerResourcesReloadedEvent; fire after everything has been reloaded (tail of the thenAcceptAsync lambda of reloadResources)
+    @org.spongepowered.asm.mixin.injection.Inject(method = "lambda$reloadResources$4", at = @org.spongepowered.asm.mixin.injection.At("TAIL"))
+    private void fission$resourcesReloadedEvent(final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        io.papermc.paper.event.server.ServerResourcesReloadedEvent.Cause cause = this.paper$reloadCause == null ? io.papermc.paper.event.server.ServerResourcesReloadedEvent.Cause.PLUGIN : this.paper$reloadCause;
+        this.paper$reloadCause = null;
+        new io.papermc.paper.event.server.ServerResourcesReloadedEvent(cause).callEvent();
     }
 
     // CraftBukkit start

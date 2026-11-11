@@ -192,3 +192,5 @@ net.minecraft.world.entity.vehicle.minecart.AbstractMinecartContainer: public ja
 # Paper: sources/net/minecraft/world/entity/decoration/ArmorStand.java.patch (kill with DamageSource)
 net.minecraft.world.entity.decoration.ArmorStand: public void kill(net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource source)
 net.minecraft.world.entity.decoration.ArmorStand: public void kill(net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource source, boolean callEvent)
+# Paper: sources/net/minecraft/world/entity/animal/turtle/Turtle.java.patch (bridge to the private setLayingEgg for the goal mixins)
+net.minecraft.world.entity.animal.turtle.Turtle: public void fission$setLayingEgg(boolean layingEgg)

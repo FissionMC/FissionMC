@@ -312,4 +312,9 @@ public abstract class DedicatedServerMixin extends MinecraftServer {
         original.call(commands, source, event.getCommand());
     }
     // CraftBukkit end
+
+    @Inject(method = "setUsingWhitelist", at = @At("HEAD"))
+    private void fission$whitelistToggle(final boolean usingWhitelist, final CallbackInfo ci) {
+        new com.destroystokyo.paper.event.server.WhitelistToggleEvent(usingWhitelist).callEvent(); // Paper - WhitelistToggleEvent
+    }
 }

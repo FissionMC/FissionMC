@@ -213,6 +213,45 @@ public abstract class HopperBlockEntityMixin {
         entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.PICKUP); // CraftBukkit - add Bukkit remove cause
     }
 
-    // TODO(behaviour): HopperInventorySearchEvent (getAttachedContainer/getSourceContainer), PrepareHopperTransferEvent in suckInItems,
+    // CraftBukkit start
+    private static @org.jspecify.annotations.Nullable Container fission$runHopperInventorySearchEvent(
+        Container container,
+        org.bukkit.craftbukkit.block.CraftBlock hopper,
+        org.bukkit.craftbukkit.block.CraftBlock searchLocation,
+        org.bukkit.event.inventory.HopperInventorySearchEvent.ContainerType containerType
+    ) {
+        org.bukkit.event.inventory.HopperInventorySearchEvent event = new org.bukkit.event.inventory.HopperInventorySearchEvent(
+            (container != null) ? new org.bukkit.craftbukkit.inventory.CraftInventory(container) : null,
+            containerType,
+            hopper,
+            searchLocation
+        );
+        event.callEvent();
+        return (event.getInventory() != null) ? ((org.bukkit.craftbukkit.inventory.CraftInventory) event.getInventory()).getInventory() : null;
+    }
+    // CraftBukkit end
+
+    // Paper start - HopperInventorySearchEvent (destination of ejectItems)
+    @com.llamalad7.mixinextras.injector.ModifyReturnValue(method = "getAttachedContainer", at = @At("RETURN"))
+    private static Container fission$attachedSearchEvent(final Container inventory, final Level level, final BlockPos blockPos, final HopperBlockEntity self) {
+        if (org.bukkit.event.inventory.HopperInventorySearchEvent.getHandlerList().getRegisteredListeners().length == 0) return inventory;
+        BlockPos searchPosition = blockPos.relative(self.getBlockState().getValue(HopperBlock.FACING));
+        org.bukkit.craftbukkit.block.CraftBlock hopper = org.bukkit.craftbukkit.block.CraftBlock.at(level, blockPos);
+        org.bukkit.craftbukkit.block.CraftBlock searchBlock = org.bukkit.craftbukkit.block.CraftBlock.at(level, searchPosition);
+        return fission$runHopperInventorySearchEvent(inventory, hopper, searchBlock, org.bukkit.event.inventory.HopperInventorySearchEvent.ContainerType.DESTINATION);
+    }
+
+    // Paper - HopperInventorySearchEvent (source of suckInItems)
+    @com.llamalad7.mixinextras.injector.ModifyReturnValue(method = "getSourceContainer", at = @At("RETURN"))
+    private static Container fission$sourceSearchEvent(final Container inventory, final Level level, final Hopper hopper, final BlockPos pos, final BlockState state) {
+        if (org.bukkit.event.inventory.HopperInventorySearchEvent.getHandlerList().getRegisteredListeners().length == 0) return inventory;
+        final BlockPos hopperPos = BlockPos.containing(hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ());
+        org.bukkit.craftbukkit.block.CraftBlock hopperBlock = org.bukkit.craftbukkit.block.CraftBlock.at(level, hopperPos);
+        org.bukkit.craftbukkit.block.CraftBlock containerBlock = org.bukkit.craftbukkit.block.CraftBlock.at(level, hopperPos.above());
+        return fission$runHopperInventorySearchEvent(inventory, hopperBlock, containerBlock, org.bukkit.event.inventory.HopperInventorySearchEvent.ContainerType.SOURCE);
+    }
+    // Paper end
+
+    // TODO(behaviour): PrepareHopperTransferEvent in suckInItems,
     // max-stack-size respect in addItem/tryMoveInItem (Paper), pushItemsTick hopperCheck cooldown, spigot hopperTransfer cooldown in tryMoveItems/tryMoveInItem, hopperCanLoadChunks.
 }
