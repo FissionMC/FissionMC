@@ -110,7 +110,7 @@ fun runNetBot(port: Int, out: String) {
         step("sneak/sprint") { n.input(32); n.sleep(120); n.input(0); n.playerCommand(b.selfId, 1); n.sleep(120); n.playerCommand(b.selfId, 2) }
         step("jump input") { n.input(16); n.sleep(120); n.input(0) }
         step("interact cow") { n.interact(cow) }
-        step("interact armor stand") { n.held(1); n.sleep(150); n.interact(stand) }
+        step("interact armor stand") { n.held(5); n.sleep(150); n.interact(stand) }
         step("attack cow") { n.attack(cow) }
         step("inventory click") { n.click(0, 36, 0, 0); n.click(0, 37, 0, 0); n.click(0, 9, 0, 1); n.click(0, 38, 1, 4) }
         step("inventory drag") { n.click(0, 10, 0, 0); n.click(0, -999, 0, 5); n.click(0, 12, 1, 5); n.click(0, 13, 1, 5); n.click(0, -999, 2, 5) }

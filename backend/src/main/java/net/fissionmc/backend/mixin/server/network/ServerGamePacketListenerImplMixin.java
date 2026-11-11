@@ -1213,6 +1213,14 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
         ((net.minecraft.server.network.ServerCommonPacketListenerImpl) (Object) this).fission$handleCustomPayload(packet);
     }
 
+    // Paper: PlayerConnectionReconfigureEvent (the event is called when the new configuration listener exists, right before it is installed)
+    @WrapOperation(method = "handleConfigurationAcknowledged", at = @At(value = "NEW", target = "(Lnet/minecraft/server/MinecraftServer;Lnet/minecraft/network/Connection;Lnet/minecraft/server/network/CommonListenerCookie;)Lnet/minecraft/server/network/ServerConfigurationPacketListenerImpl;"))
+    private net.minecraft.server.network.ServerConfigurationPacketListenerImpl paper$reconfigureEvent(final net.minecraft.server.MinecraftServer server, final net.minecraft.network.Connection connection, final net.minecraft.server.network.CommonListenerCookie cookie, final Operation<net.minecraft.server.network.ServerConfigurationPacketListenerImpl> original) {
+        final net.minecraft.server.network.ServerConfigurationPacketListenerImpl listener = original.call(server, connection, cookie); // Paper
+        new io.papermc.paper.event.connection.configuration.PlayerConnectionReconfigureEvent(listener.paperConnection).callEvent(); // Paper
+        return listener;
+    }
+
     // ---- handlePlayerAction ----
     @Inject(method = "handlePlayerAction", at = @At(value = "INVOKE", target = ENSURE, shift = At.Shift.AFTER), cancellable = true)
     private void paper$actionImmobile(final net.minecraft.network.protocol.game.ServerboundPlayerActionPacket packet, final CallbackInfo ci) {

@@ -40,6 +40,9 @@ final class NetProbe implements Listener {
                 }
             }
         } catch (Exception e) { plugin.getLogger().warning("net probe: " + e); }
+        // events whose class declares no handler list of its own (and whose parent has none either) are skipped above: register them explicitly
+        for (Class<? extends Event> c : java.util.List.of(org.bukkit.event.player.PlayerRegisterChannelEvent.class, org.bukkit.event.player.PlayerUnregisterChannelEvent.class))
+            plugin.getServer().getPluginManager().registerEvent(c, this, EventPriority.MONITOR, (l, e) -> seen(e), plugin, false);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getLogger().info("net probe listening to " + n + " event classes");
     }
@@ -62,6 +65,7 @@ final class NetProbe implements Listener {
         p.getInventory().setItem(1, new ItemStack(Material.DIAMOND_SWORD));
         p.getInventory().setItem(2, new ItemStack(Material.SNOWBALL, 16));
         p.getInventory().setItem(3, new ItemStack(Material.WRITABLE_BOOK));
+        p.getInventory().setItem(5, new ItemStack(Material.DIAMOND_HELMET));
         p.getInventory().setItem(4, new ItemStack(Material.APPLE, 5));
         p.getInventory().setItem(9, new ItemStack(Material.APPLE, 5));
         p.getInventory().setItem(10, new ItemStack(Material.APPLE, 5));
