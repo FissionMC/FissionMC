@@ -13,6 +13,22 @@ public final class TestPlugin extends JavaPlugin implements Listener {
     @Override public void onEnable() {
         getLogger().info("enabled on " + getServer().getName() + " " + getServer().getVersion());
         getServer().getPluginManager().registerEvents(this, this);
+        // marker file plugins/FissionTest/audit-on-enable (events-test.sh): a mixin that fails to apply is reported before the worlds load
+        // (a failing class load inside a chunk worker would only show as a hung "Preparing spawn area")
+        if (new java.io.File(getDataFolder(), "audit-on-enable").exists()) audit("EARLYAUDIT");
+    }
+    /** forces every mixin target class to load and transform; logs "<tag> done" or "<tag> failed: <cause chain>". */
+    private void audit(String tag) {
+        try {
+            Class<?> env = Class.forName("org.spongepowered.asm.mixin.MixinEnvironment");
+            Object cur = env.getMethod("getCurrentEnvironment").invoke(null);
+            env.getMethod("audit").invoke(cur);
+            getLogger().info(tag + " done");
+        } catch (Throwable t) {
+            StringBuilder sb = new StringBuilder();
+            for (Throwable c = t; c != null && sb.length() < 3000; c = c.getCause()) sb.append(" / ").append(c);
+            getLogger().warning(tag + " failed:" + sb);
+        }
     }
     private EventProbe events; // created by the first /fissiontest ev* command (events-test.sh): counts every event, see EventProbe
     @Override public void onDisable() { getLogger().info("disabled"); }
@@ -109,12 +125,7 @@ public final class TestPlugin extends JavaPlugin implements Listener {
             }
             // forces every mixin target class to load and transform: an injection that does not apply (defaultRequire 1) throws here instead of at some player's first use
             if (args.length == 1 && args[0].equals("audit")) {
-                try {
-                    Class<?> env = Class.forName("org.spongepowered.asm.mixin.MixinEnvironment");
-                    Object cur = env.getMethod("getCurrentEnvironment").invoke(null);
-                    env.getMethod("audit").invoke(cur);
-                    getLogger().info("AUDIT done");
-                } catch (Throwable t) { getLogger().warning("AUDIT failed: " + t + (t.getCause() != null ? " / " + t.getCause() : "")); }
+                audit("AUDIT");
                 sender.sendMessage("audit finished");
                 return true;
             }

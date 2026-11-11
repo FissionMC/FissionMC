@@ -41,6 +41,8 @@ final class EventProbe implements Listener {
 
     private void seen(Event e) {
         counts.merge(e.getClass().getSimpleName(), 1, Integer::sum);
+        if (e instanceof org.bukkit.event.entity.EntityTransformEvent t) counts.merge("EntityTransformEvent:" + t.getTransformReason(), 1, Integer::sum);
+        else if (e instanceof org.bukkit.event.entity.CreatureSpawnEvent c) counts.merge("CreatureSpawnEvent:" + c.getSpawnReason(), 1, Integer::sum);
         try { tweak(e); } catch (Throwable t) { notes.add("tweak " + e.getClass().getSimpleName() + ": " + t); }
     }
 
@@ -56,7 +58,8 @@ final class EventProbe implements Listener {
     void setup() throws Exception {
         World w = plugin.getServer().getWorlds().get(0);
         org.bukkit.Chunk chunk = w.getSpawnLocation().getChunk();
-        chunk.load(); chunk.setForceLoaded(true);
+        chunk.load(); chunk.addPluginChunkTicket(plugin); // not setForceLoaded: a persisted forced chunk hangs the next standalone boot at "Preparing spawn area" (found 2026-11-11, not a Paper-port issue)
+        for (org.bukkit.entity.Entity e : chunk.getEntities()) if (!(e instanceof org.bukkit.entity.Player)) e.remove(); // leftovers of an earlier run
         base = chunk.getBlock(2, Math.min(w.getMaxHeight() - 20, 200), 2);
         for (int x = 0; x < 12; x++) for (int z = 0; z < 12; z++) for (int y = -1; y < 4; y++) base.getRelative(x, y, z).setType(y == -1 ? Material.STONE : Material.AIR, false);
 
@@ -96,6 +99,43 @@ final class EventProbe implements Listener {
         ((org.bukkit.block.Hopper) hopper.getState(false)).getInventory().addItem(new ItemStack(Material.PUMPKIN_PIE, 3));
     }
 
+    private <T extends org.bukkit.entity.Entity> T spawn(Class<T> type, int dx, int dz) {
+        T e = base.getWorld().spawn(base.getRelative(dx, 0, dz).getLocation().add(0.5, 0, 0.5), type);
+        if (e instanceof org.bukkit.entity.LivingEntity l) { l.setRemoveWhenFarAway(false); }
+        return e;
+    }
+
+    private static Object handle(org.bukkit.entity.Entity e) throws Exception {
+        return e.getClass().getMethod("getHandle").invoke(e);
+    }
+
+    /** mobs: conversions (EntityTransformEvent reasons), slime split, zaps, sheep, piglin anger. */
+    void setupMobs() throws Exception {
+        World w = base.getWorld();
+        w.setDifficulty(org.bukkit.Difficulty.NORMAL);
+        org.bukkit.entity.Slime slime = spawn(org.bukkit.entity.Slime.class, 1, 4);
+        slime.setSize(4); slime.setHealth(0);
+        org.bukkit.entity.Tadpole tadpole = spawn(org.bukkit.entity.Tadpole.class, 3, 4);
+        tadpole.setAge(24000);
+        org.bukkit.entity.Hoglin hoglin = spawn(org.bukkit.entity.Hoglin.class, 5, 4);
+        hoglin.setImmuneToZombification(false); hoglin.setConversionTime(299);
+        org.bukkit.entity.Zombie zombie = spawn(org.bukkit.entity.Zombie.class, 7, 4);
+        zombie.setConversionTime(2);
+        org.bukkit.entity.Pig pig = spawn(org.bukkit.entity.Pig.class, 1, 8);
+        w.strikeLightning(pig.getLocation());
+        org.bukkit.entity.Villager villager = spawn(org.bukkit.entity.Villager.class, 9, 8);
+        w.strikeLightning(villager.getLocation());
+        org.bukkit.entity.Sheep sheep = spawn(org.bukkit.entity.Sheep.class, 5, 8);
+        sheep.setSheared(true);
+        Object nmsSheep = handle(sheep);
+        nmsSheep.getClass().getMethod("ate").invoke(nmsSheep);
+        notes.add("sheep sheared after ate()=" + sheep.isSheared());
+        org.bukkit.entity.PigZombie piglin = spawn(org.bukkit.entity.PigZombie.class, 9, 4);
+        Object nmsPiglin = handle(piglin);
+        nmsPiglin.getClass().getMethod("startPersistentAngerTimer").invoke(nmsPiglin);
+        spawn(org.bukkit.entity.Slime.class, 3, 10).setSize(1); // wanders: slime pathfinder events
+    }
+
     private static Object nmsBlockEntity(Object level, Block b) throws Exception {
         Class<?> bp = Class.forName("net.minecraft.core.BlockPos");
         Object pos = bp.getConstructor(int.class, int.class, int.class).newInstance(b.getX(), b.getY(), b.getZ());
@@ -123,6 +163,7 @@ final class EventProbe implements Listener {
     void run() {
         fails = 0;
         later(1, this::setup);
+        later(2, this::setupMobs);
         later(100, () -> {
             check("brewing stand", "BrewingStandFuelEvent,BrewingStartEvent,BrewEvent");
             check("furnace", "FurnaceBurnEvent,FurnaceStartSmeltEvent,FurnaceSmeltEvent");
@@ -130,6 +171,15 @@ final class EventProbe implements Listener {
             check("composter", "CompostItemEvent");
             base.getRelative(3, 0, 1).setType(Material.AIR); // the furnace pops the experience of the recipes it used
             check("furnace broken", "BlockExpEvent");
+            check("slime split", "SlimeSplitEvent,EntityTransformEvent:SPLIT,CreatureSpawnEvent:SLIME_SPLIT");
+            check("slime goals", "SlimeWanderEvent,SlimeChangeDirectionEvent");
+            check("tadpole", "EntityTransformEvent:METAMORPHOSIS,CreatureSpawnEvent:METAMORPHOSIS");
+            check("hoglin", "EntityTransformEvent:PIGLIN_ZOMBIFIED,CreatureSpawnEvent:PIGLIN_ZOMBIFIED");
+            // zombie drowning (DROWNED reasons) is not checked: setConversionTime alone does not convert a zombie outside water
+            check("pig lightning", "PigZapEvent,CreatureSpawnEvent:LIGHTNING");
+            check("villager lightning", "EntityZapEvent,EntityTransformEvent:LIGHTNING");
+            check("sheep", "SheepRegrowWoolEvent");
+            check("zombified piglin", "PigZombieAngerEvent");
         });
         later(110, () -> {
             report();
