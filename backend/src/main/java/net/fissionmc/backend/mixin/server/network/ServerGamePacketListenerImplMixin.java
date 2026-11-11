@@ -1750,4 +1750,48 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
         // CraftBukkit end
         this.player.getTextFilter().leave();
     }
+
+    // Paper start - Add PlayerPickItemEvent / Extend PlayerPickItemEvent API (tryPickItem gets the block or entity and includeData)
+    @WrapOperation(method = "handlePickItemFromBlock", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;tryPickItem(Lnet/minecraft/world/item/ItemStack;)V"))
+    private void fission$pickBlock(final ServerGamePacketListenerImpl self, final net.minecraft.world.item.ItemStack itemStack, final Operation<Void> original, @Local(argsOnly = true) final net.minecraft.network.protocol.game.ServerboundPickItemFromBlockPacket packet) {
+        this.fission$tryPickItem(itemStack, packet.pos(), null, packet.includeData());
+    }
+
+    @WrapOperation(method = "handlePickItemFromEntity", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/network/ServerGamePacketListenerImpl;tryPickItem(Lnet/minecraft/world/item/ItemStack;)V"))
+    private void fission$pickEntity(final ServerGamePacketListenerImpl self, final net.minecraft.world.item.ItemStack itemStack, final Operation<Void> original, @Local(ordinal = 0) final Entity entity, @Local(argsOnly = true) final net.minecraft.network.protocol.game.ServerboundPickItemFromEntityPacket packet) {
+        this.fission$tryPickItem(itemStack, null, entity, packet.includeData());
+    }
+
+    private void fission$tryPickItem(final net.minecraft.world.item.ItemStack itemStack, final net.minecraft.core.BlockPos blockPos, final Entity entity, final boolean includeData) {
+        if (itemStack.isItemEnabled(this.player.level().enabledFeatures())) {
+            net.minecraft.world.entity.player.Inventory inventory = this.player.getInventory();
+            int slotWithExistingItem = inventory.findSlotMatchingItem(itemStack);
+            // Paper start - Add PlayerPickItemEvent
+            final org.bukkit.inventory.ItemStack bukkitItem = CraftItemStack.asBukkitCopy(itemStack);
+            final int sourceSlot = slotWithExistingItem;
+            final int targetSlot = net.minecraft.world.entity.player.Inventory.isHotbarSlot(sourceSlot) ? sourceSlot : inventory.getSuitableHotbarSlot();
+            final org.bukkit.entity.Player bukkitPlayer = this.player.getBukkitEntity();
+            final io.papermc.paper.event.player.PlayerPickItemEvent event = entity != null
+                ? new io.papermc.paper.event.player.PlayerPickEntityEvent(bukkitPlayer, entity.getBukkitEntity(), bukkitItem, includeData, targetSlot, sourceSlot)
+                : new io.papermc.paper.event.player.PlayerPickBlockEvent(bukkitPlayer, org.bukkit.craftbukkit.block.CraftBlock.at(this.player.level(), blockPos), bukkitItem, includeData, targetSlot, sourceSlot);
+            if (!event.callEvent()) {
+                return;
+            }
+            slotWithExistingItem = event.getSourceSlot();
+            // Paper end - Add PlayerPickItemEvent
+            if (slotWithExistingItem != net.minecraft.world.entity.player.Inventory.NOT_FOUND_INDEX) {
+                if (net.minecraft.world.entity.player.Inventory.isHotbarSlot(slotWithExistingItem) && net.minecraft.world.entity.player.Inventory.isHotbarSlot(event.getTargetSlot())) { // Paper - Add PlayerPickItemEvent
+                    inventory.setSelectedSlot(event.getTargetSlot()); // Paper - Add PlayerPickItemEvent
+                } else {
+                    inventory.pickSlot(slotWithExistingItem, event.getTargetSlot()); // Paper - Add PlayerPickItemEvent
+                }
+            } else if (this.player.hasInfiniteMaterials()) {
+                inventory.addAndPickItem(itemStack, event.getTargetSlot()); // Paper - Add PlayerPickItemEvent
+            }
+
+            ((ServerGamePacketListenerImpl) (Object) this).send(new net.minecraft.network.protocol.game.ClientboundSetHeldSlotPacket(inventory.getSelectedSlot()));
+            this.player.inventoryMenu.broadcastChanges();
+        }
+    }
+    // Paper end
 }
