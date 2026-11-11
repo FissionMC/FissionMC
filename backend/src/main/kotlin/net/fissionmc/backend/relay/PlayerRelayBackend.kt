@@ -40,7 +40,7 @@ import java.util.logging.Logger
  *
  * Threading: node-link messages are queued and handled on the server thread in [tick]; packets the server sends leave
  * through [Out] from whatever thread vanilla sends on (writes to the node link are thread safe).
- * Known gaps: the real client address is not forwarded (loopback is reported), no pre-login events (whitelist/bans/PlayerLoginEvent).
+ * The client's real address comes with [PlayerClientInfo]; AsyncPlayerPreLoginEvent runs in [preLogin]; bans, whitelist and PlayerLoginEvent run in vanilla's own join code.
  */
 object PlayerRelayBackend {
     private val log = Logger.getLogger("FissionMC")
@@ -83,6 +83,10 @@ object PlayerRelayBackend {
     @JvmStatic fun attach() {
         net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}", WorldSettingsBackend.summary()) + net.fissionmc.backend.node.MasterInfo.lines() + net.fissionmc.backend.node.PluginReplicationStatus.lines() }
         NodeBootstrap.addMessageHandler { m ->
+            // the first message of a NEW master link (reconnect): the master dropped every binding of the old link, so the players of the old link are closed here too
+            // (a quick reconnect used to leave them running as zombies: the link was open again before the server thread noticed it had been down)
+            val cur = NodeBootstrap.link
+            if (cur !== seenLink) { if (seenLink != null) { PlayerDataBackend.linkReset(); PermissionBackend.linkReset(); inbox.add(LinkReset); wake() }; seenLink = cur }
             if (m is MasterStats) net.fissionmc.backend.node.MasterInfo.onStats(m)
             if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)
             if (m is ChunkData || m is ChunkAbsent || m is ChunkStored || m is ChunkAvailable) net.fissionmc.backend.chunk.ChunkAuthorityBackend.onMessage(m)
@@ -99,11 +103,14 @@ object PlayerRelayBackend {
             if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }
         }
         NodeBootstrap.addConnectListener { WorldSettingsBackend.onReconnect() }
+        NodeBootstrap.addConnectListener { l -> PlayerDataBackend.onReconnect(l) }
         enabled = true
         log.info("[fission] player relay enabled")
     }
 
     @Volatile private var serverRef: MinecraftServer? = null
+    @Volatile private var seenLink: net.fissionmc.net.NodeLink? = null
+    private object LinkReset : NodeMessage
     private val wakePending = java.util.concurrent.atomic.AtomicBoolean()
 
     /**
@@ -138,6 +145,7 @@ object PlayerRelayBackend {
         if (link == null || !link.isOpen) { if (sessions.isNotEmpty()) closeAll("master link lost"); inbox.clear(); return }
         while (true) {
             when (val m = inbox.poll() ?: break) {
+                is LinkReset -> { if (sessions.isNotEmpty()) closeAll("the master link was re-established"); pendingFrames.clear(); infos.clear() }
                 is PlayerClientInfo -> infos[m.playerId] = m
                 is PlayerAttach -> { net.fissionmc.net.trace.Trace.emit("player.attach") { player(m.name, m.uuidHigh, m.uuidLow); long("pid", m.playerId); int("protocol", m.protocol) }; pendingFrames[m.playerId] = ArrayList(); preLogin(m, infos.remove(m.playerId)) }
                 is PlayerPacketToBackend -> {

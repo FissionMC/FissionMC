@@ -43,6 +43,16 @@ class PlayerDataStore(val dir: Path, private val log: (String) -> Unit = {}, pri
         } catch (t: Throwable) { log("[playerdata] cannot write $uuid json: $t"); false }
     }
 
+    /** Where the player was when it left the network (dimension, block x, block z); null = unknown. The master cannot read the player file itself (no NBT here). */
+    fun readPosition(uuid: UUID): Triple<String, Int, Int>? = try {
+        dir.resolve("$uuid.pos").takeIf { Files.isRegularFile(it) }?.let { Files.readString(it).trim().split(' ') }?.takeIf { it.size == 3 }?.let { Triple(it[0], it[1].toInt(), it[2].toInt()) }
+    } catch (t: Throwable) { null }
+
+    fun savePosition(uuid: UUID, dimension: String, x: Int, z: Int) {
+        if (dimension.isEmpty() || dimension.any { it.isWhitespace() }) return
+        try { Files.writeString(dir.resolve("$uuid.pos"), "$dimension $x $z") } catch (t: Throwable) { log("[playerdata] cannot write the position of $uuid: $t") }
+    }
+
     fun read(uuid: UUID): ByteArray? = try { file(uuid).takeIf { Files.isRegularFile(it) }?.let { Files.readAllBytes(it) } } catch (t: Throwable) { log("[playerdata] cannot read $uuid: $t"); null }
 
     /** Gzip magic and a size bound: a corrupt or hostile blob must not replace a good file. */

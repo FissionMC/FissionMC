@@ -4,15 +4,16 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 /** The last [windowNanos] of events in memory (lock free; also bounded to [maxEntries] so a flood cannot exhaust the heap). Times are monotonic nanos passed in by the caller. */
-class TraceRing(@Volatile var windowNanos: Long, private val maxEntries: Int = 400_000) {
+class TraceRing(@Volatile var windowNanos: Long, private val maxEntries: Int = 400_000, private val maxChars: Long = 48L * 1024 * 1024) {
     private class Entry(val nanos: Long, val line: String)
     private val q = ConcurrentLinkedQueue<Entry>()
     private val n = AtomicInteger()
+    private val chars = java.util.concurrent.atomic.AtomicLong()
 
     val size: Int get() = n.get()
 
     fun add(nanos: Long, line: String) {
-        q.add(Entry(nanos, line)); n.incrementAndGet()
+        q.add(Entry(nanos, line)); n.incrementAndGet(); chars.addAndGet(line.length.toLong())
         trim(nanos)
     }
 
@@ -20,7 +21,7 @@ class TraceRing(@Volatile var windowNanos: Long, private val maxEntries: Int = 4
         val w = windowNanos
         while (true) {
             val h = q.peek() ?: return
-            if (now - h.nanos > w || n.get() > maxEntries) { if (q.poll() != null) n.decrementAndGet() } else return
+            if (now - h.nanos > w || n.get() > maxEntries || chars.get() > maxChars) { val p = q.poll(); if (p != null) { n.decrementAndGet(); chars.addAndGet(-p.line.length.toLong()) } } else return
         }
     }
 
@@ -33,5 +34,5 @@ class TraceRing(@Volatile var windowNanos: Long, private val maxEntries: Int = 4
         return out
     }
 
-    fun clear() { q.clear(); n.set(0) }
+    fun clear() { q.clear(); n.set(0); chars.set(0) }
 }

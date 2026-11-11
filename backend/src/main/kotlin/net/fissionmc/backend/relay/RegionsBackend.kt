@@ -28,7 +28,7 @@ object RegionsBackend {
     fun onMessage(m: NodeMessage, server: MinecraftServer?) {
         when (m) {
             is RegionMap -> { net.fissionmc.net.trace.Trace.emit("region.map") { str("you", m.you); int("rules", m.rules.size) }; val changed = you != m.you || rules != m.rules; you = m.you; rules = m.rules; if (changed) log.info("[fission] regions: I am ${m.you}, ${m.rules.size} rules") }   // the master resends every 5 s (a first send can precede the handlers)
-            is GenerateChunk -> server?.execute { generate(server, m) }
+            is GenerateChunk -> if (server != null) server.execute { generate(server, m) } else earlyJobs.add(m)   // before the first tick there is no server to run it on: kept for [tick]
             is EntityHandover -> server?.execute { spawnHandover(server, m) }
             is BorderForward -> BorderForwardBackend.onMessage(m)
             is GhostDemand, is GhostSync, is GhostFix -> GhostSyncBackend.onMessage(m)
@@ -36,6 +36,7 @@ object RegionsBackend {
     }
 
     fun youId(): String = you
+    private val earlyJobs = java.util.concurrent.ConcurrentLinkedQueue<GenerateChunk>()
 
     /** The backend that owns chunk ([cx],[cz]) (decided by the chunk's centre block, like [ownsChunk]); null when regions are off or nobody is known. */
     fun chunkOwner(dim: String, cx: Int, cz: Int): String? = if (!enabled) null else ownerOf(dim, cx * 16 + 8, cz * 16 + 8)
@@ -118,6 +119,7 @@ object RegionsBackend {
     private var ticks = 0
 
     fun tick(server: MinecraftServer) {
+        while (true) { val j = earlyJobs.poll() ?: break; generate(server, j) }
         if (!enabled) return
         BorderForwardBackend.tick(server)
         GhostSyncBackend.tick(server)
@@ -134,6 +136,7 @@ object RegionsBackend {
             }
         }
         if (ticks % 20 == 0 || (strayHint && ticks % 4 == 0)) { strayHint = false; handOverStrays(server, link) }
+        if (ticks % 600 == 0) { val online = server.playerList.players.mapTo(HashSet()) { it.uuid }; lastPos.keys.retainAll(online) }
         if (ticks % 100 == 0) {
             val l = "[fission] regions: stats ownedChunkTicks=${ownedChunkTicks.get()} ghostChunkTicksSkipped=${ghostChunkTicksSkipped.get()} ghostEntityTicksSkipped=${ghostEntityTicksSkipped.get()} " +
                 "ghostBlockTicksSkipped=${ghostBlockTicksSkipped.get()} ghostSpawnPassesSkipped=${ghostSpawnPassesSkipped.get()} generateJobs=${generatedCount.get()} handedOver=${handedOverCount.get()} handoversReceived=${receivedCount.get()} foreignEntitiesNotLoaded=${foreignEntitiesSkipped.get()} pistonsBlocked=${pistonsBlocked.get()}"
@@ -159,6 +162,8 @@ object RegionsBackend {
                 if (target == you) continue
                 val b = TravelBackend.blobFor(EntityBlobKind.HANDOVER, e) ?: continue
                 byTarget.computeIfAbsent(target) { ArrayList() } += b; handingOver[e.uuid] = now; handedOverCount.incrementAndGet()
+                // the copy that stays here until the owner confirms must not be picked up meanwhile (the owner spawns its own: the item would exist twice); the blob above keeps the real delay
+                if (e is net.minecraft.world.entity.item.ItemEntity) e.setPickUpDelay(60)
                 net.fissionmc.net.trace.Trace.emit("entity.handover.out") { str("entity", e.uuid.toString()); str("type", e.type.descriptionId); str("dim", dim); int("x", e.blockX); int("y", e.blockY); int("z", e.blockZ); str("to", target); int("id", e.id) }
                 if (net.fissionmc.net.FissionDebug.on) log.info("[fission] entities: handing ${e.type.descriptionId} ${e.uuid} at ${e.blockX},${e.blockY},${e.blockZ} over to $target")
             }

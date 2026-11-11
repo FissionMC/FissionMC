@@ -163,6 +163,12 @@ public abstract class DedicatedServerMixin extends MinecraftServer {
         if (this.getPort() < 0) {
             this.setPort(properties.serverPort);
         }
+        // FissionMC: in backend mode players come through the master (its login, permissions, player data); a direct login would skip all of that,
+        // so the port is bound on loopback only unless node.direct-connections is true in fission.yml
+        if (net.fissionmc.backend.node.NodeBootstrap.bindLoopbackOnly()) {
+            localAddress = InetAddress.getLoopbackAddress();
+            LOGGER.info("[fission] backend mode: the Minecraft port {} is bound on 127.0.0.1 only (players connect to the master; node.direct-connections: true opens it)", this.getPort());
+        }
 
         this.initializeKeyPair();
         LOGGER.info("Starting Minecraft server on {}:{}", this.getLocalIp().isEmpty() ? "*" : this.getLocalIp(), this.getPort());

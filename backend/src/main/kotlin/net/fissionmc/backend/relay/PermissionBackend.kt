@@ -26,11 +26,15 @@ object PermissionBackend {
     private val granted = ConcurrentHashMap<UUID, Grant>()
     private val attachments = ConcurrentHashMap<UUID, PermissionAttachment>()
     private val byBinding = ConcurrentHashMap<Long, UUID>()
+    private val description by lazy { org.bukkit.plugin.PluginDescriptionFile("FissionMC", "1", "net.fissionmc.backend.relay.PermissionBackend") }
 
     /** Attachments need an enabled owning plugin: this is a minimal stand-in that only answers what the permission code asks (name, isEnabled). */
     private val owner: Plugin by lazy {
-        java.lang.reflect.Proxy.newProxyInstance(Plugin::class.java.classLoader, arrayOf(Plugin::class.java)) { _, m, _ ->
-            when (m.name) { "isEnabled" -> true; "getName" -> "FissionMC"; "toString" -> "FissionMC"; "hashCode" -> 1; "equals" -> false
+        java.lang.reflect.Proxy.newProxyInstance(Plugin::class.java.classLoader, arrayOf(Plugin::class.java)) { p, m, a ->
+            // plugins (permission managers) look at the owner of an attachment: answer the usual questions with real values instead of null
+            when (m.name) { "isEnabled" -> true; "getName" -> "FissionMC"; "toString" -> "FissionMC"; "hashCode" -> System.identityHashCode(p); "equals" -> (p === a?.getOrNull(0))
+                "getDescription", "getPluginMeta" -> description; "getServer" -> org.bukkit.Bukkit.getServer(); "getLogger" -> log
+                "getDataFolder" -> java.io.File("plugins", "FissionMC"); "getDataPath" -> java.nio.file.Path.of("plugins", "FissionMC")
                 else -> when (m.returnType) { java.lang.Boolean.TYPE -> false; Integer.TYPE -> 0; java.lang.Long.TYPE -> 0L; else -> null } }
         } as Plugin
     }
@@ -52,6 +56,9 @@ object PermissionBackend {
             is PlayerDetach -> byBinding.remove(m.playerId)?.let { u -> if (byBinding.values.none { it == u }) { granted.remove(u); attachments.remove(u) } }
         }
     }
+
+    /** A new master link: the old link's grants are void (the master sends them again with every new attach). */
+    fun linkReset() { byBinding.clear(); granted.clear(); attachments.clear() }
 
     /** Mixins: the operator level the master grants this player (0 = none). */
     @JvmStatic fun level(uuid: UUID): Int = granted[uuid]?.level ?: 0

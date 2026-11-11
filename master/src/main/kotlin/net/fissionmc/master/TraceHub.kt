@@ -16,7 +16,8 @@ class TraceHub(private val registry: NodeRegistry) {
 
     private fun live() = registry.all.filter { it.link.isOpen }
 
-    private fun newId(): String = "${java.lang.Long.toString(System.currentTimeMillis() / 1000, 36)}${counter.incrementAndGet()}"
+    private fun newId(): String { requests.entries.removeIf { System.nanoTime() - it.value.at > 300_000_000_000L }; return newId0() }
+    private fun newId0(): String = "${java.lang.Long.toString(System.currentTimeMillis() / 1000, 36)}${counter.incrementAndGet()}"
 
     fun start(by: String, report: (String) -> Unit) {
         val on = Trace.start()

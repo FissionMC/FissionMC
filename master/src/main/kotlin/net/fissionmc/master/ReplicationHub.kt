@@ -14,6 +14,33 @@ import java.util.logging.Logger
  */
 class ReplicationHub(val log: EventLog = EventLog(), val epoch: Long = java.util.concurrent.ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE)) {
     private val logger = Logger.getLogger("FissionMC.master")
+
+    companion object {
+        /** Sequence numbers skipped at a restart: more than any backend can have applied beyond the last saved position. */
+        const val RESTART_MARGIN = 1_000_000L
+
+        /**
+         * A hub whose epoch and log position survive a restart of the master ([file] = `epoch lastSeq`, saved every 2 s and at shutdown). Without this every restart
+         * started a new epoch and the backends could only log "restart this backend to resync"; now they continue with the same numbering.
+         */
+        fun persistent(file: java.nio.file.Path, timer: java.util.concurrent.ScheduledExecutorService, log: (String) -> Unit = {}): ReplicationHub {
+            val saved = try { java.nio.file.Files.readString(file).trim().split(' ').map { it.toLong() }.takeIf { it.size == 2 && it[0] > 0 && it[1] >= 0 } } catch (_: Exception) { null }
+            val hub = if (saved == null) ReplicationHub() else ReplicationHub(EventLog().also { it.restore(saved[1] + RESTART_MARGIN) }, saved[0])
+            if (saved != null) log("[master] event log continues: epoch ${saved[0]}, seq ${hub.log.lastSeq}")
+            var written = -1L
+            val save = Runnable {
+                val seq = hub.log.lastSeq
+                if (seq != written) try {
+                    val tmp = file.resolveSibling(file.fileName.toString() + ".tmp")
+                    java.nio.file.Files.writeString(tmp, "${hub.epoch} $seq"); java.nio.file.Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING); written = seq
+                } catch (e: Exception) { log("[master] cannot write $file: $e") }
+            }
+            save.run()
+            timer.scheduleWithFixedDelay(save, 2, 2, java.util.concurrent.TimeUnit.SECONDS)
+            Runtime.getRuntime().addShutdownHook(Thread(save))
+            return hub
+        }
+    }
     private val lock = Any()
     private val live = HashMap<String, NodeLink>()
 

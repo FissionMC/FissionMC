@@ -22,6 +22,9 @@ class EventLog(private val capacity: Int = 100_000) {
 
     @get:Synchronized var lastSeq = 0L; private set
 
+    /** After a master restart: numbering goes on from [seq] with no history (a backend that is behind gets [Since.Gap] and continues from here). */
+    @Synchronized fun restore(seq: Long) { require(ring.isEmpty()) { "restore before the first event" }; if (seq > lastSeq) lastSeq = seq }
+
     @Synchronized fun append(origin: String, event: ReplicatedEvent): SequencedEvent {
         val e = SequencedEvent(++lastSeq, origin, event)
         ring.addLast(e)

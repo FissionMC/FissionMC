@@ -46,7 +46,13 @@ object Replication {
     private data class Key(val dim: String, val x: Int, val y: Int, val z: Int)
     private val pending = HashMap<Key, Int>()
 
-    /** Local events dropped because the master link was down. */
+    /** Changes made while the master link is down (ticking goes on: fluids, crops, fire): the latest state per block, sent after the reconnect. Bounded; beyond the bound they are dropped and counted. */
+    private val offline = LinkedHashMap<Key, BlockChange>()
+    private val offlineRemoved = ArrayList<EntityRemoved>()
+    private const val OFFLINE_MAX = 200_000
+    @Volatile var sentAfterReconnect = 0L; private set
+
+    /** Local events dropped because the master link was down and the offline queue was full. */
     @Volatile var droppedWhileDisconnected = 0L; private set
     @Volatile var appliedCount = 0L; private set
     @Volatile var refused = 0L; private set
@@ -106,7 +112,15 @@ object Replication {
 
     private fun submit(e: ReplicatedEvent): Boolean {
         val l = NodeBootstrap.link
-        if (l == null || !l.isOpen) { droppedWhileDisconnected++; return false }
+        if (l == null || !l.isOpen) {
+            synchronized(offline) {
+                when (e) {
+                    is BlockChange -> { val k = Key(e.dimension, e.x, e.y, e.z); if (offline.size < OFFLINE_MAX || offline.containsKey(k)) offline[k] = e else droppedWhileDisconnected++ }
+                    is EntityRemoved -> if (offlineRemoved.size < OFFLINE_MAX) offlineRemoved += e else droppedWhileDisconnected++
+                }
+            }
+            return false
+        }
         net.fissionmc.net.trace.Trace.emit("repl.submit") { traceEvent(this, e) }
         l.send(EventSubmit(e))
         return true
@@ -123,12 +137,22 @@ object Replication {
                 is Reconnected -> {
                     synchronized(pending) { pending.clear() } // echoes of submissions lost with the old link may never come
                     m.link.send(ResumeFrom(epoch, lastApplied))
+                    // what changed here while the link was down goes out now; it is ordered after everything the master already has, so it wins for those blocks
+                    val (blocks, removed) = synchronized(offline) { Pair(offline.values.toList(), offlineRemoved.toList()).also { offline.clear(); offlineRemoved.clear() } }
+                    for (b in blocks) { m.link.send(EventSubmit(b)); synchronized(pending) { pending.merge(Key(b.dimension, b.x, b.y, b.z), 1, Int::plus) } }
+                    for (r in removed) m.link.send(EventSubmit(r))
+                    if (blocks.isNotEmpty() || removed.isNotEmpty()) { sentAfterReconnect += blocks.size + removed.size; log.info("[fission] replication: sent ${blocks.size} block changes and ${removed.size} entity removals that happened while the master link was down") }
                 }
                 is LogReset -> {
-                    if (epoch != 0L) log.warning("[fission] master restarted (new log epoch): this world may have diverged from the master; restart this backend to resync")
+                    if (epoch != 0L) log.warning("[fission] the master started a new event log (its replication.state file is gone, or it is another master): block changes made on other backends while this one was away are not replayed")
                     epoch = m.epoch; lastApplied = 0
                 }
-                is LogTruncated -> log.warning("[fission] master log no longer holds history before seq ${m.oldestSeq}; replication is incomplete")
+                is LogTruncated -> {
+                    // the master cannot replay what this backend missed (it was away too long, or the master restarted): go on from the master's current position instead of
+                    // asking for the gap again and again. Ghost chunks are repaired by the ghost sync; other loaded chunks keep their blocks until they are loaded again.
+                    val missed = m.oldestSeq - 1 - lastApplied
+                    if (missed > 0) { log.warning("[fission] replication: the master's event log starts at seq ${m.oldestSeq}; this backend continues from there (block changes other backends made while it was away are not replayed)"); lastApplied = m.oldestSeq - 1 }
+                }
                 is SequencedEvent -> apply(server, m)
             }
         }

@@ -56,12 +56,34 @@ object PlayerDataBackend {
     /** `PlayerDataStorage.save` mixin (RETURN): [file] is the `<uuid>.dat` that was just written. */
     @JvmStatic fun onSaved(uuid: UUID, file: File) {
         if (!isRelayed(uuid)) return
-        val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
+        val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: run { unsent[uuid] = file; return }   // the link is down (the player was closed with it): sent by [onReconnect]
+        unsent.remove(uuid)
         try {
             val bytes = file.readBytes()
             if (bytes.size > MAX_PLAYER_DATA) { log.warning("[fission] player data of $uuid is ${bytes.size} bytes: not sent to the master"); return }
             link.send(PlayerDataSave(uuid.mostSignificantBits, uuid.leastSignificantBits, bytes))
         } catch (t: Throwable) { log.warning("[fission] cannot report the player data of $uuid: $t") }
+    }
+
+    /** Player files saved while the master link was down. */
+    private val unsent = ConcurrentHashMap<UUID, File>()
+
+    /** A new master link: the saves the master missed go out first (it accepts them unless the player has meanwhile played on another backend). */
+    fun onReconnect(link: net.fissionmc.net.NodeLink) {
+        for ((u, f) in unsent.entries.toList()) {
+            unsent.remove(u)
+            try {
+                val bytes = f.readBytes()
+                if (bytes.size <= MAX_PLAYER_DATA) { link.send(PlayerDataSave(u.mostSignificantBits, u.leastSignificantBits, bytes)); log.info("[fission] sent the player data of $u that was saved while the master link was down") }
+            } catch (t: Throwable) { log.warning("[fission] cannot send the saved player data of $u: $t") }
+        }
+    }
+
+    /** The first message of a NEW master link: every binding of the old link is void (the master dropped them when the link broke). Their closing saves are still reported for a while. */
+    fun linkReset() {
+        val until = System.currentTimeMillis() + LINGER_MS
+        byBinding.clear(); provided.clear()
+        for (k in relayedUntil.keys) relayedUntil[k] = until
     }
 
     private val saveMethod by lazy {

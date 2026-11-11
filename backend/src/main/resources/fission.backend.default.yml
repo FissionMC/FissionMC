@@ -9,7 +9,10 @@ node:
   #                            # Write your own id when the master's regions.* / admin config must name this backend (a generated id is only known after the first start).
   # master: "master-host:25600"  # backend: where the master listens. 127.0.0.1 is THIS container: use the master's address (internal network name/IP or public IP + allocated port)
   # master-public: "<base64>"  # backend: the master's public key (printed by the master / gradlew :master:nodeKeys)
-  # security: true             # Ed25519 authentication (keep on outside tests)
+  # security: true             # Ed25519 authentication + encryption of the link (keep on outside tests)
+  # direct-connections: false  # backend: false = this server's own Minecraft port (server.properties) is only bound on 127.0.0.1, so players can only come
+  #                            # through the master (its login, permissions and player data). true = the port is public like on a normal server.
+  # connect-timeout: 300       # backend: seconds to wait for the master at start before giving up (0 = wait for ever)
   # key: fission-node.key      # this node's key file (created if missing)
   # listen: "127.0.0.1:25600"  # combined: TCP listener for more backends
   # authorized: fission-authorized.keys   # combined: allowed backends

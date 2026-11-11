@@ -53,6 +53,8 @@ data class ChatSettings(
 class PermissionStore(
     private val file: Path? = null, val groups: Map<String, Int> = DEFAULT_GROUPS, entries: Map<String, List<String>> = emptyMap(),
     private val bindNames: Boolean = true, private val log: (String) -> Unit = {}, legacyFile: Path? = null,
+    /** `permissions.backend-ops-are-admins` (default false): operator level 4 on ONE backend (its ops.json, /op) also gives the master's own /fission commands, including `/fission admin add`. */
+    val backendOpsAreAdmins: Boolean = false,
 ) {
     private val staticNodes = HashMap<UUID, Set<String>>()                                 // uuid entries of fission.yml
     private val nameNodes = HashMap<String, Set<String>>()                                 // lowercase name entries of fission.yml
@@ -121,6 +123,12 @@ class PermissionStore(
     fun remove(uuid: UUID): Boolean { val r = (extra.remove(uuid) != null) or (bound.remove(uuid) != null); if (r) persist(); return r }
     fun uuidByName(name: String): UUID? = bound.entries.firstOrNull { it.value.equals(name, ignoreCase = true) }?.key
 
+    /** One line per player with permissions (console `admin list`). */
+    fun describe(): List<String> {
+        val ids = (staticNodes.keys + bound.keys + extra.keys).toSet()
+        return ids.map { u -> "${bound[u] ?: "?"} $u: ${nodesOf(u).joinToString(", ").ifEmpty { "-" }} (level ${levelOf(u)})" }.sorted() + pendingNames.sorted().map { "$it: waiting for its first login" }
+    }
+
     private fun persist() {
         file ?: return
         val lines = bound.entries.sortedBy { it.value.lowercase() }.map { "${it.key} ${it.value} ${extra[it.key]?.joinToString(",") ?: "-"}" } +
@@ -154,7 +162,7 @@ class PermissionStore(
                 for (n in old) entries[n] = (entries[n] ?: emptyList()) + ADMIN
             }
             if (groups.isEmpty()) groups += DEFAULT_GROUPS
-            return PermissionStore(file, groups, entries, bind, log, legacyFile)
+            return PermissionStore(file, groups, entries, bind, log, legacyFile, perm.bool("backend-ops-are-admins", false))
         }
     }
 }
@@ -209,6 +217,8 @@ data class MasterSettings(
     val switchMode: String = "seamless",
     /** `switch.fresh-position` (default true): hand the new backend the client's real position at the end of a switch instead of the one saved when the switch started. */
     val switchFreshPosition: Boolean = true,
+    /** `switch.timeout-ms`: how long the new backend has to send its Login before the switch is given up. */
+    val switchTimeoutMs: Long = 20_000,
     /** `regions.margin` blocks of hysteresis at a region border (default 8). */
     val regionMargin: Int = 8,
     /** `cross-commands:` (tp to a player on another backend), see [CrossCommands]. */
@@ -240,6 +250,7 @@ data class MasterSettings(
                 ),
                 switchMode = root.section("switch").string("mode", "seamless").lowercase().also { if (it != "seamless" && it != "login") throw ConfigException("switch.mode: expected seamless or login, got '$it'") },
                 switchFreshPosition = root.section("switch").bool("fresh-position", true),
+                switchTimeoutMs = root.section("switch").long("timeout-ms", 20_000L).also { if (it < 1000) throw ConfigException("switch.timeout-ms: expected 1000 or more, got $it") },
                 regionMargin = root.section("regions").int("margin", 8).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
                 cross = CrossCommandSettings.from(root), ghosts = GhostSettings.from(root),
                 petRadius = root.section("travel").int("pet-radius", 24).also { if (it !in 0..128) throw ConfigException("travel.pet-radius: expected 0-128, got $it") },

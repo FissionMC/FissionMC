@@ -6,7 +6,8 @@
 node:
   mode: master                 # must be `master` for this process
   listen: "0.0.0.0:25600"    # where the backends connect. 0.0.0.0 = reachable from other containers/machines (the node link is authenticated); 127.0.0.1 = only from this container
-  security: true               # Ed25519 authentication of the backends (keep on outside tests)
+  security: true               # Ed25519 authentication of the backends and encryption of the link (keep on outside tests)
+  # allow-insecure: false      # with security: false the master only starts on a 127.0.0.1 listener; true lifts that (closed networks only)
   key: fission-node.key        # this node's key file (created if missing)
   authorized: fission-authorized.keys   # one line per backend: "<node id> <base64 public key>" (gradlew :master:nodeKeys)
   world-root: .                # directory with the worlds the master serves to the backends
@@ -19,6 +20,8 @@ client:
   max-players: 100
   compression-threshold: 256
   enabled: true
+  connection-throttle: 50      # new connections one address may open per 10 seconds (0 = no limit)
+  timeout-seconds: 30          # a connection that sends nothing for this long, or has not logged in by then, is closed
 
 # Permission groups. A group is a permission node with an operator level (0-4). A listed player gets EVERY node of its groups as a real permission on every
 # backend (plugins such as LuckPerms see them, level 0 too) and the highest level among them as operator level (4 = full operator, the old "admin").
@@ -34,6 +37,8 @@ permissions:
                                #   "35deb110-752a-3928-95c4-cc89250ce08e": [fission.moderator]
                                # Unknown group names are skipped with a warning in the master log.
   bind-names: true             # names only bootstrap: the first login with that name binds its UUID (kept in permissions.txt); false = names grant nothing
+  backend-ops-are-admins: false  # true = operator level 4 on ONE backend (its ops.json, /op there) also gives the master's /fission commands, including /fission admin add
+                               # Changes to this section apply live (no restart): every online player's backend is told at once.
 
 # Chat. Placeholders: {name} {displayname} {uuid} {serverid} ({backend} is the same) {message}. A literal < is written \< in MiniMessage.
 chat:
@@ -63,6 +68,7 @@ messages:
 switch:
   mode: seamless               # seamless = the client keeps its level and player when the new backend's level is the same (no Login/Respawn, no "Loading terrain" screen);
                                # login = always Login + Respawn. A different dimension/seed/flags falls back to the login path automatically (logged with the reason).
+  timeout-ms: 20000            # a backend that accepted a player but sent no Login within this time is given up (the player stays where it was / in the limbo)
   fresh-position: true         # at the end of a switch the new backend gets the client's REAL position (its latest movement packets) instead of the one saved when the switch started:
                                # without it a fast player is snapped back by speed x switch duration. false = the old behaviour.
 

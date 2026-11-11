@@ -226,7 +226,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
      * Admin for the master's own commands and command tree: operator level 4 from the master's permission groups (`permissions:` in fission.yml, by default
      * the node fission.admin), or operator level 4 on the backend the player is on right now (`/op` on that backend). Lower levels do not get the master's commands.
      */
-    val isAdmin: Boolean get() = server.settings.isAdmin(uuid) || backendLevel >= 4
+    val isAdmin: Boolean get() = server.settings.isAdmin(uuid) || (server.settings.permissions.backendOpsAreAdmins && backendLevel >= 4)
 
     // ---- static regions: a player that walks into another backend's region is moved there
     @Volatile var lastDimension: String = ""; @Volatile var lastX = 0; @Volatile var lastZ = 0
@@ -286,17 +286,29 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     override fun channelActive(ctx: ChannelHandlerContext) {
         channel = ctx.channel()
         user = User(channel, ConnectionState.HANDSHAKING, ClientVersion.UNKNOWN, UserProfile(null, null))
+        // client.timeout-seconds: a connection that sends nothing, or does not get through the login, must not stay open for ever
+        val connectedAt = System.nanoTime(); lastRead = connectedAt
+        idleTask = channel.eventLoop().scheduleWithFixedDelay({
+            val limit = TimeUnit.SECONDS.toNanos(server.config.timeoutSeconds.toLong()); val now = System.nanoTime()
+            if (now - lastRead > limit) { server.tlog("[client ${channel.remoteAddress()}] ${playerName.ifEmpty { "connection" }} sent nothing for ${server.config.timeoutSeconds} s: closing"); if (prof != null) disconnect("Timed out") else channel.close() }
+            else if (prof == null && now - connectedAt > limit) channel.close()   // never logged in
+        }, 5, 5, TimeUnit.SECONDS)
         ctx.fireChannelActive()
     }
+    private var lastRead = 0L
+    private var idleTask: ScheduledFuture<*>? = null
 
     override fun channelInactive(ctx: ChannelHandlerContext) {
-        keepAlive?.cancel(false)
+        keepAlive?.cancel(false); idleTask?.cancel(false)
         pendingCheck?.timeout?.cancel(false); pendingCheck = null
         if (registered) { liveNode = null; server.ghosts.unregister(this); server.tabs.unregister(this) }
+        // where the player was: its next login starts on the backend that owns that spot (regions) instead of on any backend followed by a second move
+        if (registered && lastDimension.isNotEmpty()) uuid?.let { u -> server.relay?.playerData?.savePosition(u, lastDimension, lastX, lastZ) }
         if (announcedJoin && registered) { announcedJoin = false; server.unregister(this); registered = false; server.announce(server.settings.announcements.leave(playerName, currentNodeId)) }
         relayId?.let { server.relay?.detach(it, "client left") }
         switching?.let { server.relay?.detach(it.id, "client left") }
         if (registered) server.unregister(this)
+        afterClose?.let { afterClose = null; it() }
         ctx.fireChannelInactive()
     }
 
@@ -373,7 +385,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (!channel.isActive) return
         channel.writeAndFlush(io.netty.buffer.Unpooled.wrappedBuffer(frame))
         if (channel.bytesBeforeUnwritable() == 0L) overflow++ else overflow = 0
-        if (overflow > 20_000) { server.tlog("[client $playerName] too slow, dropping"); channel.close() }
+        // a client that does not read: dropped after 20,000 frames or 64 MiB waiting for it, whichever comes first (the master must not buffer without limit)
+        if (overflow > 20_000 || channel.bytesBeforeWritable() > 64L * 1024 * 1024) { server.tlog("[client $playerName] too slow (${channel.bytesBeforeWritable() shr 20} MiB waiting), dropping"); channel.close() }
     }
     private var overflow = 0
 
@@ -454,12 +467,34 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         } else attachSwitch(nodeId, report)
     } }
 
-    private fun attachSwitch(nodeId: String?, report: (String) -> Unit) {
-        val id = server.relay?.attach(this, nodeId)
+    /** First entry with regions: the backend that owns the spot the player was at when it left (remembered by the master), if it is connected. */
+    private fun preferredNode(): String? {
+        val relay = server.relay ?: return null; val u = uuid ?: return null
+        if (mode != Mode.LIMBO || !relay.regions.enabled) return null
+        val pos = relay.playerData?.readPosition(u) ?: return null
+        return relay.regions.owner(pos.first, pos.second, pos.third)?.takeIf { it in relay.liveNodeIds() }
+    }
+
+    /** The backend accepted the player but its Login never came (it hangs, or a plugin blocks the pre-login): give the switch up so the player is not stuck with it. */
+    private fun switchTimedOut(sw: Switch) {
+        if (switching !== sw || sw.login != null || sw.heldLogin != null) return
+        Trace.emit("switch.timeout") { player(playerName, uuid); str("to", sw.nodeId); long("ms", server.settings.switchTimeoutMs) }
+        server.tlog("[client $playerName] switch to ${sw.nodeId}: no Login within ${server.settings.switchTimeoutMs} ms (switch.timeout-ms), giving it up")
+        switching = null; server.relay?.detach(sw.id, "switch timed out"); restoreDataOwner()
+        commandAfterSwitch?.let { server.tlog("[cross] $playerName: '/${it.cmd}' dropped, the switch to ${sw.nodeId} timed out"); commandAfterSwitch = null }
+        if (mode == Mode.RELAY) tell("Could not move to ${sw.nodeId}: it did not answer in time")
+        else channel.eventLoop().schedule({ tryAttach() }, 2, TimeUnit.SECONDS)   // limbo: try again (round robin picks the next backend)
+    }
+
+    private fun attachSwitch(nodeId0: String?, report: (String) -> Unit) {
+        val preferred = if (nodeId0 == null) preferredNode() else null
+        val nodeId = nodeId0 ?: preferred
+        val id = server.relay?.attach(this, nodeId) ?: (if (nodeId0 == null && preferred != null) server.relay?.attach(this, null) else null)
         if (id == null) { Trace.emit("switch.attach.failed") { player(playerName, uuid); str("to", nodeId) }; report(if (nodeId == null) "no backend is alive" else "backend $nodeId is not connected"); return }
         val node = server.relay!!.nodeIdOf(id) ?: "?"
         Trace.emit("switch.attach") { player(playerName, uuid); str("to", node); long("binding", id) }
-        switching = Switch(id, node); join?.attached()
+        val sw = Switch(id, node); switching = sw; join?.attached()
+        channel.eventLoop().schedule({ switchTimedOut(sw) }, server.settings.switchTimeoutMs, TimeUnit.MILLISECONDS)
         // the client's real options go first, like in the first configuration of a fresh vanilla connection
         clientInfoPayload?.let { p -> server.relay?.toBackend(id, PlayIds.frame(0, p)) }
         server.tlog("[client] $playerName -> backend $node (player $id), seamless")
@@ -653,6 +688,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
         val buf = msg as ByteBuf
+        lastRead = System.nanoTime()
         if (mode == Mode.RELAY) {   // opaque relay: frame goes to the backend untouched (P3 listeners hook in here)
             try {
                 val bytes = ByteArray(buf.readableBytes()); buf.readBytes(bytes)
@@ -826,8 +862,25 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     private fun finishAuth(p: PlayerProfile) {
         prof = p; join = JoinTiming()
-        if (!server.register(this, p)) { disconnect("You are already connected"); return }
+        if (server.onlinePlayers >= server.config.maxPlayers && !server.settings.isAdmin(p.uuid)) { disconnect("The server is full!"); return }   // client.max-players (admins always get in)
+        val older = server.register(this, p)
         registered = true
+        // the account is already online: the older connection is ended first (its backend saves the player), then this login goes on, like vanilla's "logged in from another location"
+        if (older != null) { server.tlog("[client] ${p.name} logged in again: ending its older connection"); older.endForNewLogin { channel.eventLoop().execute { if (channel.isActive) finishLogin(p) } }; return }
+        finishLogin(p)
+    }
+
+    /** Another connection logged in with this account: save the player on its backend, then disconnect; [done] runs afterwards (or after 3 s). */
+    fun endForNewLogin(done: () -> Unit) { channel.eventLoop().execute {
+        if (!channel.isActive) { done(); return@execute }
+        afterClose = done   // runs at the end of channelInactive: this session has left the hubs and its backend by then
+        val id = relayId; val u = uuid
+        val end = { channel.eventLoop().execute { disconnect("You logged in from another location"); channel.eventLoop().schedule({ channel.close() }, 3, TimeUnit.SECONDS); Unit } }
+        if (id != null && u != null && server.relay?.playerData != null) server.relay!!.flushPlayerData(id, u, 3000) { end() } else end()
+    } }
+    private var afterClose: (() -> Unit)? = null
+
+    private fun finishLogin(p: PlayerProfile) {
         server.tabs.register(this, tabDecode); server.ghosts.register(this)
         server.settings.permissions.bindOnLogin(p.name, p.uuid)   // bootstrap: a name entry in permissions.players becomes this uuid
         val t = server.config.compressionThreshold

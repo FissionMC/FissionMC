@@ -22,7 +22,6 @@ import java.util.logging.Logger
 object NodeBootstrap {
     private val log = Logger.getLogger("FissionMC")
     private const val PULL_TIMEOUT_S = 600L
-    private const val CONNECT_TIMEOUT_S = 30L
     private const val SEED_POLL_S = 10L
     private const val SEED_WAIT_MINUTES = 30L
 
@@ -30,6 +29,9 @@ object NodeBootstrap {
     /** True once a node mode other than standalone is active: only then is there a master to push chunks/player data to (a standalone server must not queue anything for it). */
     @Volatile var networked: Boolean = false; private set
     @Volatile var master: MasterServer? = null; private set
+    /** Backend mode without `node.direct-connections`: the Minecraft port is bound on loopback only (players come through the master; a direct login would skip its auth, permissions and player data). */
+    @Volatile private var loopbackOnly = false
+    @JvmStatic fun bindLoopbackOnly(): Boolean = loopbackOnly
     private val extraHandlers = java.util.concurrent.CopyOnWriteArrayList<(NodeMessage) -> Unit>()
     private var closeables = mutableListOf<AutoCloseable>()
 
@@ -82,6 +84,7 @@ object NodeBootstrap {
         if (net.fissionmc.net.trace.Trace.on) log.info(net.fissionmc.net.trace.Trace.status())
         if (cfg.mode == NodeMode.STANDALONE) return
         networked = true
+        loopbackOnly = cfg.mode == NodeMode.BACKEND && !cfg.directConnections
         require(net.fissionmc.net.world.WorldFiles.safeRelative(levelName)) { "level-name '$levelName' is not usable for node sync" }
         val dest = universe.resolve(levelName).toAbsolutePath().normalize()
         require(dest != Path.of("").toAbsolutePath().normalize() && dest != universe.toAbsolutePath().normalize()) { "refusing to sync into $dest" }
@@ -135,8 +138,18 @@ object NodeBootstrap {
             val later = changed.filter { it != "node.master" && it !in liveDiag }
             if (later.isNotEmpty() && cfg.mode == NodeMode.BACKEND) log.info("needs a restart to take effect: ${later.joinToString()}")
         }.start()
-        val l = try { ready.get(CONNECT_TIMEOUT_S, TimeUnit.SECONDS) }
-        catch (e: java.util.concurrent.TimeoutException) { stop(); error("Could not reach the master at $address within ${CONNECT_TIMEOUT_S}s") }
+        // a backend that starts before its master waits for it (a hosting panel may start them in any order) instead of exiting after a few seconds
+        val waitUntil = if (cfg.connectTimeoutSeconds == 0L) Long.MAX_VALUE else System.nanoTime() + cfg.connectTimeoutSeconds * 1_000_000_000L
+        var l0: NodeLink? = null; var waited = 0
+        while (l0 == null) {
+            try { l0 = ready.get(10, TimeUnit.SECONDS) }
+            catch (e: java.util.concurrent.TimeoutException) {
+                waited += 10
+                if (System.nanoTime() > waitUntil) { stop(); error("Could not reach the master at ${client.address} within ${cfg.connectTimeoutSeconds}s (node.connect-timeout)") }
+                log.info("Still waiting for the master at ${client.address} (${waited}s; node.connect-timeout is ${if (cfg.connectTimeoutSeconds == 0L) "off" else "${cfg.connectTimeoutSeconds}s"})")
+            }
+        }
+        val l: NodeLink = l0
         link = l
 
         log.info("Pulling world '$levelName' from the master into $dest")

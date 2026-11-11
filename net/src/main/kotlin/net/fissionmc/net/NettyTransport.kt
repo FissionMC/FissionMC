@@ -7,7 +7,6 @@ import io.netty.channel.local.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder
 import io.netty.handler.codec.LengthFieldPrepender
 import net.fissionmc.protocol.MessageRegistry
 import net.fissionmc.protocol.registerWorldMessages
@@ -42,7 +41,7 @@ class NettyTransport(
     private fun init(ch: Channel, initiator: Boolean, onLink: (NodeLink) -> Unit) {
         val link = LinkHandler(me, initiator, heartbeatMs, timeoutMs, security)
         ch.pipeline()
-            .addLast("frame-dec", LengthFieldBasedFrameDecoder(MAX_FRAME, 0, 4, 0, 4))
+            .addLast("frame-dec", LinkFrameDecoder(PREAUTH_FRAME))
             .addLast("frame-enc", LengthFieldPrepender(4))
             .addLast("dec", MessageDecoder(registry))
             .addLast("enc", MessageEncoder(registry))

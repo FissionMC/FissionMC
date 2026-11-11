@@ -227,6 +227,42 @@ class ClientServerTest {
         }
     }
 
+    @Test fun `a full server refuses the next login`() {
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, maxPlayers = 1, compressionThreshold = 64), log = {}).start().use { s ->
+            TestClient(s.port).use { a ->
+                joinLimbo(a, s.port, "One")
+                TestClient(s.port).use { b ->
+                    b.send(WrapperHandshakingClientHandshake(777, "localhost", s.port, ConnectionIntention.LOGIN)); b.setState(ConnectionState.LOGIN)
+                    b.send(WrapperLoginClientLoginStart(ClientVersion.V_26_3, "Two", null, UUID(0, 2)))
+                    b.skip(PacketType.Login.Server.DISCONNECT)   // "The server is full!" comes instead of the compression packet
+                }
+                assertEquals(1, s.onlinePlayers)
+            }
+        }
+    }
+
+    @Test fun `a second login with the same account ends the first connection`() {
+        server(false).use { s ->
+            TestClient(s.port).use { a ->
+                joinLimbo(a, s.port, "Twin")
+                TestClient(s.port).use { b ->
+                    joinLimbo(b, s.port, "Twin")                    // goes through once the older connection is gone
+                    a.skipUntil(PacketType.Play.Server.DISCONNECT)   // "You logged in from another location"
+                    assertEquals(1, s.onlinePlayers)
+                }
+            }
+        }
+    }
+
+    @Test fun `a connection that never logs in is closed`() {
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, timeoutSeconds = 1), log = {}).start().use { s ->
+            java.net.Socket("127.0.0.1", s.port).use { sock ->
+                sock.soTimeout = 12_000
+                assertEquals(-1, sock.getInputStream().read(), "the master closes a silent connection (client.timeout-seconds)")
+            }
+        }
+    }
+
     /** A fake node link that records what the master sends to the backend. */
     private class FakeBackendLink : net.fissionmc.net.NodeLink {
         val sent = java.util.concurrent.LinkedBlockingQueue<net.fissionmc.protocol.NodeMessage>()

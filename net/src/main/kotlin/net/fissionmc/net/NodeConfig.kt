@@ -25,6 +25,9 @@ enum class NodeMode {
  *   authorized: fission-authorized.keys   # master: "nodeId base64pubkey" per line
  *   security: true           # default true for TCP
  *   world-root: .            # master: directory holding the worlds it serves
+ *   direct-connections: false  # backend: true = players may also connect to the backend's own port (bypasses the master)
+ *   allow-insecure: false    # master: allow security: false on a non-loopback listener
+ *   connect-timeout: 300     # backend: seconds to wait for the master at start (0 = for ever)
  * ```
  * (every key documented in `fission.default.yml` / `fission.backend.default.yml`)
  */
@@ -40,6 +43,12 @@ data class NodeConfig(
     val authorizedFile: Path,
     val security: Boolean,
     val worldRoot: Path,
+    /** `node.direct-connections` (backend mode, default false): false = the backend's own Minecraft port is bound on 127.0.0.1 only, players can only come through the master. */
+    val directConnections: Boolean = false,
+    /** `node.allow-insecure` (default false): a master with `security: false` refuses to listen on anything but loopback unless this is true. */
+    val allowInsecure: Boolean = false,
+    /** `node.connect-timeout` seconds a starting backend waits for the master (default 300, 0 = for ever). */
+    val connectTimeoutSeconds: Long = 300,
 ) {
     companion object {
         /** Parses the file and reads only the `node:` section (no unknown-key check: the caller owns the whole tree; see [from]). */
@@ -64,6 +73,8 @@ data class NodeConfig(
                 dir.resolve(text("authorized") ?: "fission-authorized.keys"),
                 n.bool("security", true),
                 dir.resolve(text("world-root") ?: "."),
+                n.bool("direct-connections", false), n.bool("allow-insecure", false),
+                n.long("connect-timeout", 300L).also { if (it < 0) throw ConfigException("node.connect-timeout: expected 0 or more seconds, got $it") },
             ).also { it.validate() }
         }
     }

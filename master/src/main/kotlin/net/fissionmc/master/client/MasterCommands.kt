@@ -22,6 +22,48 @@ object MasterCommands {
         }
     }
 
+    /**
+     * The master's own console (stdin): `players`, `admin list|add|remove <player|uuid>`, `send <player> <backend>`, `trace [start|stop|dump [seconds]|mark <text>]`.
+     * True when [line] was one of them. The console is the operator: no permission check.
+     */
+    fun console(server: ClientServer, line: String, say: (String) -> Unit): Boolean {
+        val parts = line.trim().split(Regex("\\s+"))
+        when (parts[0].lowercase()) {
+            "players" -> say(server.allSessions().sortedBy { it.playerName.lowercase() }.joinToString { "${it.playerName}@${it.currentNodeId ?: "limbo"}" }.ifEmpty { "nobody is online" })
+            "admin" -> {
+                val store = server.settings.permissions; val action = parts.getOrNull(1)?.lowercase(); val who = parts.getOrNull(2)
+                if (action == "list" || action == null) { store.describe().ifEmpty { listOf("no player has permissions") }.forEach(say); return true }
+                if ((action != "add" && action != "remove") || who == null) { say("usage: admin list | admin add <player|uuid> | admin remove <player|uuid>"); return true }
+                val online = server.findByName(who)
+                val uuid = online?.uuid ?: try { java.util.UUID.fromString(who) } catch (_: IllegalArgumentException) { null } ?: store.uuidByName(who)
+                if (uuid == null) { say("unknown player $who: it has to be online, or give its uuid"); return true }
+                if (action == "add") { store.add(uuid, online?.playerName ?: who); say("${online?.playerName ?: who} ($uuid) is in ${PermissionStore.ADMIN} now") }
+                else if (store.remove(uuid)) say("${online?.playerName ?: who} ($uuid) is no admin any more")
+                else say(if (store.isStatic(uuid)) "$who is listed in permissions.players of fission.yml: remove it there (the file is reloaded at once)" else "$who is not an admin")
+                online?.pushPermission()
+            }
+            "send" -> {
+                if (parts.size != 3) { say("usage: send <player> <backend>"); return true }
+                val target = server.findByName(parts[1]) ?: run { say("no such player: ${parts[1]}"); return true }
+                target.startSwitch(parts[2]) { why -> say("cannot send ${target.playerName} to ${parts[2]}: $why") }
+                say("sending ${target.playerName} to ${parts[2]}")
+            }
+            "trace" -> {
+                val hub = server.relay?.trace ?: run { say("no backend relay here"); return true }
+                when (parts.getOrNull(1)?.lowercase()) {
+                    null -> say(net.fissionmc.net.trace.Trace.status())
+                    "start" -> hub.start("console", say)
+                    "stop" -> hub.stop("console", say)
+                    "dump" -> hub.dump(parts.getOrNull(2)?.toIntOrNull()?.coerceAtLeast(0) ?: 0, "console", say)
+                    "mark" -> { val text = line.trim().split(Regex("\\s+"), 3).getOrNull(2).orEmpty(); if (text.isEmpty()) say("usage: trace mark <text>") else hub.mark(text, "console", say) }
+                    else -> say("usage: trace [start|stop|dump [seconds]|mark <text>]")
+                }
+            }
+            else -> return false
+        }
+        return true
+    }
+
     private fun chat(s: ClientSession, arg: String?) {
         val mode = when (arg) { "global" -> true; "local" -> false; "toggle" -> !s.chatGlobal; else -> { s.tell(Component.text("Usage: /chat global|local|toggle", NamedTextColor.RED)); return } }
         s.chatGlobal = mode
@@ -47,7 +89,7 @@ object MasterCommands {
         } else if (store.remove(uuid)) {
             s.tell(Component.text("${online?.playerName ?: who} is no admin any more.", NamedTextColor.GRAY))
         } else {
-            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in permissions.players of fission.yml: remove it there and restart the master." else "$who is not an admin.", NamedTextColor.RED)); return
+            s.tell(Component.text(if (store.isStatic(uuid)) "$who is listed in permissions.players of fission.yml: remove it there (the file is reloaded at once)." else "$who is not an admin.", NamedTextColor.RED)); return
         }
         server.tlog("[master] ${s.playerName}: admin $action $who ($uuid)")
         online?.pushPermission()

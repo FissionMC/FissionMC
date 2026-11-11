@@ -8,6 +8,40 @@ import net.fissionmc.protocol.MessageRegistry
 import net.fissionmc.protocol.NodeMessage
 
 internal const val MAX_FRAME = 8 * 1024 * 1024
+/** Frame limit until the handshake is done: a peer that has not proven who it is cannot make this node buffer megabytes. */
+internal const val PREAUTH_FRAME = 4096
+
+/** 4 byte length prefix; [limit] starts small and is raised once the peer is authenticated. */
+internal class LinkFrameDecoder(@Volatile var limit: Int) : ByteToMessageDecoder() {
+    override fun decode(ctx: ChannelHandlerContext, buf: ByteBuf, out: MutableList<Any>) {
+        if (buf.readableBytes() < 4) return
+        val len = buf.getInt(buf.readerIndex())
+        if (len < 0 || len > limit) throw io.netty.handler.codec.TooLongFrameException("node link frame of $len bytes (limit $limit)")
+        if (buf.readableBytes() < 4 + len) return
+        buf.skipBytes(4); out.add(buf.readRetainedSlice(len))
+    }
+}
+
+/** Decrypts each frame (sits right behind [LinkFrameDecoder]). A frame that fails authentication closes the link through exceptionCaught. */
+internal class LinkDecrypt(key: ByteArray) : io.netty.channel.ChannelInboundHandlerAdapter() {
+    private val open = LinkCrypto.Sealer(key, javax.crypto.Cipher.DECRYPT_MODE)
+    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+        val b = msg as ByteBuf
+        val data = try { ByteArray(b.readableBytes()).also { b.readBytes(it) } } finally { b.release() }
+        ctx.fireChannelRead(io.netty.buffer.Unpooled.wrappedBuffer(open.apply(data)))
+    }
+}
+
+/** Encrypts each encoded message before the length prefix is added. */
+internal class LinkEncrypt(key: ByteArray) : io.netty.channel.ChannelOutboundHandlerAdapter() {
+    private val seal = LinkCrypto.Sealer(key, javax.crypto.Cipher.ENCRYPT_MODE)
+    override fun write(ctx: ChannelHandlerContext, msg: Any, promise: io.netty.channel.ChannelPromise) {
+        val b = msg as? ByteBuf
+        if (b == null) { ctx.write(msg, promise); return }
+        val data = try { ByteArray(b.readableBytes()).also { b.readBytes(it) } } finally { b.release() }
+        ctx.write(io.netty.buffer.Unpooled.wrappedBuffer(seal.apply(data)), promise)
+    }
+}
 
 /** The node id of the peer on this channel, set when the handshake finished (only read by the flight recorder). */
 internal val PEER_ATTR: io.netty.util.AttributeKey<String> = io.netty.util.AttributeKey.valueOf("fission.peer")

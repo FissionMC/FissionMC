@@ -31,16 +31,35 @@ class ClientServer(
     private val extraPlayers: () -> Int = { 0 },
     val relay: net.fissionmc.master.PlayerRelay? = null,
     val log: (String) -> Unit = { println(it) },
-    val settings: MasterSettings = MasterSettings(),
+    settings: MasterSettings = MasterSettings(),
     /** Set = the node link shares this port: a connection whose first byte is 0 (a node link frame; a Minecraft handshake starts with its non-zero length) goes here. */
     private val nodeAdopt: ((Channel) -> Unit)? = null,
 ) : Closeable {
     /** The live settings: motd, max players, online mode, compression and the listen address are read from here (replaced by [rebind] on a config reload). */
     @Volatile var config: ClientConfig = initialConfig
         private set
+    /** The master's settings. Only `permissions` is replaced at runtime ([reloadPermissions]); everything else is fixed at start. */
+    @Volatile var settings: MasterSettings = settings
+        private set
+
+    /** fission.yml changed: the new permission groups and players apply at once, every online player's backend is told. */
+    fun reloadPermissions(fresh: PermissionStore) { settings = settings.copy(permissions = fresh); allSessions().forEach { it.pushPermission() } }
+
+    // ---- connection throttle (client.connection-throttle): new connections per address per 10 s
+    private val recent = ConcurrentHashMap<String, LongArray>()
+    private fun throttled(ch: Channel): Boolean {
+        val limit = config.throttle
+        val a = (ch.remoteAddress() as? InetSocketAddress)?.address ?: return false
+        if (limit <= 0 || a.isLoopbackAddress) return false
+        val now = System.currentTimeMillis()
+        if (recent.size > 20_000) recent.entries.removeIf { now - it.value[0] > 10_000 }
+        val w = recent.compute(a.hostAddress) { _, v -> if (v == null || now - v[0] > 10_000) longArrayOf(now, 1) else { v[1]++; v } }!!
+        if (w[1] == limit + 1L) log("[master] ${a.hostAddress} opened more than $limit connections in 10 s: further ones are refused until it slows down (client.connection-throttle)")
+        return w[1] > limit
+    }
     /** Global chat (needs the relay). */
     init { relay?.localAnnouncements = settings.announcements.local; relay?.petRadius = settings.petRadius }
-    init { relay?.grantedLevel = { p -> settings.permissions.levelOf(p.uuid) }; relay?.grantedNodes = { p -> settings.permissions.nodesOf(p.uuid).toList() } }
+    init { relay?.grantedLevel = { p -> this.settings.permissions.levelOf(p.uuid) }; relay?.grantedNodes = { p -> this.settings.permissions.nodesOf(p.uuid).toList() } }   // this.settings: the live property, not the constructor value
     /** [log] that also records every line in the flight recorder (the decisions the master logs: switches, regions, cross commands, tab list, ghosts). */
     val tlog: (String) -> Unit = { s -> net.fissionmc.net.trace.Trace.emit("log") { str("line", s) }; log(s) }
     /** Global chat (needs the relay). */
@@ -89,6 +108,7 @@ class ClientServer(
         .childOption(ChannelOption.TCP_NODELAY, true)
         .childHandler(object : ChannelInitializer<Channel>() {
             override fun initChannel(ch: Channel) {
+                if (throttled(ch)) { ch.close(); return }
                 val adopt = nodeAdopt
                 if (adopt == null) addPlayerHandlers(ch)
                 else ch.pipeline().addLast("sniffer", ProtocolSniffer(adopt) { c -> addPlayerHandlers(c); c.pipeline().context("prepender").fireChannelActive() })
@@ -125,7 +145,8 @@ class ClientServer(
     /** A backend became available: move waiting limbo players over. */
     fun attachWaiting() { sessions.values.forEach { it.tryAttach() } }
 
-    internal fun register(s: ClientSession, p: PlayerProfile): Boolean = sessions.putIfAbsent(p.uuid, s) == null
+    /** Registers [s] for its account; returns the session that held the account before (the caller ends it: a second login replaces the first, like vanilla). */
+    internal fun register(s: ClientSession, p: PlayerProfile): ClientSession? = sessions.put(p.uuid, s)?.takeIf { it !== s }
     internal fun unregister(s: ClientSession) { sessions.values.remove(s) }
 
     fun statusJson(): JsonObject = JsonObject().apply {

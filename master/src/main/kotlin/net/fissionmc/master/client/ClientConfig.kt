@@ -16,6 +16,10 @@ data class ClientConfig(
     val enabled: Boolean = true,
     /** Was `client.listen` written in the file? (a combined backend only hosts a client listener when it was) */
     val listenGiven: Boolean = false,
+    /** `client.connection-throttle`: new connections one address may open per 10 seconds (0 = no limit; loopback is never limited). */
+    val throttle: Int = 50,
+    /** `client.timeout-seconds`: a connection that sends nothing for this long, or has not logged in after this long, is closed. */
+    val timeoutSeconds: Int = 30,
 ) {
     companion object {
         fun load(file: Path): ClientConfig = from(FissionConfig.load(file))
@@ -32,6 +36,8 @@ data class ClientConfig(
             return ClientConfig(
                 h, po, c.bool("online-mode", true), c.string("motd", d.motd), c.int("max-players", d.maxPlayers),
                 c.int("compression-threshold", d.compressionThreshold), c.bool("enabled", true), listen != null,
+                c.int("connection-throttle", d.throttle).also { if (it < 0) throw ConfigException("client.connection-throttle: expected 0 or more, got $it") },
+                c.int("timeout-seconds", d.timeoutSeconds).also { if (it < 5) throw ConfigException("client.timeout-seconds: expected 5 or more, got $it") },
             )
         }
     }

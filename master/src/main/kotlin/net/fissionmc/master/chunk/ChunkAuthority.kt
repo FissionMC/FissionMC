@@ -23,12 +23,36 @@ class ChunkAuthority(
     private val ownerGenerates: (requester: String, dimension: String, x: Int, z: Int) -> Boolean = { _, _, _, _ -> true },
     /** Static regions: the backend that owns (ticks) chunk x,z, null = nobody in particular. Entities and points of interest of a chunk are only accepted from it. */
     private val regionOwner: (dimension: String, x: Int, z: Int) -> String? = { _, _, _ -> null },
+    /** Where requests and pushes run (they read and write the store on disk). The master gives a thread of its own, so chunk IO never blocks the network thread that also relays players' packets. */
+    private val executor: java.util.concurrent.Executor = java.util.concurrent.Executor { it.run() },
 ) {
     private class Lease(val node: String, var expiresAt: Long)
     private class Waiter(val node: RegisteredNode, val reqId: Long)
     private val lock = Any()
     private val leases = HashMap<ChunkKey, Lease>()
     private val waiting = HashMap<ChunkKey, MutableList<Waiter>>()
+    /** Generation jobs given to a region owner (GenerateChunk) that have not been pushed yet. They are sent again while requesters wait, and fall back to the first waiter when the owner is gone. */
+    private class Job(val owner: String, var sentAt: Long)
+    private val jobs = HashMap<ChunkKey, Job>()
+
+    init { timer.scheduleWithFixedDelay({ try { retryJobs() } catch (t: Throwable) { log("[chunks] job check failed: $t") } }, 5, 5, TimeUnit.SECONDS) }
+
+    internal fun retryJobs(now: Long = System.currentTimeMillis()) = synchronized(lock) {
+        for ((key, job) in jobs.entries.toList()) {
+            if (waiting[key].isNullOrEmpty()) { jobs.remove(key); continue }
+            val link = registry[job.owner]?.link?.takeIf { it.isOpen }
+            if (link != null) { if (now - job.sentAt >= 10_000) { job.sentAt = now; link.send(GenerateChunk(key.dimension, key.x, key.z)) } }   // lost, or the owner was not ticking yet: ask again
+            else if (now - job.sentAt >= 5_000) ownerGone(key)
+        }
+    }
+
+    /** The owner of a generation job is not connected: the first waiting backend generates the chunk instead (as if it had asked while the owner was away). */
+    private fun ownerGone(key: ChunkKey) {
+        jobs.remove(key)
+        val ws = waiting[key] ?: return
+        while (ws.isNotEmpty()) { val w = ws.removeAt(0); if (w.node.link.isOpen) { grant(key, w.node, w.reqId); timer.schedule({ leaseExpiry(key) }, leaseMs + 50, TimeUnit.MILLISECONDS); break } }
+        if (ws.isEmpty()) waiting.remove(key)
+    }
     /** Last time a backend pushed anything: a holder that keeps pushing is alive and generating, so its leases do not run out (they would make a waiting backend generate the same chunks again). */
     private val progress = HashMap<String, Long>()
 
@@ -43,8 +67,8 @@ class ChunkAuthority(
 
     fun handle(node: RegisteredNode, msg: NodeMessage): Boolean {
         when (msg) {
-            is ChunkRequest -> request(node, msg)
-            is ChunkPush -> push(node, msg)
+            is ChunkRequest -> executor.execute { try { request(node, msg) } catch (t: Throwable) { log("[chunks] request ${msg.dimension} ${msg.x},${msg.z} from ${node.info.nodeId} failed: $t"); node.link.send(ChunkAbsent(msg.reqId, false)) } }
+            is ChunkPush -> executor.execute { try { push(node, msg) } catch (t: Throwable) { log("[chunks] push ${msg.dimension} ${msg.x},${msg.z} from ${node.info.nodeId} failed: $t") } }
             else -> return false
         }
         return true
@@ -65,7 +89,7 @@ class ChunkAuthority(
                 parked.incrementAndGet()
                 val first = waiting[key].isNullOrEmpty() && leases[key] == null
                 waiting.computeIfAbsent(key) { ArrayList() } += Waiter(node, m.reqId)
-                if (first) { generateJobs.incrementAndGet(); if (net.fissionmc.net.FissionDebug.on) log("[chunks] generate ${key.dimension} ${key.x},${key.z} -> $genOwner (wanted by ${node.info.nodeId})"); registry[genOwner]?.link?.send(GenerateChunk(key.dimension, key.x, key.z)) }
+                if (first) { jobs[key] = Job(genOwner, System.currentTimeMillis()); generateJobs.incrementAndGet(); if (net.fissionmc.net.FissionDebug.on) log("[chunks] generate ${key.dimension} ${key.x},${key.z} -> $genOwner (wanted by ${node.info.nodeId})"); registry[genOwner]?.link?.send(GenerateChunk(key.dimension, key.x, key.z)) }
             }
             return
         }
@@ -125,13 +149,17 @@ class ChunkAuthority(
         if (!r.accepted) return
         registry.broadcast(ChunkAvailable(m.dimension, m.kind, m.x, m.z, r.version), node.info.nodeId)
         // the lease is fulfilled: parked requesters get the data
-        val toServe = synchronized(lock) { leases.remove(key); waiting.remove(key) } ?: return
+        val toServe = synchronized(lock) { leases.remove(key); jobs.remove(key); waiting.remove(key) } ?: return
         val stored = store.get(key) ?: return
         toServe.forEach { w -> if (w.node.link.isOpen) send(w.node, stored, w.reqId) }
     }
 
     /** A backend left: its leases are void, the next waiting backend may generate. */
     val listener = object : NodeRegistry.Listener {
+        /** An owner (re)connected: the jobs it still owes are sent again at once. */
+        override fun joined(node: RegisteredNode) = synchronized(lock) {
+            for ((key, job) in jobs) if (job.owner == node.info.nodeId && !waiting[key].isNullOrEmpty()) { job.sentAt = System.currentTimeMillis(); node.link.send(GenerateChunk(key.dimension, key.x, key.z)) }
+        }
         override fun left(node: RegisteredNode, reason: String) = synchronized(lock) {
             progress.remove(node.info.nodeId)
             for (key in leases.filterValues { it.node == node.info.nodeId }.keys.toList()) {

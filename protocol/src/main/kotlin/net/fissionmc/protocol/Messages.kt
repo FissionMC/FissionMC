@@ -8,10 +8,11 @@ interface NodeMessage
 enum class NodeRole { MASTER, BACKEND }
 
 /** First message, sent by the connecting side. */
-class Hello(val protocol: Int, val nodeId: String, val role: NodeRole, val mcVersion: String, val nonce: ByteArray) : NodeMessage
+/** [ephemeral]: the sender's X25519 public key for this link (empty when link security is off); the link is encrypted with keys derived from both. */
+class Hello(val protocol: Int, val nodeId: String, val role: NodeRole, val mcVersion: String, val nonce: ByteArray, val ephemeral: ByteArray = ByteArray(0)) : NodeMessage
 
 /** Acceptor's reply to [Hello]: its identity, a fresh nonce, and (if it has a key) a signature over the handshake transcript. */
-class Challenge(val nodeId: String, val nonce: ByteArray, val signature: ByteArray) : NodeMessage
+class Challenge(val nodeId: String, val nonce: ByteArray, val signature: ByteArray, val ephemeral: ByteArray = ByteArray(0)) : NodeMessage
 
 /** Initiator's proof: signature over the handshake transcript (empty when the initiator has no key). */
 class Auth(val signature: ByteArray) : NodeMessage
@@ -67,11 +68,11 @@ class MessageRegistry {
         /** Registry with the core control messages (ids 0-15 are reserved for them). */
         fun core(): MessageRegistry = MessageRegistry()
             .register<Hello>(0,
-                { m, b -> b.writeVarInt(m.protocol).writeString(m.nodeId, 64).writeVarInt(m.role.ordinal).writeString(m.mcVersion, 32).writeByteArray(m.nonce, 64) },
-                { b -> Hello(b.readVarInt(), b.readString(64), NodeRole.entries[b.readVarInt()], b.readString(32), b.readByteArray(64)) })
+                { m, b -> b.writeVarInt(m.protocol).writeString(m.nodeId, 64).writeVarInt(m.role.ordinal).writeString(m.mcVersion, 32).writeByteArray(m.nonce, 64).writeByteArray(m.ephemeral, 128) },
+                { b -> Hello(b.readVarInt(), b.readString(64), NodeRole.entries[b.readVarInt()], b.readString(32), b.readByteArray(64), if (b.isReadable) b.readByteArray(128) else ByteArray(0)) })
             .register<Challenge>(5,
-                { m, b -> b.writeString(m.nodeId, 64).writeByteArray(m.nonce, 64).writeByteArray(m.signature, 256) },
-                { b -> Challenge(b.readString(64), b.readByteArray(64), b.readByteArray(256)) })
+                { m, b -> b.writeString(m.nodeId, 64).writeByteArray(m.nonce, 64).writeByteArray(m.signature, 256).writeByteArray(m.ephemeral, 128) },
+                { b -> Challenge(b.readString(64), b.readByteArray(64), b.readByteArray(256), if (b.isReadable) b.readByteArray(128) else ByteArray(0)) })
             .register<Auth>(6, { m, b -> b.writeByteArray(m.signature, 256) }, { b -> Auth(b.readByteArray(256)) })
             .register<Welcome>(1,
                 { m, b -> b.writeVarInt(m.protocol).writeString(m.nodeId, 64).writeVarInt(m.role.ordinal).writeLong(m.sessionId) },
