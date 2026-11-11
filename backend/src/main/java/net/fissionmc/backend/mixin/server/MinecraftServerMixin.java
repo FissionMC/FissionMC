@@ -104,6 +104,15 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     private int autosavePeriod;
     // Paper - don't store the vanilla dispatcher
     private boolean forceTicks;
+
+    // CraftBukkit start - haveTime(): level preparation (forceTicks) must pump the chunk tasks regardless of the tick deadline
+    @org.spongepowered.asm.mixin.injection.Inject(method = "haveTime", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), cancellable = true)
+    private void paper$forceTicks(final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        if (this.forceTicks) {
+            cir.setReturnValue(true);
+        }
+    }
+    // CraftBukkit end
     // CraftBukkit end
     // Spigot start
     private static final int TPS = 20;
