@@ -115,10 +115,13 @@ class SwitchAndChatTest {
         val b = Unpooled.buffer(); VarInts.write(b, PlayIds.commands); VarInts.write(b, 1)
         b.writeByte(0); VarInts.write(b, 0); b.writeByte(0)
         val (nodes, _) = readNodes(ChatCommandTree.patch(ByteArray(b.readableBytes()).also { b.readBytes(it) }, admin = true)!!)
-        assertEquals(20, nodes.size)
+        assertEquals(27, nodes.size)
         fun kid(i: Int, name: String) = nodes[i].second.first { nodes[it].first == name }
         val dbg = kid(kid(0, "fission"), "debug"); val sw = kid(dbg, "switch")
         assertEquals(listOf("on", "off"), nodes[sw].second.map { nodes[it].first })
+        val tr = kid(kid(0, "fission"), "trace")
+        assertEquals(listOf("start", "stop", "dump", "mark"), nodes[tr].second.map { nodes[it].first })
+        assertEquals(1, nodes[kid(tr, "dump")].second.size, "dump [seconds]"); assertEquals(1, nodes[kid(tr, "mark")].second.size, "mark <text>")   // arguments are unnamed in this reader
     }
 
     @Test fun `the respawn after a login repeats its spawn info`() {

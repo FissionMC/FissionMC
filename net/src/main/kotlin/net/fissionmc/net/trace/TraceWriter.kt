@@ -65,7 +65,7 @@ class TraceWriter(private val dir: Path, private val node: String, private val m
             if (out == null || day != base) { switchTo(day) }
             if (size > 0 && size + b.size > maxBytes) rotate()
             out!!.write(b); size += b.size; written.incrementAndGet()
-        } catch (_: Exception) { dropped.incrementAndGet() }
+        } catch (e: Exception) { System.err.println("[trace] write failed: $e"); dropped.incrementAndGet() }
     }
 
     private fun switchTo(day: String) {
@@ -80,11 +80,14 @@ class TraceWriter(private val dir: Path, private val node: String, private val m
         try { out?.flush(); out?.close() } catch (_: Exception) {}
         out = null
         val f = dir.resolve("$base.jsonl")
-        var i = 1
-        while (Files.exists(dir.resolve("$base.$i.jsonl"))) i++
-        Files.move(f, dir.resolve("$base.$i.jsonl"))
-        // keep the newest [keep] rotated files
-        for (old in 1..(i - keep)) Files.deleteIfExists(dir.resolve("$base.$old.jsonl"))
+        val prefix = "$base."
+        fun index(p: Path): Int? = p.fileName.toString().let { n -> if (n.startsWith(prefix) && n.endsWith(".jsonl") && n.length > prefix.length + 6) n.substring(prefix.length, n.length - 6).toIntOrNull() else null }
+        val existing = Files.list(dir).use { st -> st.toList() }.mapNotNull { p -> index(p)?.let { it to p } }.sortedBy { it.first }
+        val next = (existing.lastOrNull()?.first ?: 0) + 1
+        Files.move(f, dir.resolve("$base.$next.jsonl"))
+        // keep the newest [keep] rotated files (the one just made included)
+        val all = existing.map { it.second } + listOf(dir.resolve("$base.$next.jsonl"))
+        for (old in all.dropLast(keep)) Files.deleteIfExists(old)
         out = java.io.BufferedOutputStream(Files.newOutputStream(f, StandardOpenOption.CREATE, StandardOpenOption.APPEND), 64 * 1024)
         size = 0
     }

@@ -51,13 +51,13 @@ class ConfigFilesTest {
         assertFalse(c.plugins.replicate); assertEquals("shared", c.plugins.dir)
         assertFailsWith<ConfigException> { master("node: { mode: master, listen: \"127.0.0.1:1\" }\nplugins: { dirr: x }") }.let { assertTrue(it.message!!.contains("plugins.dirr")) }
         val text = Files.readString(repo.resolve("backend/src/main/resources/fission.backend.default.yml")).lines().joinToString("\n") { l -> if (l.startsWith("# plugins:") || l.startsWith("#   replicate:") || l.startsWith("#   conflict:")) l.removePrefix("# ") else l }
-        val root = FissionConfig.parse(text); val p = net.fissionmc.net.plugins.PluginsConfig.from(root); NodeConfig.from(root, repo.resolve("run-a")); ClientConfig.from(root); root.finish()
+        val root = FissionConfig.parse(text); val p = net.fissionmc.net.plugins.PluginsConfig.from(root); NodeConfig.from(root, repo.resolve("run-a")); ClientConfig.from(root); root.bool("debug", false); net.fissionmc.net.trace.TraceConfig.from(root); root.finish()
         assertTrue(p.replicate); assertEquals(net.fissionmc.net.plugins.ConflictPolicy.LOCAL, p.conflict)
     }
 
     @Test fun `the committed backend default parses`() {
         val root = FissionConfig.parse(Files.readString(repo.resolve("backend/src/main/resources/fission.backend.default.yml")))
-        val n = NodeConfig.from(root, repo.resolve("run-a")); ClientConfig.from(root); root.finish()
+        val n = NodeConfig.from(root, repo.resolve("run-a")); ClientConfig.from(root); root.bool("debug", false); net.fissionmc.net.trace.TraceConfig.from(root); root.finish()
         assertEquals(net.fissionmc.net.NodeMode.STANDALONE, n.mode); assertEquals("", n.nodeId, "no node.id in the default: a backend generates one")
     }
 
@@ -67,7 +67,7 @@ class ConfigFilesTest {
         for (n in listOf("run-a", "run-b")) {
             val f = repo.resolve("$n/fission.yml")
             if (!Files.isRegularFile(f)) { println("[config-test] no $n/fission.yml: skipped"); continue }
-            val root = FissionConfig.load(f); val c = NodeConfig.from(root, f.parent); ClientConfig.from(root); root.finish()
+            val root = FissionConfig.load(f); val c = NodeConfig.from(root, f.parent); ClientConfig.from(root); root.bool("debug", false); net.fissionmc.net.trace.TraceConfig.from(root); root.finish()
             assertEquals(net.fissionmc.net.NodeMode.BACKEND, c.mode); assertEquals("backend-${n.last()}", c.nodeId)
         }
     }
