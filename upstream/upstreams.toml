@@ -6,7 +6,7 @@
 type = "vendor"
 repo = "https://github.com/retrooper/packetevents.git"
 branch = "2.0"
-pinned = "3e4e42ea9b8f2a6145a35c7fb80b618343266807"
+pinned = "f4def5db10fe8e13313686888d45a5edf6d5313e"
 paths = { "api" = "packetevents/api", "netty-common" = "packetevents/netty-common", "patch/adventure-text-serializer-gson/src" = "packetevents/patch/adventure-text-serializer-gson/src", "patch/adventure-text-serializer-legacy/src" = "packetevents/patch/adventure-text-serializer-legacy/src", "LICENSE" = "packetevents/LICENSE" }
 
 [paper]
