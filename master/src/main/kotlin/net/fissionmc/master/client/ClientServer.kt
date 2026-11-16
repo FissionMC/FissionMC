@@ -143,7 +143,21 @@ class ClientServer(
     fun allSessions(): List<ClientSession> = sessions.values.toList()
     fun findByName(name: String): ClientSession? = sessions.values.firstOrNull { it.playerName.equals(name, ignoreCase = true) }
 
-    /** A backend became available: move waiting limbo players over. */
+    /** Limbo players wait here and are let in at a limited rate, see [AdmissionQueue]. */
+    val admission = AdmissionQueue<ClientSession>(settings.limbo.admitPerSecond, settings.limbo.burst)
+    private val admissionTimer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "fission-admission").also { it.isDaemon = true } }
+    private var noticeTicks = 0
+    init {
+        admissionTimer.scheduleWithFixedDelay({
+            try {
+                val up = relay?.liveNodeIds()?.isNotEmpty() == true
+                admission.admit(up).forEach { it.admitFromQueue() }
+                if (++noticeTicks * 250L >= settings.limbo.noticeSeconds * 1000L) { noticeTicks = 0; admission.snapshot().forEachIndexed { i, c -> c.waitingNotice(i + 1, up) } }
+            } catch (t: Throwable) { tlog("[limbo] queue failed: $t") }
+        }, 250, 250, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    /** A backend became available: the waiting limbo players are let in by the queue. */
     fun attachWaiting() { sessions.values.forEach { it.tryAttach() } }
 
     /** Registers [s] for its account; returns the session that held the account before (the caller ends it: a second login replaces the first, like vanilla). */
@@ -156,5 +170,5 @@ class ClientServer(
         add("description", JsonObject().apply { addProperty("text", config.motd) })
     }
 
-    override fun close() { bound?.close(); group.shutdownGracefully(0, 1, java.util.concurrent.TimeUnit.SECONDS) }
+    override fun close() { admissionTimer.shutdownNow(); bound?.close(); group.shutdownGracefully(0, 1, java.util.concurrent.TimeUnit.SECONDS) }
 }

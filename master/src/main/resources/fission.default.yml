@@ -116,6 +116,13 @@ chunk:
 playerdata:
   dir: playerdata              # master-owned player files
 
+# Limbo: players wait here until a backend takes them. They are let in first come, first served at a limited rate so a burst of joins does not hit a backend at once;
+# while no backend is up they see that every server is down and join when one comes back.
+# limbo:
+#   admit-per-second: 2        # players let in per second
+#   burst: 4                   # how many may go at once after a quiet moment
+#   notice-seconds: 2          # how often a waiting player is told its place
+
 # Static regions. Without this section every backend owns everything.
 # regions:
 #   margin: 0                  # hysteresis in blocks at a border (0 = switch at the border)

@@ -35,7 +35,7 @@ class ConfigFilesTest {
     @Test fun `the commented examples of the default parse once uncommented`() {
         var text = Files.readString(repo.resolve("master/src/main/resources/fission.default.yml")).lines().filter { it != "debug: false" }.joinToString("\n")   // the example `debug:` section replaces the plain flag
         // uncomment the regions and debug examples and the two chat templates
-        text = text.lines().joinToString("\n") { l -> if (l.startsWith("# ") && (l.startsWith("#   ") || l.startsWith("# regions:") || l.startsWith("# debug:"))) l.removePrefix("# ") else l }
+        text = text.lines().joinToString("\n") { l -> if (l.startsWith("# ") && (l.startsWith("#   ") || l.startsWith("# regions:") || l.startsWith("# limbo:") || l.startsWith("# debug:"))) l.removePrefix("# ") else l }
         val c = MasterConfig.read(FissionConfig.parse(text), repo.resolve("run-master"))
         assertTrue(c.regions.enabled); assertEquals("backend-b", c.regions.owner("minecraft:overworld", 5, 0)); assertEquals("backend-a", c.regions.owner("minecraft:the_nether", 5, 0))
         assertEquals("/tmp/fission-dump", c.debugDumpClientStream)

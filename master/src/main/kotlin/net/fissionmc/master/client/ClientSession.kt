@@ -329,7 +329,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private var idleTask: ScheduledFuture<*>? = null
 
     override fun channelInactive(ctx: ChannelHandlerContext) {
-        keepAlive?.cancel(false); idleTask?.cancel(false); wallTask?.cancel(false)
+        keepAlive?.cancel(false); idleTask?.cancel(false); wallTask?.cancel(false); server.admission.remove(this)
         pendingCheck?.timeout?.cancel(false); pendingCheck = null
         if (registered) { liveNode = null; server.ghosts.unregister(this); server.tabs.unregister(this) }
         // where the player was: its next login starts on the backend that owns that spot (regions) instead of on any backend followed by a second move
@@ -479,7 +479,18 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     }
 
     /** Moves a limbo player to a backend (if one is alive), see [startSwitch]. */
-    fun tryAttach() { channel.eventLoop().execute { if (mode == Mode.LIMBO) startSwitch(null, "limbo") } }   // timers and backend joins only ever move LIMBO players
+    fun tryAttach() { channel.eventLoop().execute { if (mode == Mode.LIMBO && server.relay != null) server.admission.enqueue(this) } }
+
+    /** The queue let this limbo player in. */
+    fun admitFromQueue() { channel.eventLoop().execute { if (mode == Mode.LIMBO) startSwitch(null, "limbo") } }
+
+    /** Tells a waiting limbo player its place, or that every server is down. */
+    fun waitingNotice(place: Int, backendsUp: Boolean) { channel.eventLoop().execute {
+        if (!channel.isActive || mode != Mode.LIMBO || !clientLoaded || user.decoderState != ConnectionState.PLAY) return@execute
+        val text = if (!backendsUp) Component.text("All servers are down. You will join as soon as one is back.", net.kyori.adventure.text.format.NamedTextColor.RED)
+            else Component.text("Joining the server, you are number $place in the queue.", net.kyori.adventure.text.format.NamedTextColor.YELLOW)
+        channel.writeAndFlush(io.netty.buffer.Unpooled.wrappedBuffer(Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage(true, text))))
+    } }   // timers and backend joins only ever move LIMBO players
 
     /**
      * Moves the client to [nodeId] (round robin when null) without leaving the PLAY state. The new backend starts its CONFIGURATION with

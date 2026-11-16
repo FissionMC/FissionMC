@@ -226,6 +226,7 @@ data class MasterSettings(
     /** `ghosts:` (players of other backends shown as entities). */
     val ghosts: GhostSettings = GhostSettings(),
     val borderParticles: net.fissionmc.master.region.BorderParticleSettings = net.fissionmc.master.region.BorderParticleSettings(),
+    val limbo: LimboSettings = LimboSettings(),
 ) {
     val announcements: Announcements by lazy { Announcements(messages) }
     fun isAdmin(uuid: UUID?): Boolean = permissions.isAdmin(uuid)
@@ -253,7 +254,7 @@ data class MasterSettings(
                 switchFreshPosition = root.section("switch").bool("fresh-position", true),
                 switchTimeoutMs = root.section("switch").long("timeout-ms", 20_000L).also { if (it < 1000) throw ConfigException("switch.timeout-ms: expected 1000 or more, got $it") },
                 regionMargin = root.section("regions").int("margin", 0).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
-                cross = CrossCommandSettings.from(root), ghosts = GhostSettings.from(root), borderParticles = net.fissionmc.master.region.BorderParticleSettings.from(root),
+                cross = CrossCommandSettings.from(root), ghosts = GhostSettings.from(root), borderParticles = net.fissionmc.master.region.BorderParticleSettings.from(root), limbo = LimboSettings.from(root),
                 petRadius = root.section("travel").int("pet-radius", 24).also { if (it !in 0..128) throw ConfigException("travel.pet-radius: expected 0-128, got $it") },
                 messages = AnnouncementSettings(
                     joinGlobal = join.bool("global", true), leaveGlobal = leave.bool("global", true), joinFormat = join.string("format", ""), leaveFormat = leave.string("format", ""),
