@@ -31,6 +31,7 @@ object RegionsBackend {
             is GenerateChunk -> if (server != null) server.execute { generate(server, m) } else earlyJobs.add(m)   // before the first tick there is no server to run it on: kept for [tick]
             is EntityHandover -> server?.execute { spawnHandover(server, m) }
             is BorderForward -> BorderForwardBackend.onMessage(m)
+            is ItemTransfer -> ItemTransferBackend.onMessage(m, server)
             is GhostDemand, is GhostSync, is GhostFix -> GhostSyncBackend.onMessage(m)
         }
     }

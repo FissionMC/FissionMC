@@ -231,6 +231,23 @@ public abstract class HopperBlockEntityMixin {
     }
     // CraftBukkit end
 
+    /** FissionMC regions: a container in a ghost chunk (another backend owns it) is replaced by a stand-in that forwards inserted items to the owner; nothing can be pulled out of it. */
+    private static Container fission$ghostSwap(final Container inventory, final Level level, final BlockPos pos, final boolean destination) {
+        if (inventory == null || !(level instanceof net.minecraft.server.level.ServerLevel server)) return inventory;
+        if (!net.fissionmc.backend.relay.ItemTransferBackend.ghostContainerAt(server, pos)) return inventory;
+        return destination ? new net.fissionmc.backend.blocks.GhostContainer(server, pos) : null;
+    }
+
+    @com.llamalad7.mixinextras.injector.ModifyReturnValue(method = "getAttachedContainer", at = @At("RETURN"), order = 900)
+    private static Container fission$ghostAttached(final Container inventory, final Level level, final BlockPos blockPos, final HopperBlockEntity self) {
+        return fission$ghostSwap(inventory, level, blockPos.relative(self.getBlockState().getValue(HopperBlock.FACING)), true);
+    }
+
+    @com.llamalad7.mixinextras.injector.ModifyReturnValue(method = "getSourceContainer", at = @At("RETURN"), order = 900)
+    private static Container fission$ghostSource(final Container inventory, final Level level, final Hopper hopper, final BlockPos pos, final BlockState state) {
+        return fission$ghostSwap(inventory, level, BlockPos.containing(hopper.getLevelX(), hopper.getLevelY(), hopper.getLevelZ()).above(), false);
+    }
+
     // Paper start - HopperInventorySearchEvent (destination of ejectItems)
     @com.llamalad7.mixinextras.injector.ModifyReturnValue(method = "getAttachedContainer", at = @At("RETURN"))
     private static Container fission$attachedSearchEvent(final Container inventory, final Level level, final BlockPos blockPos, final HopperBlockEntity self) {

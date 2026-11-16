@@ -37,6 +37,15 @@ data class BorderNeighbor(val x: Int, val y: Int, val z: Int, val block: String)
  */
 class BorderForward(val origin: String, val toBackend: String, val dimension: String, val ticks: List<BorderTick>, val neighbors: List<BorderNeighbor>) : NodeMessage
 
+/**
+ * Backend -> master -> owner (106): item stacks that a hopper, dropper or dispenser on the sender pushed into the container at ([x],[y],[z]), a position in a chunk the
+ * sender does not own (its copy is a ghost). The owner inserts them into its real container (what does not fit is dropped there, nothing is destroyed). [stacks] = one NBT blob per stack.
+ */
+class ItemTransfer(val origin: String, val toBackend: String, val dimension: String, val x: Int, val y: Int, val z: Int, val stacks: List<ByteArray>) : NodeMessage
+
+const val MAX_ITEM_TRANSFER = 64
+const val MAX_ITEM_BLOB = 65536
+
 const val MAX_BORDER_ITEMS = 4096
 
 /**
@@ -106,6 +115,12 @@ fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
         val ticks = List(nt) { BorderTick(b.readInt(), b.readInt(), b.readInt(), b.readBoolean(), b.readString(128), b.readVarInt(), b.readVarInt() - 3) }
         val nn = b.readVarInt(); require(nn in 0..MAX_BORDER_ITEMS) { "too many border neighbours" }
         BorderForward(o, t, d, ticks, List(nn) { BorderNeighbor(b.readInt(), b.readInt(), b.readInt(), b.readString(128)) })
+    })
+    .register<ItemTransfer>(106, { m, b ->
+        b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeInt(m.x).writeInt(m.y).writeInt(m.z).writeVarInt(m.stacks.size); m.stacks.forEach { b.writeByteArray(it, MAX_ITEM_BLOB) }
+    }, { b ->
+        val o = b.readString(64); val t = b.readString(64); val d = b.readString(128); val x = b.readInt(); val y = b.readInt(); val z = b.readInt(); val n = b.readVarInt(); require(n in 0..MAX_ITEM_TRANSFER) { "too many item stacks" }
+        ItemTransfer(o, t, d, x, y, z, List(n) { b.readByteArray(MAX_ITEM_BLOB) })
     })
     .register<GhostDemand>(102, { m, b ->
         b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeVarInt(m.chunks.size); m.chunks.forEach { b.writeLong(it) }
