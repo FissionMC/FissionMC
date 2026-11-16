@@ -40,6 +40,9 @@ class BorderForward(val origin: String, val toBackend: String, val dimension: St
 /** Backend to owner via master (106): item stacks (one NBT blob each) pushed into the ghost container at x, y, z. */
 class ItemTransfer(val origin: String, val toBackend: String, val dimension: String, val x: Int, val y: Int, val z: Int, val stacks: List<ByteArray>) : NodeMessage
 
+/** Backend to a neighbouring backend via master (107): the comparator at x, y, z now outputs [value]. */
+class BlockEntitySignal(val origin: String, val toBackend: String, val dimension: String, val x: Int, val y: Int, val z: Int, val value: Int) : NodeMessage
+
 const val MAX_ITEM_TRANSFER = 64
 const val MAX_ITEM_BLOB = 65536
 
@@ -119,6 +122,9 @@ fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
         val o = b.readString(64); val t = b.readString(64); val d = b.readString(128); val x = b.readInt(); val y = b.readInt(); val z = b.readInt(); val n = b.readVarInt(); require(n in 0..MAX_ITEM_TRANSFER) { "too many item stacks" }
         ItemTransfer(o, t, d, x, y, z, List(n) { b.readByteArray(MAX_ITEM_BLOB) })
     })
+    .register<BlockEntitySignal>(107, { m, b ->
+        b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeInt(m.x).writeInt(m.y).writeInt(m.z).writeByte(m.value)
+    }, { b -> BlockEntitySignal(b.readString(64), b.readString(64), b.readString(128), b.readInt(), b.readInt(), b.readInt(), b.readByte().toInt()) })
     .register<GhostDemand>(102, { m, b ->
         b.writeString(m.origin, 64).writeString(m.toBackend, 64).writeString(m.dimension, 128).writeVarInt(m.chunks.size); m.chunks.forEach { b.writeLong(it) }
     }, { b ->
