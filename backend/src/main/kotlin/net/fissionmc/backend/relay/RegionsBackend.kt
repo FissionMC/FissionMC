@@ -126,6 +126,7 @@ object RegionsBackend {
         while (true) { val j = earlyJobs.poll() ?: break; generate(server, j) }
         if (!enabled) return
         BorderForwardBackend.tick(server)
+        WireHoldBackend.tick(server)
         GhostSyncBackend.tick(server)
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
         ticks++
