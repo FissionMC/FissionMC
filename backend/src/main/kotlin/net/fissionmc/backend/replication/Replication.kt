@@ -70,8 +70,12 @@ object Replication {
     // ---- local changes (called by mixins on the server thread) ----
 
     @JvmStatic fun onSetBlock(level: Level, pos: BlockPos, state: BlockState) {
-        if (!enabled || applying.get()) return
+        if (!enabled) return
         val dim = level.dimension().identifier().toString()
+        if (applying.get()) {
+            val target = applyingPos
+            if (target == null || pos == target || !RegionsBackend.ownsBlock(dim, pos.x, pos.z)) return
+        }
         val x = pos.x; val y = pos.y; val z = pos.z
         // "ghost" = a write into a chunk another backend owns (a player of this backend builds or breaks across the border): the owner may refuse it (see [refusal])
         val cause = if (RegionsBackend.enabled && !RegionsBackend.ownsBlock(dim, x, z)) "ghost" else "block"
@@ -84,11 +88,12 @@ object Replication {
 
     /** True while a replicated change is being applied on this thread (hooks use it to tell echoes from real gameplay). */
     @JvmStatic fun isApplying(): Boolean = applying.get()
+    private var applyingPos: BlockPos? = null
 
     /** Shared by remote events and ghost fixes: writes [state] without neighbour updates and makes sure watching clients get the block even when the chunk is not block ticking. */
     @JvmStatic fun applyRemote(level: ServerLevel, pos: BlockPos, state: BlockState): BlockState {
-        applying.set(true)
-        try { level.setBlock(pos, state, APPLY_FLAGS) } finally { applying.set(false) }
+        applying.set(true); applyingPos = pos.immutable()
+        try { level.setBlock(pos, state, APPLY_FLAGS) } finally { applying.set(false); applyingPos = null }
         // Level.setBlock only calls sendBlockUpdated for chunks that are BLOCK_TICKING; a ghost chunk at the edge of the simulation distance is merely FULL and its viewers would keep the old block
         level.chunkSource.blockChanged(pos)
         return level.getBlockState(pos)
