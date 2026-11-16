@@ -19,6 +19,8 @@ object EntityGhostBackend {
     private val last = HashMap<String, HashMap<UUID, Last>>()
     private var ticks = 0
 
+    private fun itemBit(e: Entity): Int = if (e is net.minecraft.world.entity.item.ItemEntity) 8 else 0
+
     private fun nearForeign(dim: String, x: Double, z: Double): Boolean {
         val me = RegionsBackend.youId()
         for (dx in intArrayOf(-RANGE, 0, RANGE)) for (dz in intArrayOf(-RANGE, 0, RANGE)) {
@@ -55,7 +57,7 @@ object EntityGhostBackend {
                 val add = EntityGhostPackets.add(level, e) ?: continue
                 val data = EntityGhostPackets.data(server, e); val equip = EntityGhostPackets.equipment(server, e)
                 known[e.uuid] = Last(e.x, e.y, e.z, e.yRot, e.xRot, e.yHeadRot, e.onGround(), data, equip)
-                ups += EntityGhost(e.uuid.mostSignificantBits, e.uuid.leastSignificantBits, e.x, e.y, e.z, e.yRot, e.xRot, e.yHeadRot, e.onGround(), 7, add, data, equip)
+                ups += EntityGhost(e.uuid.mostSignificantBits, e.uuid.leastSignificantBits, e.x, e.y, e.z, e.yRot, e.xRot, e.yHeadRot, e.onGround(), 7 or itemBit(e), add, data, equip)
                 continue
             }
             val dx = e.x - l.x; val dy = e.y - l.y; val dz = e.z - l.z
@@ -68,7 +70,7 @@ object EntityGhostBackend {
             }
             if (!moved && flags == 0) continue
             l.x = e.x; l.y = e.y; l.z = e.z; l.yaw = e.yRot; l.pitch = e.xRot; l.head = e.yHeadRot; l.ground = e.onGround()
-            ups += EntityGhost(e.uuid.mostSignificantBits, e.uuid.leastSignificantBits, e.x, e.y, e.z, e.yRot, e.xRot, e.yHeadRot, e.onGround(), flags, ByteArray(0), data, equip)
+            ups += EntityGhost(e.uuid.mostSignificantBits, e.uuid.leastSignificantBits, e.x, e.y, e.z, e.yRot, e.xRot, e.yHeadRot, e.onGround(), flags or itemBit(e), ByteArray(0), data, equip)
         }
         val gone = ArrayList<Long>()
         val it = known.entries.iterator()

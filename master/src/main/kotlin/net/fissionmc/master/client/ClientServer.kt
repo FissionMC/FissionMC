@@ -71,6 +71,7 @@ class ClientServer(
     init {
         if (settings.ghosts.enabled) {
             tabs.onShown = ghosts::tabShown
+            ghosts.pickupAsk = { node, entity, player, playerNode -> relay?.sendToNode(node, net.fissionmc.protocol.ItemPickup(node, entity.mostSignificantBits, entity.leastSignificantBits, player.mostSignificantBits, player.leastSignificantBits, playerNode)) }
             relay?.ghostHandler = { m -> when (m) { is net.fissionmc.protocol.GhostPose -> ghosts.pose(m); is net.fissionmc.protocol.GhostMeta -> ghosts.meta(m); is net.fissionmc.protocol.GhostSwing -> ghosts.swing(m); is net.fissionmc.protocol.EntityGhostBatch -> ghosts.entityBatch(m); else -> {} } }
         }
     }

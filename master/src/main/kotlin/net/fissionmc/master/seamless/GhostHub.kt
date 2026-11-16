@@ -114,8 +114,11 @@ class GhostHub(
     }
     private class SpawnedEntity(val clientId: Int, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean)
     private class SrcEntity(val node: String, var dim: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean,
-                            var add: ByteArray, var data: ByteArray?, var equip: ByteArray?)
+                            var add: ByteArray, var data: ByteArray?, var equip: ByteArray?, var item: Boolean = false)
     private val entities = HashMap<UUID, SrcEntity>()
+    /** Asks the owner backend [node] to hand the item entity to the viewer player (called with the hub's lock held: enqueue, never call back). */
+    @Volatile var pickupAsk: ((node: String, entity: UUID, player: UUID, playerNode: String) -> Unit)? = null
+    private val pickupAsked = HashMap<Pair<UUID, UUID>, Long>()
     private val nodeSeen = HashMap<String, Long>()
     val entityGhostCount: Int get() = synchronized(lock) { entities.size }
     fun entityGhostsOf(viewer: UUID): Map<UUID, Int> = synchronized(lock) { members[viewer]?.entGhosts?.mapValues { it.value.clientId } ?: emptyMap() }
@@ -197,6 +200,7 @@ class GhostHub(
                     if (g.flags and 1 == 0) continue
                     e = SrcEntity(b.origin, b.dimension, g.x, g.y, g.z, g.yaw, g.pitch, g.headYaw, g.onGround, g.add, null, null); entities[u] = e
                 }
+                if (g.flags and 8 != 0) e.item = true
                 e.dim = b.dimension; e.x = g.x; e.y = g.y; e.z = g.z; e.yaw = g.yaw; e.pitch = g.pitch; e.head = g.headYaw; e.onGround = g.onGround
                 if (g.flags and 1 != 0) e.add = g.add
                 if (g.flags and 2 != 0) e.data = g.data
@@ -216,6 +220,17 @@ class GhostHub(
         }
     }
 
+    /** The vanilla pickup box: the player's box grown by 1 block sideways and 0.5 vertically touches the item's box. */
+    private fun maybePickup(v: Member, uuid: UUID, e: SrcEntity, vp: GhostPose, viewerNode: String) {
+        val ask = pickupAsk ?: return
+        if (Math.abs(e.x - vp.x) > 1.43 || Math.abs(e.z - vp.z) > 1.43 || e.y + 0.25 < vp.y - 0.5 || e.y > vp.y + 2.3) return
+        val key = v.viewer.ghostUuid to uuid; val now = System.currentTimeMillis()
+        if (now - (pickupAsked[key] ?: 0L) < 500) return
+        pickupAsked[key] = now
+        if (pickupAsked.size > 4096) pickupAsked.entries.removeIf { now - it.value > 5000 }
+        ask(e.node, uuid, v.viewer.ghostUuid, viewerNode)
+    }
+
     private fun dropEntity(v: Member, uuid: UUID) {
         val sp = v.entGhosts.remove(uuid) ?: return
         if (v.viewer.ghostNode != null) v.viewer.ghostSend(GhostFrames.remove(sp.clientId))
@@ -229,6 +244,7 @@ class GhostHub(
         val dx = vp.x - e.x; val dz = vp.z - e.z
         val limit = if (existing != null) range + HYSTERESIS else range
         if (dx * dx + dz * dz > limit * limit) { if (existing != null) dropEntity(v, uuid); return }
+        if (existing != null && e.item) maybePickup(v, uuid, e, vp, vn)
         if (existing == null) {
             val id = v.nextEntityId++
             v.entGhosts[uuid] = SpawnedEntity(id, e.x, e.y, e.z, e.yaw, e.pitch, e.head, e.onGround); v.viewer.ghostAdded(id)

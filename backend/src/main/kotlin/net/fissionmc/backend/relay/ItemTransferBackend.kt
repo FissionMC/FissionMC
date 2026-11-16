@@ -32,6 +32,15 @@ object ItemTransferBackend {
 
     @JvmStatic fun ghostContainerAt(level: ServerLevel, pos: BlockPos): Boolean = RegionsBackend.enabled && !RegionsBackend.ownsBlockAt(level, pos) && level.getBlockEntity(pos) != null
 
+    fun encodeStack(level: ServerLevel, stack: ItemStack): ByteArray? {
+        val tag = ItemStack.OPTIONAL_CODEC.encodeStart(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), stack).result().orElse(null) as? CompoundTag ?: return null
+        return encode(tag).takeIf { it.size <= MAX_ITEM_BLOB }
+    }
+
+    fun decodeStack(level: ServerLevel, bytes: ByteArray): ItemStack = try {
+        ItemStack.OPTIONAL_CODEC.parse(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), decode(bytes)).result().orElse(ItemStack.EMPTY)
+    } catch (t: Throwable) { ItemStack.EMPTY }
+
     @JvmStatic fun send(level: ServerLevel, pos: BlockPos, stack: ItemStack) {
         val owner = RegionsBackend.chunkOwner(level.dimension().identifier().toString(), pos.x shr 4, pos.z shr 4)
         val link = NodeBootstrap.link?.takeIf { it.isOpen }

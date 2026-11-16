@@ -15,6 +15,12 @@ class EntityGhost(
 /** Backend to master (108): entities near a border that players of other backends may see, and the uuid pairs (high, low) of those that are gone. */
 class EntityGhostBatch(val origin: String, val dimension: String, val upserts: List<EntityGhost>, val removed: List<Long>) : NodeMessage
 
+/** Master to owner (109): the player is touching this item entity of yours (its backend is [playerBackend]); take it. Answered by [ItemGive] when the item was still there. */
+class ItemPickup(val toBackend: String, val entityHigh: Long, val entityLow: Long, val playerHigh: Long, val playerLow: Long, val playerBackend: String) : NodeMessage
+
+/** Owner to master to the player's backend (110): the item stack the player picked up across the border. */
+class ItemGive(val toBackend: String, val playerHigh: Long, val playerLow: Long, val stack: ByteArray) : NodeMessage
+
 fun MessageRegistry.registerEntityGhostMessages(): MessageRegistry = this
     .register<EntityGhostBatch>(108, { m, b ->
         b.writeString(m.origin, 64).writeString(m.dimension, 128).writeVarInt(m.upserts.size)
@@ -37,3 +43,7 @@ fun MessageRegistry.registerEntityGhostMessages(): MessageRegistry = this
         val rn = b.readVarInt(); require(rn in 0..MAX_ENTITY_GHOSTS * 2) { "too many removed" }
         EntityGhostBatch(o, d, ups, List(rn) { b.readLong() })
     })
+    .register<ItemPickup>(109, { m, b -> b.writeString(m.toBackend, 64).writeLong(m.entityHigh).writeLong(m.entityLow).writeLong(m.playerHigh).writeLong(m.playerLow).writeString(m.playerBackend, 64) },
+        { b -> ItemPickup(b.readString(64), b.readLong(), b.readLong(), b.readLong(), b.readLong(), b.readString(64)) })
+    .register<ItemGive>(110, { m, b -> b.writeString(m.toBackend, 64).writeLong(m.playerHigh).writeLong(m.playerLow).writeByteArray(m.stack, MAX_ENTITY_GHOST_BLOB) },
+        { b -> ItemGive(b.readString(64), b.readLong(), b.readLong(), b.readByteArray(MAX_ENTITY_GHOST_BLOB)) })

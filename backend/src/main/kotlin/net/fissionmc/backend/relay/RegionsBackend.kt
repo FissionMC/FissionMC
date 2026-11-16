@@ -32,6 +32,8 @@ object RegionsBackend {
             is EntityHandover -> server?.execute { spawnHandover(server, m) }
             is BorderForward -> BorderForwardBackend.onMessage(m)
             is ItemTransfer -> ItemTransferBackend.onMessage(m, server)
+            is ItemPickup -> ItemPickupBackend.onPickup(m, server)
+            is ItemGive -> ItemPickupBackend.onGive(m, server)
             is BlockEntitySignal -> SignalSyncBackend.onMessage(m, server)
             is GhostDemand, is GhostSync, is GhostFix -> GhostSyncBackend.onMessage(m)
         }

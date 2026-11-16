@@ -151,6 +151,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
     }
 
     /** Sends a control message (not a packet frame) to the backend a binding talks to. */
+    fun sendToNode(nodeId: String, msg: NodeMessage) { registry[nodeId]?.link?.takeIf { it.isOpen }?.send(msg) }
     fun sendTo(id: Long, msg: NodeMessage) { bindings[id]?.node?.link?.takeIf { it.isOpen }?.send(msg) }
 
     /** Sends [msg] to every live backend except [nodeId]. */
@@ -184,6 +185,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is BorderForward -> { net.fissionmc.net.trace.Trace.emit("border.forward") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("ticks", msg.ticks.size); int("neighbors", msg.neighbors.size); bool("delivered", registry[msg.toBackend]?.link?.isOpen == true) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }   // ghost-edge ticks and neighbour updates: to the owner of the chunk, as is
             is ItemTransfer -> { net.fissionmc.net.trace.Trace.emit("item.transfer") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("x", msg.x); int("z", msg.z); int("stacks", msg.stacks.size) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }
             is BlockEntitySignal -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)
+            is ItemGive -> registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg)
             is GhostDemand -> traceGhost("ghost.demand", msg.origin, msg.toBackend, msg.dimension, msg.chunks.size).let { registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }   // viewer -> owner: keep these chunks ticking
             is GhostSync -> { net.fissionmc.net.trace.Trace.emit("ghost.sync") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("cx", msg.cx); int("cz", msg.cz); int("sections", msg.hashes.size) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }     // viewer -> owner: hashes of the ghost copy
             is GhostFix -> { net.fissionmc.net.trace.Trace.emit("ghost.fix") { str("from", msg.origin); str("to", msg.toBackend); str("dim", msg.dimension); int("cx", msg.cx); int("cz", msg.cz); ints("sections", msg.sections.map { it.index }.toIntArray()) }; registry[msg.toBackend]?.link?.takeIf { it.isOpen }?.send(msg) }      // owner -> viewer: the sections that differ
