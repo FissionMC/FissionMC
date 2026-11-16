@@ -215,4 +215,22 @@ class GhostHubTest {
         hub.entityBatch(batch("b", listOf(eg(near, 1.0, 1.0, 8))))
         assertEquals(1, asked.size, "asked again within 500 ms")
     }
+
+    @Test fun `a transfer shows the entities of the other backend in one go and keeps them until the real ones arrive`() {
+        val hub = hub(); val a = V("Alice", "a"); setup(hub, a); hub.pose(pose(a, 0.0, 0.0))
+        val aMob = UUID(5, 5); val bMob = UUID(6, 6)
+        hub.entityBatch(batch("a", listOf(eg(aMob, 3.0, 3.0, 7, addPayload(1, aMob)))))   // not shown: same backend as the viewer
+        hub.entityBatch(batch("b", listOf(eg(bMob, 4.0, 4.0, 7, addPayload(2, bMob)))))
+        assertEquals(listOf(spawnId), a.ids())
+        // the viewer moves to backend b: b's mob must stay (waiting for the real one), a's mob is shown at once
+        a.ghostNode = "b"; hub.reset(a)
+        val frames = hub.entityFramesFor(a, "b")
+        assertEquals(1, frames.count { Limbo.idOf(it) == spawnId }, "only the entity of the other backend is re-shown")
+        val aGhost = WrapperPlayServerSpawnEntity(ev(frames.first { Limbo.idOf(it) == spawnId }))
+        assertEquals(GhostHub.entityGhostUuidOf(aMob), aGhost.uuid.get())
+        hub.entityBatch(batch("b", listOf(eg(bMob, 4.5, 4.0, 0))))
+        assertNull(hub.realArrived(a, bMob), "b's mob was not re-shown, nothing to remove")
+        assertNotNull(hub.realArrived(a, aMob), "the real entity arrived: its ghost is removed")
+        assertNull(hub.realArrived(a, aMob))
+    }
 }

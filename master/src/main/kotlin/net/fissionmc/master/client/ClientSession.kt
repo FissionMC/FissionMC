@@ -362,6 +362,18 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         deliverRelay(rawFrame)
     } }
 
+    private val pAddEntity by lazy { net.fissionmc.master.seamless.PlayPacketIds.c("AddEntity") }
+
+    private fun realEntityArrived(frame: ByteArray) {
+        val b = io.netty.buffer.Unpooled.wrappedBuffer(frame)
+        VarInts.tryRead(b); VarInts.tryRead(b)
+        if (b.readableBytes() < 16) return
+        val uuid = java.util.UUID(b.readLong(), b.readLong())
+        val ghost = server.ghosts.realArrived(this, uuid) ?: return
+        val remove = net.fissionmc.master.seamless.GhostFrames.remove(ghost)
+        cleanup.observe(remove); clientView.observe(remove); writeRelay(remove); idMap.onRemoved(ghost)
+    }
+
     private fun deliverRelay(rawFrame: ByteArray) {
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) return
         // A frame whose id does not exist in the phase the client is in would make the vanilla client drop the connection
@@ -401,7 +413,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             if (id == PlayIds.commands) { val patched = ChatCommandTree.patch(frame, isAdmin, server.log); if (patched != null) { writeRelay(patched); return } }
         }
         when (mode) {
-            Mode.RELAY -> writeRelay(frame)
+            Mode.RELAY -> { writeRelay(frame); if (state == ConnectionState.PLAY && id == pAddEntity) realEntityArrived(frame) }
             else -> if (pendingFromBackend.size < 20_000) pendingFromBackend.add(frame) else channel.close()
         }
         // classic reconfiguration (fallback path): the backend's Login is the first PLAY frame; the hubs add their lines behind it
@@ -642,6 +654,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val bundled = removal.size + other.size < 3500
         if (bundled) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(net.fissionmc.master.seamless.TransplantBuilder.bundleDelimiter))
         removal.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); clientView.observe(it) }
+        server.ghosts.entityFramesFor(this, sw.nodeId).forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); cleanup.observe(it); clientView.observe(it) }
         net.fissionmc.master.seamless.TransplantBuilder.fromLogin(login, idMap.clientSelf).forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
         other.forEach { deliverRelay(it) }
         if (bundled) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(net.fissionmc.master.seamless.TransplantBuilder.bundleDelimiter))

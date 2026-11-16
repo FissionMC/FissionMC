@@ -100,7 +100,7 @@ class GhostHub(
         const val MIN_SPAWN_DISTANCE = 1.5
         fun ghostUuidOf(player: UUID): UUID = UUID.nameUUIDFromBytes("fission-ghost:$player".toByteArray())
         fun entityGhostUuidOf(entity: UUID): UUID = UUID.nameUUIDFromBytes("fission-ghost-entity:$entity".toByteArray())
-        const val ENTITY_BASE = 1_600_000_000; const val ENTITY_EXPIRY_MS = 10_000L
+        const val ENTITY_BASE = 1_600_000_000; const val ENTITY_EXPIRY_MS = 10_000L; const val REAL_WAIT_MS = 3_000L
     }
 
     private class Spawned(val clientId: Int, val name: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean)
@@ -112,7 +112,7 @@ class GhostHub(
         val entGhosts = HashMap<UUID, SpawnedEntity>()   // entities of other backends this member sees
         var nextEntityId = ENTITY_BASE
     }
-    private class SpawnedEntity(val clientId: Int, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean)
+    private class SpawnedEntity(val clientId: Int, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean, var sameNodeSince: Long = 0L)
     private class SrcEntity(val node: String, var dim: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean,
                             var add: ByteArray, var data: ByteArray?, var equip: ByteArray?, var item: Boolean = false)
     private val entities = HashMap<UUID, SrcEntity>()
@@ -231,6 +231,31 @@ class GhostHub(
         ask(e.node, uuid, v.viewer.ghostUuid, viewerNode)
     }
 
+    /**
+     * The frames that show the entities of the other backends to [viewer] as if it already played on [node]; used inside the bundle of a transfer so nothing disappears in between.
+     * The ghosts are registered; the caller writes the frames.
+     */
+    fun entityFramesFor(viewer: GhostViewer, node: String): List<ByteArray> = synchronized(lock) {
+        val m = members[viewer.ghostUuid] ?: return emptyList()
+        val vp = m.pose ?: return emptyList()
+        m.entGhosts.clear()
+        val out = ArrayList<ByteArray>()
+        for ((u, e) in entities) {
+            if (e.node == node || e.dim != vp.dimension) continue
+            val dx = vp.x - e.x; val dz = vp.z - e.z
+            if (dx * dx + dz * dz > range * range) continue
+            val id = m.nextEntityId++
+            m.entGhosts[u] = SpawnedEntity(id, e.x, e.y, e.z, e.yaw, e.pitch, e.head, e.onGround); viewer.ghostAdded(id)
+            out += GhostFrames.entityAdd(e.add, id, entityGhostUuidOf(u))
+            e.data?.takeIf { it.isNotEmpty() }?.let { out += GhostFrames.entityData(id, it) }
+            e.equip?.takeIf { it.isNotEmpty() }?.let { out += GhostFrames.equipment(id, it) }
+        }
+        out
+    }
+
+    /** The real entity with [uuid] was just sent to [viewer]: the client id of its ghost, which the caller removes, or null. */
+    fun realArrived(viewer: GhostViewer, uuid: UUID): Int? = synchronized(lock) { members[viewer.ghostUuid]?.entGhosts?.remove(uuid)?.clientId }
+
     private fun dropEntity(v: Member, uuid: UUID) {
         val sp = v.entGhosts.remove(uuid) ?: return
         if (v.viewer.ghostNode != null) v.viewer.ghostSend(GhostFrames.remove(sp.clientId))
@@ -240,7 +265,17 @@ class GhostHub(
     private fun evaluateEntity(v: Member, uuid: UUID, e: SrcEntity) {
         val vn = v.viewer.ghostNode; val vp = v.pose
         val existing = v.entGhosts[uuid]
-        if (vn == null || vn == e.node || vp == null || vp.dimension != e.dim) { if (existing != null) dropEntity(v, uuid); return }
+        if (vn == null || vp == null || vp.dimension != e.dim) { if (existing != null) dropEntity(v, uuid); return }
+        if (vn == e.node) {
+            // the viewer just arrived on the entity's backend: keep the ghost until the real entity shows up ([realArrived]) so it never vanishes in between
+            if (existing != null) {
+                val now = System.currentTimeMillis()
+                if (existing.sameNodeSince == 0L) existing.sameNodeSince = now
+                if (now - existing.sameNodeSince > REAL_WAIT_MS) dropEntity(v, uuid)
+            }
+            return
+        }
+        existing?.sameNodeSince = 0L
         val dx = vp.x - e.x; val dz = vp.z - e.z
         val limit = if (existing != null) range + HYSTERESIS else range
         if (dx * dx + dz * dz > limit * limit) { if (existing != null) dropEntity(v, uuid); return }
