@@ -117,6 +117,9 @@ object RegionsBackend {
     // ---- reports and handovers (server thread, from tick)
     private val lastPos = ConcurrentHashMap<UUID, IntArray>()   // dimension hash, x, z, chunk x, chunk z of the last report
     private val handingOver = ConcurrentHashMap<UUID, Long>()
+
+    /** The owner confirmed the hand-over of these entities (uuid high/low pairs) and this backend removes its copies: they may be handed over again at once (an entity that wanders back must not freeze for the 15 s guard). */
+    @JvmStatic fun handoverDone(uuids: List<Long>) { var i = 0; while (i + 1 < uuids.size) { handingOver.remove(UUID(uuids[i], uuids[i + 1])); i += 2 } }
     private var ticks = 0
 
     fun tick(server: MinecraftServer) {
@@ -157,8 +160,7 @@ object RegionsBackend {
                 if (e is Projectile && e.getOwner() is ServerPlayer) continue   // a player's own arrow / pearl / trident is resolved by the owner player's backend (pearls teleport the thrower)
                 if (e.passengers.isNotEmpty() && carriesPlayer(e)) continue   // a player's vehicle follows the player (RootVehicle / mount hint), it is never handed over under him
                 if (e is Leashable && e.isLeashed) continue
-                if (e.type.category == net.minecraft.world.entity.MobCategory.MISC && e !is net.minecraft.world.entity.item.ItemEntity && e !is net.minecraft.world.entity.ExperienceOrb && e !is VehicleEntity
-                    && e !is net.minecraft.world.entity.item.PrimedTnt && e !is net.minecraft.world.entity.item.FallingBlockEntity && e !is Projectile) continue   // empty boats and minecarts drift over borders; lit TNT and falling blocks fly over them
+                if (e is net.minecraft.world.entity.decoration.HangingEntity) continue   // paintings, item frames and leash knots are tied to their block, which has one owner
                 val target = ownerOf(dim, e.blockX, e.blockZ) ?: continue
                 if (target == you) continue
                 val b = TravelBackend.blobFor(EntityBlobKind.HANDOVER, e) ?: continue
@@ -174,6 +176,7 @@ object RegionsBackend {
 
     private fun spawnHandover(server: MinecraftServer, m: EntityHandover) {
         val level = server.allLevels.firstOrNull { it.dimension().identifier().toString() == m.dimension } ?: return
+        for (b in m.blobs) handingOver.remove(UUID(b.uuidHigh, b.uuidLow))   // it came to its owner: when it leaves again it is a new hand-over
         val spawned = TravelBackend.spawnAt(level, m.blobs); receivedCount.addAndGet((spawned.size / 2).toLong())
         net.fissionmc.net.trace.Trace.emit("entity.handover.in") { str("from", m.origin); str("dim", m.dimension); int("offered", m.blobs.size); int("spawned", spawned.size / 2) }
         NodeBootstrap.link?.takeIf { it.isOpen }?.send(EntityHandoverAck(m.origin, spawned))

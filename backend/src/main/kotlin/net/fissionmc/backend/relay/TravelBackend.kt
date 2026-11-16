@@ -47,7 +47,7 @@ object TravelBackend {
     fun onMessage(m: NodeMessage, server: MinecraftServer?) {
         when (m) {
             is EntityTransfer -> incoming[UUID(m.playerHigh, m.playerLow)] = Incoming(m.blobs)
-            is EntityRemove -> server?.execute { remove(server, m.uuids) }
+            is EntityRemove -> { RegionsBackend.handoverDone(m.uuids); server?.execute { remove(server, m.uuids) } }
             is PlayerFile -> if (m.present && server != null) writeFile(server, UUID(m.uuidHigh, m.uuidLow), m.kind, m.bytes)
         }
     }
