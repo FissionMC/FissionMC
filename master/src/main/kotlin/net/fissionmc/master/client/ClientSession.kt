@@ -293,13 +293,33 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             if (now - lastRead > limit) { server.tlog("[client ${channel.remoteAddress()}] ${playerName.ifEmpty { "connection" }} sent nothing for ${server.config.timeoutSeconds} s: closing"); if (prof != null) disconnect("Timed out") else channel.close() }
             else if (prof == null && now - connectedAt > limit) channel.close()   // never logged in
         }, 5, 5, TimeUnit.SECONDS)
+        wallTask = channel.eventLoop().scheduleWithFixedDelay({ try { borderWall() } catch (t: Throwable) { server.tlog("[client $playerName] border particles: $t") } }, 1, 50, TimeUnit.MILLISECONDS)
         ctx.fireChannelActive()
     }
     private var lastRead = 0L
+    private var wallTask: ScheduledFuture<*>? = null
+    private var wallTicks = 0
+
+    private fun borderWall() {
+        val cfg = server.settings.borderParticles
+        if (!cfg.enabled) return
+        if (++wallTicks % cfg.intervalTicks != 0) return
+        if (liveNode == null || switching != null || switchPending || patchPositions > 0 || !channel.isActive || !channel.isWritable) return
+        val regions = server.relay?.regions ?: return
+        if (!regions.enabled) return
+        if (cfg.respectClientSetting && clientInfoPayload?.let { net.fissionmc.master.region.BorderParticles.particleStatus(it) == 2 } == true) return
+        val edges = regions.edges(lastDimension)
+        if (edges.isEmpty()) return
+        val p = posTracker.latest(0.0) ?: return
+        val points = net.fissionmc.master.region.BorderParticles.sample(edges, p.x, p.y, p.z, cfg)
+        if (points.isEmpty()) return
+        for (pt in points) writeRelay(net.fissionmc.master.region.BorderParticles.frame(pt, cfg))
+        Trace.emit("border.particles") { player(playerName, uuid); int("points", points.size); str("dim", lastDimension) }
+    }
     private var idleTask: ScheduledFuture<*>? = null
 
     override fun channelInactive(ctx: ChannelHandlerContext) {
-        keepAlive?.cancel(false); idleTask?.cancel(false)
+        keepAlive?.cancel(false); idleTask?.cancel(false); wallTask?.cancel(false)
         pendingCheck?.timeout?.cancel(false); pendingCheck = null
         if (registered) { liveNode = null; server.ghosts.unregister(this); server.tabs.unregister(this) }
         // where the player was: its next login starts on the backend that owns that spot (regions) instead of on any backend followed by a second move

@@ -128,6 +128,18 @@ playerdata:
 #       - { area: [0, min, max, max], owner: backend-b }
 #     the_nether:
 #       - { owner: backend-a }                              # no area = everything
+#   border-particles:          # a particle wall on the borders, sent by the master to players near one (off by default)
+#     enabled: false
+#     distance: 12             # blocks: shown within this distance of a border
+#     particle: end_rod        # end_rod | glow | electric_spark | dust
+#     color: "#55ffff"         # dust only
+#     scale: 1.0               # dust only
+#     spacing: 2.0             # blocks between particles
+#     height-below: 3
+#     height-above: 5
+#     interval-ticks: 20       # how often the wall is redrawn
+#     max-per-refresh: 160
+#     respect-client-setting: true   # nothing for clients whose particle setting is minimal
 
 # Debug logging: chatty diagnostics (per-chunk leases, every replicated block, periodic stats). Same as -Dfission.debug / FISSION_DEBUG=1, which force it on. Live: a changed value applies at once.
 # `debug` may also be a section with `enabled:` plus the tools below.

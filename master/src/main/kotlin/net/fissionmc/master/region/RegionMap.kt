@@ -55,6 +55,27 @@ class RegionMap(rulesByDimension: Map<String, List<RegionRule>>, private val def
         return best
     }
 
+    /** A border line: vertical lines have a fixed x and run along z, horizontal ones a fixed z and run along x; from and to may be Int.MIN_VALUE or Int.MAX_VALUE. */
+    data class Edge(val vertical: Boolean, val line: Int, val from: Int, val to: Int)
+
+    private val edgeCache = java.util.concurrent.ConcurrentHashMap<String, List<Edge>>()
+
+    /** The border segments of [dimension] where the owner differs across the line; empty when regions are off or the dimension has no rules of its own. */
+    fun edges(dimension: String): List<Edge> = edgeCache.getOrPut(dimension) {
+        val rs = rules[dimension] ?: return@getOrPut emptyList()
+        val xs = (rs.flatMap { listOf(it.x1, it.x2) }.filter { it != Int.MIN_VALUE && it != Int.MAX_VALUE } + Int.MIN_VALUE + Int.MAX_VALUE).distinct().sorted()
+        val zs = (rs.flatMap { listOf(it.z1, it.z2) }.filter { it != Int.MIN_VALUE && it != Int.MAX_VALUE } + Int.MIN_VALUE + Int.MAX_VALUE).distinct().sorted()
+        val out = ArrayList<Edge>()
+        fun merge(vertical: Boolean, line: Int, cells: List<Pair<Int, Int>>) {
+            var cur: Edge? = null
+            for ((a, b) in cells) { val c = cur; if (c != null && c.to == a) cur = c.copy(to = b) else { if (c != null) out += c; cur = Edge(vertical, line, a, b) } }
+            cur?.let { out += it }
+        }
+        for (x in xs.drop(1).dropLast(1)) merge(true, x, (0 until zs.size - 1).filter { owner(dimension, x - 1, zs[it]) != owner(dimension, x, zs[it]) }.map { zs[it] to zs[it + 1] })
+        for (z in zs.drop(1).dropLast(1)) merge(false, z, (0 until xs.size - 1).filter { owner(dimension, xs[it], z - 1) != owner(dimension, xs[it], z) }.map { xs[it] to xs[it + 1] })
+        out
+    }
+
     /** The rules for the backends; `regions.default` travels as a rule for the dimension "*" (every dimension without rules of its own). */
     fun toRules(): List<RegionRule> = rules.values.flatten() + listOfNotNull(defaultOwner?.let { RegionRule("*", Int.MIN_VALUE, Int.MIN_VALUE, Int.MAX_VALUE, Int.MAX_VALUE, it) })
     fun describe(): List<String> = buildList {
