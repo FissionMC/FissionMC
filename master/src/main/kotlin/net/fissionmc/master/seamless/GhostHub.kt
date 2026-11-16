@@ -251,6 +251,7 @@ class GhostHub(
             v.viewer.ghostSend(GhostFrames.entityAdd(e.add, id, entityGhostUuidOf(uuid))); spawnedFrames++
             e.data?.takeIf { it.isNotEmpty() }?.let { v.viewer.ghostSend(GhostFrames.entityData(id, it)) }
             e.equip?.takeIf { it.isNotEmpty() }?.let { v.viewer.ghostSend(GhostFrames.equipment(id, it)) }
+            if (e.item) maybePickup(v, uuid, e, vp, vn)
             return
         }
         if (existing.x != e.x || existing.y != e.y || existing.z != e.z || existing.yaw != e.yaw || existing.pitch != e.pitch || existing.onGround != e.onGround) {

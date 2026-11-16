@@ -204,4 +204,15 @@ class GhostHubTest {
         hub.entityBatch(batch("b", listOf(eg(UUID(2, 2), 20.0, 5.0, 0))))
         assertEquals(listOf(spawnId), a.ids(), "an entity that comes into range is spawned")
     }
+
+    @Test fun `an item ghost within the pickup box asks its owner once, a far one does not`() {
+        val hub = hub(); val a = V("Alice", "a"); setup(hub, a); hub.pose(pose(a, 0.0, 0.0))
+        val asked = ArrayList<Triple<String, UUID, UUID>>()
+        hub.pickupAsk = { node, entity, player, _ -> asked += Triple(node, entity, player) }
+        val near = UUID(8, 8); val far = UUID(9, 9)
+        hub.entityBatch(batch("b", listOf(eg(near, 1.0, 1.0, 7 or 8, addPayload(1, near)), eg(far, 6.0, 0.0, 7 or 8, addPayload(2, far)))))
+        assertEquals(listOf(Triple("b", near, a.ghostUuid)), asked)
+        hub.entityBatch(batch("b", listOf(eg(near, 1.0, 1.0, 8))))
+        assertEquals(1, asked.size, "asked again within 500 ms")
+    }
 }
