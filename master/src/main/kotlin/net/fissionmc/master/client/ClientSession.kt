@@ -916,7 +916,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     private fun finishAuth(p: PlayerProfile) {
         prof = p; join = JoinTiming()
-        if (server.onlinePlayers >= server.config.maxPlayers && !server.settings.isAdmin(p.uuid)) { disconnect("The server is full!"); return }   // client.max-players (admins always get in)
+        if (!server.config.hasRoom(server.onlinePlayers) && !server.settings.isAdmin(p.uuid)) { disconnect("The server is full!"); return }   // client.max-players (admins always get in)
         val older = server.register(this, p)
         registered = true
         // the account is already online: the older connection is ended first (its backend saves the player), then this login goes on, like vanilla's "logged in from another location"
@@ -973,7 +973,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         clientLoaded = false; graceOver = false   // a re-entered limbo (backend lost) loads its level again
         user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
         currentNodeId = null; backendKeepAlives.clear()
-        val frames = Limbo.playFrames(server.config.maxPlayers, Limbo.config.overworldDimensionId)
+        val frames = Limbo.playFrames(server.config.shownMax(server.onlinePlayers), Limbo.config.overworldDimensionId)
         // coming back from a backend the client keeps its old LocalPlayer: Respawn right after the limbo's Login (see RespawnFrames)
         val withRespawn = if (before.isEmpty()) frames else listOf(frames[0], RespawnFrames.fromLogin(frames[0])) + frames.drop(1)
         Limbo.sendRaw(channel, before + withRespawn)

@@ -516,7 +516,7 @@ public abstract class PlayerListMixin {
 
     // Paper start - whitelist verify event / login event
     public LoginResult canBypassFullServerLogin(final NameAndId nameAndId, final LoginResult currentResult) {
-        final boolean shouldKick = this.players.size() >= this.getMaxPlayers() && !this.canBypassPlayerLimit(nameAndId);
+        final boolean shouldKick = net.fissionmc.backend.node.NodeBootstrap.INSTANCE.getLink() == null && this.players.size() >= this.getMaxPlayers() && !this.canBypassPlayerLimit(nameAndId);
         final io.papermc.paper.event.player.PlayerServerFullCheckEvent fullCheckEvent = new io.papermc.paper.event.player.PlayerServerFullCheckEvent(
             new com.destroystokyo.paper.profile.CraftPlayerProfile(nameAndId),
             io.papermc.paper.adventure.PaperAdventure.asAdventure(currentResult.message()),

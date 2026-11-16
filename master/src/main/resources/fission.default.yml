@@ -17,7 +17,10 @@ client:
   listen: "0.0.0.0:25565"
   online-mode: true            # false = offline UUIDs (development only)
   motd: "A FissionMC network"
-  max-players: 100
+  max-players: 100             # the real cap; "unlimited" (or -1) lets everybody join
+  fake-max-players: -1         # the cap shown in the server list (-1 = the real cap; unlimited shows one more than are online)
+  fake-online-players: -1      # the online count shown in the server list (-1 = the real count); 0 with fake-max-players: 1 shows 0/1
+  fake-online-minimum: 0       # the shown online count is at least this (ignored when fake-online-players is set)
   compression-threshold: 256
   enabled: true
   connection-throttle: 50      # new connections one address may open per 10 seconds (0 = no limit)

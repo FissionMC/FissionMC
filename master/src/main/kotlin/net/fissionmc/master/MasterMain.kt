@@ -114,7 +114,7 @@ private fun runMaster(args: Array<String>) {
     if (dbgRelayProbe) registry.addListener(RelayProbe(relay, dbgRecordLimbo?.let { Path.of(it) }))
     Runtime.getRuntime().addShutdownHook(Thread { chunks?.let { println(it.statsLine()) }; stats.close(); clients?.close(); master.close(); transport.close() })
     // config reload: a changed fission.yml is read again; listen addresses and the client motd/max players/online mode/compression apply live, everything else after a restart
-    val reloadable = setOf("client.listen", "client.motd", "client.max-players", "client.online-mode", "client.compression-threshold", "node.listen")
+    val reloadable = setOf("client.listen", "client.motd", "client.max-players", "client.fake-max-players", "client.fake-online-players", "client.fake-online-minimum", "client.online-mode", "client.compression-threshold", "node.listen")
     ConfigWatcher(configFile, { println("[master] $it") }) { oldText, newText ->
         val changed = ConfigWatcher.changedKeys(oldText, newText)
         println("[master] ${configFile.fileName} changed (${changed.joinToString().ifEmpty { "comments only" }}): reloading")

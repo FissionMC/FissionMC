@@ -166,7 +166,7 @@ class ClientServer(
 
     fun statusJson(): JsonObject = JsonObject().apply {
         add("version", JsonObject().apply { addProperty("name", MC_VERSION); addProperty("protocol", ClientSession.PROTOCOL) })
-        add("players", JsonObject().apply { addProperty("max", config.maxPlayers); addProperty("online", onlinePlayers) })
+        add("players", JsonObject().apply { addProperty("max", config.shownMax(onlinePlayers)); addProperty("online", config.shownOnline(onlinePlayers)) })
         add("description", JsonObject().apply { addProperty("text", config.motd) })
     }
 
