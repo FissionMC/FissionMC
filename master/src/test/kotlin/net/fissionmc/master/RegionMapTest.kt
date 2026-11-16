@@ -22,6 +22,15 @@ class RegionMapTest {
     """.trimIndent()
     private fun split() = RegionMap.parse(cfg(splitYaml))
 
+    @Test fun `borders snap to the chunk grid so chunks, blocks and entities agree`() {
+        val m = RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, 5, max], owner: a }", "  - { area: [5, min, max, max], owner: b }")))
+        assertEquals("b", m.owner(ow, 4, 0)); assertEquals("a", m.owner(ow, -1, 0)); assertEquals("b", m.owner(ow, 0, 0)); assertEquals("b", m.owner(ow, 5, 0))   // 5 rounds down to 0
+        val up = RegionMap.parse(cfg(dims("overworld:", "  - { area: [min, min, 9, max], owner: a }", "  - { area: [9, min, max, max], owner: b }")))
+        assertEquals("a", up.owner(ow, 15, 0)); assertEquals("b", up.owner(ow, 16, 0))
+        for (x in -40..40) assertEquals(m.owner(ow, x, 0), m.owner(ow, Math.floorDiv(x, 16) * 16 + 8, 0), "block $x owned like its chunk")
+        assertEquals(0, RegionMap.snapToChunk(7)); assertEquals(16, RegionMap.snapToChunk(8)); assertEquals(0, RegionMap.snapToChunk(-8)); assertEquals(-16, RegionMap.snapToChunk(-9)); assertEquals(Int.MAX_VALUE, RegionMap.snapToChunk(Int.MAX_VALUE))
+    }
+
     @Test fun `lookup follows the rectangles, the star rule and the default`() {
         val m = split()
         assertEquals("backend-a", m.owner(ow, -1, 500)); assertEquals("backend-b", m.owner(ow, 0, 500)); assertEquals("backend-b", m.owner(ow, 30_000_000, -30_000_000))

@@ -83,6 +83,13 @@ class RegionMap(rulesByDimension: Map<String, List<RegionRule>>, private val def
         val OFF = RegionMap(emptyMap())
         private val aliases = mapOf("overworld" to "minecraft:overworld", "the_nether" to "minecraft:the_nether", "nether" to "minecraft:the_nether", "the_end" to "minecraft:the_end", "end" to "minecraft:the_end")
 
+        /**
+         * Borders sit on chunk edges: ownership is decided per chunk (ticking, generation, ghosts), so a border inside a chunk would give blocks, entities and
+         * scheduled ticks different owners. A configured coordinate is rounded to the nearest multiple of 16 (min/max stay unlimited); every rectangle shares the same
+         * monotone rounding, so a tiling stays a tiling (a rectangle narrower than 16 blocks may collapse to nothing and is dropped).
+         */
+        fun snapToChunk(v: Int): Int = if (v == Int.MIN_VALUE || v == Int.MAX_VALUE) v else Math.floorDiv(v + 8, 16) * 16
+
         private fun bound(path: String, v: Any?): Int = when {
             v is Int -> v
             v is Long -> v.toInt()
@@ -109,9 +116,9 @@ class RegionMap(rulesByDimension: Map<String, List<RegionRule>>, private val def
                     if (area == null) RegionRule(dim, Int.MIN_VALUE, Int.MIN_VALUE, Int.MAX_VALUE, Int.MAX_VALUE, backend)
                     else {
                         if (area.size != 4) throw ConfigException("${rule.path}.area: expected four values [x1, z1, x2, z2], got ${area.size}")
-                        RegionRule(dim, bound("${rule.path}.area[0]", area[0]), bound("${rule.path}.area[1]", area[1]), bound("${rule.path}.area[2]", area[2]), bound("${rule.path}.area[3]", area[3]), backend)
+                        RegionRule(dim, snapToChunk(bound("${rule.path}.area[0]", area[0])), snapToChunk(bound("${rule.path}.area[1]", area[1])), snapToChunk(bound("${rule.path}.area[2]", area[2])), snapToChunk(bound("${rule.path}.area[3]", area[3])), backend)
                     }
-                }
+                }.filter { it.x1 < it.x2 && it.z1 < it.z2 }
             }
             val map = RegionMap(byDim, default)
             val problems = map.validate()
