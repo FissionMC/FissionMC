@@ -8,11 +8,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
-/**
- * FissionMC static regions: stands in for a container (chest, hopper, furnace ...) at a position in a chunk another backend owns. This backend's copy of that chunk is a ghost, so
- * items a hopper, dropper or dispenser pushes into the copy would stay there for good. Here the container is always empty and accepts anything: a stack written into it is sent to the
- * owner ({@link ItemTransferBackend}), which inserts it into the real container. Nothing is ever taken out of it (an owner side hopper must not pull from a stale ghost copy).
- */
+/** Stand-in for a container in a chunk another backend owns: always empty, forwards inserted items to the owner. */
 public final class GhostContainer implements Container {
     private final ServerLevel level;
     private final BlockPos pos;
@@ -38,7 +34,6 @@ public final class GhostContainer implements Container {
     @Override public boolean stillValid(Player player) { return false; }
     @Override public void clearContent() { }
 
-    // Paper/CraftBukkit members (see ContainerMixin): this is a pass-through, it has no inventory of its own
     @Override public List<ItemStack> getContents() { return List.of(); }
     @Override public void onOpen(org.bukkit.craftbukkit.entity.CraftHumanEntity player) { }
     @Override public void onClose(org.bukkit.craftbukkit.entity.CraftHumanEntity player) { }

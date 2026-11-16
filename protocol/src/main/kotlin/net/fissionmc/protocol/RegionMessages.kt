@@ -37,10 +37,7 @@ data class BorderNeighbor(val x: Int, val y: Int, val z: Int, val block: String)
  */
 class BorderForward(val origin: String, val toBackend: String, val dimension: String, val ticks: List<BorderTick>, val neighbors: List<BorderNeighbor>) : NodeMessage
 
-/**
- * Backend -> master -> owner (106): item stacks that a hopper, dropper or dispenser on the sender pushed into the container at ([x],[y],[z]), a position in a chunk the
- * sender does not own (its copy is a ghost). The owner inserts them into its real container (what does not fit is dropped there, nothing is destroyed). [stacks] = one NBT blob per stack.
- */
+/** Backend to owner via master (106): item stacks (one NBT blob each) pushed into the ghost container at x, y, z. */
 class ItemTransfer(val origin: String, val toBackend: String, val dimension: String, val x: Int, val y: Int, val z: Int, val stacks: List<ByteArray>) : NodeMessage
 
 const val MAX_ITEM_TRANSFER = 64

@@ -231,7 +231,6 @@ public abstract class HopperBlockEntityMixin {
     }
     // CraftBukkit end
 
-    /** FissionMC regions: a container in a ghost chunk (another backend owns it) is replaced by a stand-in that forwards inserted items to the owner; nothing can be pulled out of it. */
     private static Container fission$ghostSwap(final Container inventory, final Level level, final BlockPos pos, final boolean destination) {
         if (inventory == null || !(level instanceof net.minecraft.server.level.ServerLevel server)) return inventory;
         if (!net.fissionmc.backend.relay.ItemTransferBackend.ghostContainerAt(server, pos)) return inventory;

@@ -83,11 +83,7 @@ class RegionMap(rulesByDimension: Map<String, List<RegionRule>>, private val def
         val OFF = RegionMap(emptyMap())
         private val aliases = mapOf("overworld" to "minecraft:overworld", "the_nether" to "minecraft:the_nether", "nether" to "minecraft:the_nether", "the_end" to "minecraft:the_end", "end" to "minecraft:the_end")
 
-        /**
-         * Borders sit on chunk edges: ownership is decided per chunk (ticking, generation, ghosts), so a border inside a chunk would give blocks, entities and
-         * scheduled ticks different owners. A configured coordinate is rounded to the nearest multiple of 16 (min/max stay unlimited); every rectangle shares the same
-         * monotone rounding, so a tiling stays a tiling (a rectangle narrower than 16 blocks may collapse to nothing and is dropped).
-         */
+        /** Rounds a border coordinate to the nearest multiple of 16 so borders sit on chunk edges; min and max are unchanged. */
         fun snapToChunk(v: Int): Int = if (v == Int.MIN_VALUE || v == Int.MAX_VALUE) v else Math.floorDiv(v + 8, 16) * 16
 
         private fun bound(path: String, v: Any?): Int = when {
