@@ -71,7 +71,7 @@ class ClientServer(
     init {
         if (settings.ghosts.enabled) {
             tabs.onShown = ghosts::tabShown
-            relay?.ghostHandler = { m -> when (m) { is net.fissionmc.protocol.GhostPose -> ghosts.pose(m); is net.fissionmc.protocol.GhostMeta -> ghosts.meta(m); is net.fissionmc.protocol.GhostSwing -> ghosts.swing(m); else -> {} } }
+            relay?.ghostHandler = { m -> when (m) { is net.fissionmc.protocol.GhostPose -> ghosts.pose(m); is net.fissionmc.protocol.GhostMeta -> ghosts.meta(m); is net.fissionmc.protocol.GhostSwing -> ghosts.swing(m); is net.fissionmc.protocol.EntityGhostBatch -> ghosts.entityBatch(m); else -> {} } }
         }
     }
     private val dumpCounter = java.util.concurrent.atomic.AtomicInteger()

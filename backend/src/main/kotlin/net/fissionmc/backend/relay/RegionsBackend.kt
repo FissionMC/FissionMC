@@ -127,6 +127,7 @@ object RegionsBackend {
         if (!enabled) return
         BorderForwardBackend.tick(server)
         WireHoldBackend.tick(server)
+        EntityGhostBackend.tick(server)
         GhostSyncBackend.tick(server)
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
         ticks++

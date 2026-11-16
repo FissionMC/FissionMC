@@ -28,6 +28,18 @@ object GhostFrames {
     fun spawn(id: Int, uuid: UUID, p: GhostPose): ByteArray =
         Limbo.encode(WrapperPlayServerSpawnEntity(id, uuid, EntityTypes.PLAYER, Location(Vector3d(p.x, p.y, p.z), p.yaw, p.pitch), p.headYaw, 0, null))
     fun position(id: Int, p: GhostPose): ByteArray = Limbo.encode(WrapperPlayServerEntityPositionSync(id, LinearPositionPath(Vector3d(p.x, p.y, p.z)), p.yaw, p.pitch, p.onGround))
+    fun entityPosition(id: Int, x: Double, y: Double, z: Double, yaw: Float, pitch: Float, onGround: Boolean): ByteArray = Limbo.encode(WrapperPlayServerEntityPositionSync(id, LinearPositionPath(Vector3d(x, y, z)), yaw, pitch, onGround))
+
+    /** The owner's add entity payload (from the entity id on) with the client-facing id and the ghost uuid. */
+    fun entityAdd(payload: ByteArray, id: Int, uuid: UUID): ByteArray {
+        var i = 0
+        while (i < payload.size && payload[i].toInt() and 0x80 != 0) i++
+        i++
+        val b = Unpooled.buffer(payload.size + 10)
+        VarInts.write(b, PlayPacketIds.c("AddEntity")); VarInts.write(b, id); b.writeLong(uuid.mostSignificantBits).writeLong(uuid.leastSignificantBits)
+        b.writeBytes(payload, i + 16, payload.size - i - 16)
+        return ByteArray(b.readableBytes()).also { b.readBytes(it) }
+    }
     fun head(id: Int, headYaw: Float): ByteArray = Limbo.encode(WrapperPlayServerEntityHeadLook(id, headYaw))
     fun remove(vararg ids: Int): ByteArray = Limbo.encode(WrapperPlayServerDestroyEntities(*ids))
 
@@ -87,6 +99,8 @@ class GhostHub(
         /** A ghost is not spawned closer than this (horizontal blocks) to the viewer: it would be inside the viewer's camera. It appears as soon as the player has moved off. */
         const val MIN_SPAWN_DISTANCE = 1.5
         fun ghostUuidOf(player: UUID): UUID = UUID.nameUUIDFromBytes("fission-ghost:$player".toByteArray())
+        fun entityGhostUuidOf(entity: UUID): UUID = UUID.nameUUIDFromBytes("fission-ghost-entity:$entity".toByteArray())
+        const val ENTITY_BASE = 1_600_000_000; const val ENTITY_EXPIRY_MS = 10_000L
     }
 
     private class Spawned(val clientId: Int, val name: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean)
@@ -95,7 +109,16 @@ class GhostHub(
         val ghosts = HashMap<UUID, Spawned>()    // players this member sees as entities
         var teamSent = false                     // the collision team exists on the viewer's client
         var nextId = GHOST_BASE
+        val entGhosts = HashMap<UUID, SpawnedEntity>()   // entities of other backends this member sees
+        var nextEntityId = ENTITY_BASE
     }
+    private class SpawnedEntity(val clientId: Int, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean)
+    private class SrcEntity(val node: String, var dim: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean,
+                            var add: ByteArray, var data: ByteArray?, var equip: ByteArray?)
+    private val entities = HashMap<UUID, SrcEntity>()
+    private val nodeSeen = HashMap<String, Long>()
+    val entityGhostCount: Int get() = synchronized(lock) { entities.size }
+    fun entityGhostsOf(viewer: UUID): Map<UUID, Int> = synchronized(lock) { members[viewer]?.entGhosts?.mapValues { it.value.clientId } ?: emptyMap() }
     private val lock = Any()
     private val members = LinkedHashMap<UUID, Member>()
 
@@ -115,13 +138,13 @@ class GhostHub(
     }
 
     /** The client lost its entities (a Login, a transplant cleanup, the limbo): forget them without sending removals, and show the right ones again once it is placed. */
-    fun reset(viewer: GhostViewer) { synchronized(lock) { members[viewer.ghostUuid]?.let { it.ghosts.clear(); it.teamSent = false } } }
+    fun reset(viewer: GhostViewer) { synchronized(lock) { members[viewer.ghostUuid]?.let { it.ghosts.clear(); it.entGhosts.clear(); it.teamSent = false } } }
 
     /** The viewer's backend changed or its join stream is in: re-evaluate everything it can see and everybody who can see it. */
     fun placed(viewer: GhostViewer) { synchronized(lock) { members[viewer.ghostUuid]?.let { refresh(it) } } }
 
     /** The player is out of the world list of its backend but still connected (backend lost): nobody sees it. */
-    fun hidden(viewer: GhostViewer) { synchronized(lock) { members[viewer.ghostUuid]?.let { it.pose = null; it.meta = null; for (o in members.values) drop(o, viewer.ghostUuid); it.ghosts.clear(); it.teamSent = false } } }
+    fun hidden(viewer: GhostViewer) { synchronized(lock) { members[viewer.ghostUuid]?.let { it.pose = null; it.meta = null; for (o in members.values) drop(o, viewer.ghostUuid); it.ghosts.clear(); it.entGhosts.clear(); it.teamSent = false } } }
 
     /** A viewer's tab line for [player] appeared: spawn the ghost if it is waiting for that. */
     fun tabShown(viewer: UUID, player: UUID) {
@@ -157,6 +180,68 @@ class GhostHub(
     /** [m] moved or changed backend: it as a source for everybody, everybody as a source for it. */
     private fun refresh(m: Member) {
         for (o in members.values) { if (o === m) continue; evaluate(o, m); evaluate(m, o) }
+        for ((u, e) in entities) evaluateEntity(m, u, e)
+    }
+
+    /** Entities near a border of a backend, as that backend sees them (batches arrive every two ticks). */
+    fun entityBatch(b: net.fissionmc.protocol.EntityGhostBatch) {
+        synchronized(lock) {
+            val now = System.currentTimeMillis()
+            nodeSeen[b.origin] = now
+            var i = 0
+            while (i + 1 < b.removed.size) { val u = UUID(b.removed[i], b.removed[i + 1]); i += 2; entities.remove(u); for (v in members.values) dropEntity(v, u) }
+            for (g in b.upserts) {
+                val u = UUID(g.uuidHigh, g.uuidLow)
+                var e = entities[u]
+                if (e == null) {
+                    if (g.flags and 1 == 0) continue
+                    e = SrcEntity(b.origin, b.dimension, g.x, g.y, g.z, g.yaw, g.pitch, g.headYaw, g.onGround, g.add, null, null); entities[u] = e
+                }
+                e.dim = b.dimension; e.x = g.x; e.y = g.y; e.z = g.z; e.yaw = g.yaw; e.pitch = g.pitch; e.head = g.headYaw; e.onGround = g.onGround
+                if (g.flags and 1 != 0) e.add = g.add
+                if (g.flags and 2 != 0) e.data = g.data
+                if (g.flags and 4 != 0) e.equip = g.equip
+                for (v in members.values) {
+                    val sp = v.entGhosts[u]
+                    if (sp != null) { if (g.flags and 2 != 0 && g.data.isNotEmpty()) v.viewer.ghostSend(GhostFrames.entityData(sp.clientId, g.data)); if (g.flags and 4 != 0 && g.equip.isNotEmpty()) v.viewer.ghostSend(GhostFrames.equipment(sp.clientId, g.equip)) }
+                    evaluateEntity(v, u, e)
+                }
+            }
+            val stale = nodeSeen.filter { now - it.value > ENTITY_EXPIRY_MS }.keys
+            if (stale.isNotEmpty()) {
+                val gone = entities.filter { it.value.node in stale }.keys.toList()
+                for (u in gone) { entities.remove(u); for (v in members.values) dropEntity(v, u) }
+                nodeSeen.keys.removeAll(stale)
+            }
+        }
+    }
+
+    private fun dropEntity(v: Member, uuid: UUID) {
+        val sp = v.entGhosts.remove(uuid) ?: return
+        if (v.viewer.ghostNode != null) v.viewer.ghostSend(GhostFrames.remove(sp.clientId))
+        v.viewer.ghostRemoved(sp.clientId)
+    }
+
+    private fun evaluateEntity(v: Member, uuid: UUID, e: SrcEntity) {
+        val vn = v.viewer.ghostNode; val vp = v.pose
+        val existing = v.entGhosts[uuid]
+        if (vn == null || vn == e.node || vp == null || vp.dimension != e.dim) { if (existing != null) dropEntity(v, uuid); return }
+        val dx = vp.x - e.x; val dz = vp.z - e.z
+        val limit = if (existing != null) range + HYSTERESIS else range
+        if (dx * dx + dz * dz > limit * limit) { if (existing != null) dropEntity(v, uuid); return }
+        if (existing == null) {
+            val id = v.nextEntityId++
+            v.entGhosts[uuid] = SpawnedEntity(id, e.x, e.y, e.z, e.yaw, e.pitch, e.head, e.onGround); v.viewer.ghostAdded(id)
+            v.viewer.ghostSend(GhostFrames.entityAdd(e.add, id, entityGhostUuidOf(uuid))); spawnedFrames++
+            e.data?.takeIf { it.isNotEmpty() }?.let { v.viewer.ghostSend(GhostFrames.entityData(id, it)) }
+            e.equip?.takeIf { it.isNotEmpty() }?.let { v.viewer.ghostSend(GhostFrames.equipment(id, it)) }
+            return
+        }
+        if (existing.x != e.x || existing.y != e.y || existing.z != e.z || existing.yaw != e.yaw || existing.pitch != e.pitch || existing.onGround != e.onGround) {
+            existing.x = e.x; existing.y = e.y; existing.z = e.z; existing.yaw = e.yaw; existing.pitch = e.pitch; existing.onGround = e.onGround
+            v.viewer.ghostSend(GhostFrames.entityPosition(existing.clientId, e.x, e.y, e.z, e.yaw, e.pitch, e.onGround))
+        }
+        if (existing.head != e.head) { existing.head = e.head; v.viewer.ghostSend(GhostFrames.head(existing.clientId, e.head)) }
     }
 
     private fun drop(v: Member, player: UUID) {

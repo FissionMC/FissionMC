@@ -176,7 +176,7 @@ class PlayerRelay(private val registry: NodeRegistry) {
             is PlayerDetach -> bindings[msg.playerId]?.takeIf { it.node === node }?.let { bindings.remove(it.id); it.client.detachedFrom(it.id, msg.reason) }
             is GlobalChatResult -> chatResultHandler?.invoke(msg)
             is TraceDump -> trace.onReply(node, msg)
-            is GhostPose, is GhostMeta, is GhostSwing -> ghostHandler?.invoke(msg)
+            is GhostPose, is GhostMeta, is GhostSwing, is EntityGhostBatch -> ghostHandler?.invoke(msg)
             is CommandCheckResult -> bindings[msg.playerId]?.takeIf { it.node === node }?.client?.commandChecked(msg.seq, msg.allowed, msg.present)
             is PlayerPermissionReport -> { val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.client?.backendPermission(msg.level) }
             is PlayerPosition -> { net.fissionmc.net.trace.Trace.emit("player.position") { str("from", node.info.nodeId); player(null, msg.uuidHigh, msg.uuidLow); str("dim", msg.dimension); int("x", msg.x); int("z", msg.z) }; val u = java.util.UUID(msg.uuidHigh, msg.uuidLow); bindings.values.firstOrNull { it.node === node && it.client.profile.uuid == u }?.let { it.dim = msg.dimension; it.x = msg.x; it.z = msg.z; it.known = true; it.client.playerMoved(msg.dimension, msg.x, msg.z) } }

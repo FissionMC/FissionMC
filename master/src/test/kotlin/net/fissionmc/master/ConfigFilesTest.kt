@@ -106,7 +106,7 @@ class ConfigFilesTest {
         val e = assertFailsWith<IllegalArgumentException> { master("node: { mode: master, listen: \"127.0.0.1:1\" }\nregions:\n  dimensions:\n    overworld:\n      - { area: [min, min, 0, max], owner: a }") }
         assertTrue(e.message!!.contains("invalid regions") && e.message!!.contains("nobody owns"), e.message)
         val c = master("node: { mode: master, listen: \"127.0.0.1:1\" }")
-        assertEquals(8, c.settings.regionMargin); assertEquals(12, c.ghostZone); assertEquals(1, c.borderStrip); assertEquals(25565, c.client.port)
+        assertEquals(0, c.settings.regionMargin); assertEquals(12, c.ghostZone); assertEquals(1, c.borderStrip); assertEquals(25565, c.client.port)
     }
 
     @Test fun `hex colours and templates need quotes and survive them`() {

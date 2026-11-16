@@ -234,18 +234,28 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     override fun playerMoved(dimension: String, x: Int, z: Int) { channel.eventLoop().execute {
         lastDimension = dimension; lastX = x; lastZ = z
-        val regions = server.relay?.regions ?: return@execute
-        if (!regions.enabled || mode != Mode.RELAY || switching != null || switchPending) return@execute
-        val cur = currentNodeId ?: return@execute
+        checkRegion(dimension, x, z)
+    } }
+
+    private fun exactRegionCheck() {
+        if (lastDimension.isEmpty()) return
+        val p = posTracker.latest(0.0) ?: return
+        checkRegion(lastDimension, Math.floor(p.x).toInt(), Math.floor(p.z).toInt())
+    }
+
+    private fun checkRegion(dimension: String, x: Int, z: Int) {
+        val regions = server.relay?.regions ?: return
+        if (!regions.enabled || mode != Mode.RELAY || switching != null || switchPending) return
+        val cur = currentNodeId ?: return
         val now = System.nanoTime()
-        val target = regionPolicy.decide(regions, dimension, x, z, cur, now)   // cooldown, margin and ping-pong guard live in the policy
+        val target = regionPolicy.decide(regions, dimension, x, z, cur, now)
+        if (target == null) return
         Trace.emit("region.decision") { player(playerName, uuid); str("dim", dimension); int("x", x); int("z", z); str("on", cur); str("owner", regions.owner(dimension, x, z)); str("target", target) }
-        if (target == null) return@execute
-        if (server.relay?.liveNodeIds()?.contains(target) != true) { Trace.emit("region.target.offline") { player(playerName, uuid); str("target", target) }; return@execute }   // the owner is not connected: stay where it is
+        if (server.relay?.liveNodeIds()?.contains(target) != true) { Trace.emit("region.target.offline") { player(playerName, uuid); str("target", target) }; return }
         regionPolicy.switched(cur, now)
         server.tlog("[regions] $playerName at $dimension $x,$z leaves $cur for $target")
         startSwitch(target, "region") { why -> server.tlog("[regions] $playerName: cannot move to $target: $why") }
-    } }
+    }
 
     /** The master's permissions changed: tell the player's backend (it resends the command tree, which the master patches again). */
     fun pushPermission() { channel.eventLoop().execute {
@@ -716,7 +726,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
                 if (Trace.on) idMap.traceN = 0
                 if (tracker.clientState == ConnectionState.PLAY && interceptClient(bytes)) { Trace.emit("pkt.c2s.swallowed") { player(playerName, uuid); int("id", tracker.packetId(bytes)); str("name", pktName(false, tracker.clientState, tracker.packetId(bytes))); int("size", bytes.size) }; return }
                 join?.let { j -> if (j.isForwarded && tracker.packetId(bytes) == PlayIds.playerLoaded) { j.playerLoaded(); server.tlog(j.line(playerName, currentNodeId)); join = null } }
-                posTracker.observe(bytes); inputState.observe(bytes)
+                posTracker.observe(bytes); inputState.observe(bytes); exactRegionCheck()
                 val tapped = fromClient(bytes)
                 val out = if (seamless && tapped != null) rewriter.toBackend(tapped) else tapped
                 Trace.emit("pkt.c2s") {

@@ -219,8 +219,8 @@ data class MasterSettings(
     val switchFreshPosition: Boolean = true,
     /** `switch.timeout-ms`: how long the new backend has to send its Login before the switch is given up. */
     val switchTimeoutMs: Long = 20_000,
-    /** `regions.margin` blocks of hysteresis at a region border (default 8). */
-    val regionMargin: Int = 8,
+    /** `regions.margin` blocks of hysteresis at a region border (default 0: the player switches at the border itself). */
+    val regionMargin: Int = 0,
     /** `cross-commands:` (tp to a player on another backend), see [CrossCommands]. */
     val cross: CrossCommandSettings = CrossCommandSettings(),
     /** `ghosts:` (players of other backends shown as entities). */
@@ -252,7 +252,7 @@ data class MasterSettings(
                 switchMode = root.section("switch").string("mode", "seamless").lowercase().also { if (it != "seamless" && it != "login") throw ConfigException("switch.mode: expected seamless or login, got '$it'") },
                 switchFreshPosition = root.section("switch").bool("fresh-position", true),
                 switchTimeoutMs = root.section("switch").long("timeout-ms", 20_000L).also { if (it < 1000) throw ConfigException("switch.timeout-ms: expected 1000 or more, got $it") },
-                regionMargin = root.section("regions").int("margin", 8).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
+                regionMargin = root.section("regions").int("margin", 0).also { if (it !in 0..128) throw ConfigException("regions.margin: expected 0-128, got $it") },
                 cross = CrossCommandSettings.from(root), ghosts = GhostSettings.from(root), borderParticles = net.fissionmc.master.region.BorderParticleSettings.from(root),
                 petRadius = root.section("travel").int("pet-radius", 24).also { if (it !in 0..128) throw ConfigException("travel.pet-radius: expected 0-128, got $it") },
                 messages = AnnouncementSettings(

@@ -169,4 +169,39 @@ class GhostHubTest {
         assertContentEquals(normal, rw.toBackend(normal))
         assertTrue(GhostHub.GHOST_BASE > EntityIdMap.FRESH_BASE * 1000)
     }
+
+    private fun addPayload(entityId: Int, uuid: UUID): ByteArray {
+        val frame = Limbo.encode(WrapperPlayServerSpawnEntity(entityId, uuid, EntityTypes.PIG, com.github.retrooper.packetevents.protocol.world.Location(com.github.retrooper.packetevents.util.Vector3d(1.0, 64.0, 1.0), 0f, 0f), 0f, 0, null))
+        val b = Unpooled.wrappedBuffer(frame); VarInts.tryRead(b)
+        return ByteArray(b.readableBytes()).also { b.readBytes(it) }
+    }
+    private fun eg(u: UUID, x: Double, z: Double, flags: Int, add: ByteArray = ByteArray(0), data: ByteArray = ByteArray(0)) =
+        net.fissionmc.protocol.EntityGhost(u.mostSignificantBits, u.leastSignificantBits, x, 64.0, z, 10f, 0f, 10f, true, flags, add, data, ByteArray(0))
+    private fun batch(node: String, ups: List<net.fissionmc.protocol.EntityGhost>, gone: List<UUID> = emptyList()) =
+        net.fissionmc.protocol.EntityGhostBatch(node, "minecraft:overworld", ups, gone.flatMap { listOf(it.mostSignificantBits, it.leastSignificantBits) })
+
+    @Test fun `an entity of another backend near a viewer is spawned with the ghost id and uuid, moved and removed`() {
+        val hub = hub(); val a = V("Alice", "a"); setup(hub, a); hub.pose(pose(a, 0.0, 0.0))
+        val mob = UUID(7, 7)
+        hub.entityBatch(batch("b", listOf(eg(mob, 10.0, 10.0, 7, addPayload(321, mob), byteArrayOf(1, 2)))))
+        val spawn = a.core().first { Limbo.idOf(it) == spawnId }
+        val w = WrapperPlayServerSpawnEntity(ev(spawn))
+        assertEquals(GhostHub.ENTITY_BASE, w.entityId); assertEquals(GhostHub.entityGhostUuidOf(mob), w.uuid.get())
+        assertEquals(listOf(GhostHub.ENTITY_BASE), a.added)
+        val n = a.sent.size
+        hub.entityBatch(batch("b", listOf(eg(mob, 11.0, 10.0, 0))))
+        assertEquals(syncId, Limbo.idOf(a.sent[n])); assertEquals(n + 1, a.sent.size)
+        hub.entityBatch(batch("b", emptyList(), listOf(mob)))
+        assertEquals(removeId, Limbo.idOf(a.sent.last())); assertEquals(listOf(GhostHub.ENTITY_BASE), a.removed)
+    }
+
+    @Test fun `entities of the viewer's own backend, far away or in another dimension are not shown`() {
+        val hub = hub(); val a = V("Alice", "a"); setup(hub, a); hub.pose(pose(a, 0.0, 0.0))
+        hub.entityBatch(batch("a", listOf(eg(UUID(1, 1), 5.0, 5.0, 7, addPayload(1, UUID(1, 1))))))
+        hub.entityBatch(batch("b", listOf(eg(UUID(2, 2), 500.0, 5.0, 7, addPayload(2, UUID(2, 2))))))
+        hub.entityBatch(net.fissionmc.protocol.EntityGhostBatch("b", "minecraft:the_nether", listOf(eg(UUID(3, 3), 5.0, 5.0, 7, addPayload(3, UUID(3, 3)))), emptyList()))
+        assertTrue(a.core().isEmpty(), "nothing should have been sent")
+        hub.entityBatch(batch("b", listOf(eg(UUID(2, 2), 20.0, 5.0, 0))))
+        assertEquals(listOf(spawnId), a.ids(), "an entity that comes into range is spawned")
+    }
 }
