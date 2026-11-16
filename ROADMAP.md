@@ -73,6 +73,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] No snap-back on a fast border crossing: the master tracks the client's real position (serverbound movement packets + clientbound teleports) and hands it to the new backend (`PlayerMoveTo`, confirmed with the client's own position; `switch.fresh-position`, default true); scripted region-test: forced correction 0.00 blocks at sprint, flight, elytra and with `/fission send` (baseline without it: 0.84 / 1.80 / 4.50 blocks); real client unverified
 - [~] First entry (limbo to first backend): the backend's configuration now overlaps with the client loading the limbo, the Login waits only for the limbo client's PlayerLoaded (grace 5 s, was a 10 s gate before anything started), one `[join] <name> phases: ...` line per join in the master log; scripted: warm 0.2 to 0.8 s, first join after a backend start about 1.1 s (JIT), never generated terrain about 1.8 to 2.3 s (vanilla spawn preparation); real client unverified, the long "Loading terrain" report is not reproduced by the probe ("First entry timing")
 - [ ] Cross-border interactions (explosions, fluids, pathing, redstone, block entities)
+- [ ] Interacting with an entity across the border (ghost entities cannot be clicked or hit)
 - [ ] Dynamic region assignment
 
 ## M7 Craft layer depth
