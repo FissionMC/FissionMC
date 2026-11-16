@@ -179,7 +179,7 @@ object WorldSettingsBackend {
             known[key] = value
             when {
                 key.startsWith("clock:") -> applyClock(s, key.removePrefix("clock:"), value, exact, key)
-                key == "gametime" -> { val t = value.toLongOrNull() ?: return; val cur = s.overworld().gameTime; if (Math.abs(cur - t) > (if (exact) 0 else 60)) { (s.worldData.overworldData()).setGameTime(t); adopted.incrementAndGet() } }
+                key == "gametime" -> { val t = value.toLongOrNull() ?: return; val cur = s.overworld().gameTime; if (Math.abs(cur - t) > (if (exact) 0 else 60)) { (s.overworld().levelData as net.minecraft.world.level.storage.ServerLevelData).setGameTime(t); adopted.incrementAndGet() } }
                 key == "weather" -> applyWeather(s, value, exact)
                 key.startsWith("rule:") -> applyRule(s, key.removePrefix("rule:"), value, key)
                 key == "difficulty" -> { if (difficultyText(s) != value) { val p = value.split(','); s.setDifficulty(Difficulty.byId(p[0].toInt()), true); s.setDifficultyLocked(p[1].toBoolean()); count(key); lastLocal[key] = difficultyText(s) } }
