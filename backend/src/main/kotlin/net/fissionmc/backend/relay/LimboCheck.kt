@@ -181,6 +181,7 @@ object LimboCheck {
         // a comma separated list of files is replayed one after the other (each file is one client connection)
         System.getProperty("fission.check-stream")?.let { spec -> spec.split(',').filter { it.isNotBlank() }.forEach { f -> log.info("[fission] stream check of $f"); checkStream(server, f) }; log.info("[fission] all stream checks finished") }
         System.getProperty("fission.check-pipeline")?.let { checkPipeline(server, it) }
+        if (System.getProperty("fission.check-safety") != null) SafetyCheck.run(server)   // client safety layer vs vanilla codecs
         if (System.getProperty("fission.check-ids") != null) runCatching {
             fun id(c: net.minecraft.network.codec.StreamCodec<io.netty.buffer.ByteBuf, out net.minecraft.network.protocol.Packet<*>>, p: net.minecraft.network.protocol.Packet<*>): Int {
                 val b = Unpooled.buffer(); @Suppress("UNCHECKED_CAST") (c as net.minecraft.network.codec.StreamCodec<io.netty.buffer.ByteBuf, net.minecraft.network.protocol.Packet<*>>).encode(b, p); return b.readUnsignedByte().toInt()

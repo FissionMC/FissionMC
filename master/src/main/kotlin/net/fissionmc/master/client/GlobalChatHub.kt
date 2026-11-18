@@ -29,18 +29,21 @@ class GlobalChatHub(private val server: ClientServer, private val relay: PlayerR
         val s = seq.incrementAndGet()
         pending[s] = Pending(session, bindingId, text, node)
         relay.sendTo(bindingId, GlobalChat(bindingId, s, text))
-        session.schedule(settings.timeoutMs) {
+        session.schedule(relay.scaledFor(bindingId, settings.timeoutMs)) {
             if (pending.remove(s) != null) log("[chat] no chat event result from $node for ${session.playerName}'s message within ${settings.timeoutMs} ms: dropped (muted, chat hidden or rejected by the backend)")
         }
     }
+
+    /** A component from a backend's chat event; null (logged) when it does not parse, so a bad plugin output costs one message at most, not the link. */
+    internal fun parseOrNull(json: String, node: String): Component? = try { GsonComponentSerializer.gson().deserialize(json) } catch (t: Throwable) { log("[chat] unreadable chat component from $node (${t.javaClass.simpleName}): the original text is used"); null }
 
     /** The sender's backend ran the events. */
     fun onResult(r: GlobalChatResult) {
         val p = pending.remove(r.seq) ?: return
         if (p.bindingId != r.playerId) return
         if (r.cancelled) { log("[chat] ${p.session.playerName}: cancelled by a plugin on ${p.node}, not broadcast"); return }
-        val message: Component = if (r.modified && r.messageJson.isNotEmpty()) GsonComponentSerializer.gson().deserialize(r.messageJson)
-            else ChatFormatter.messageComponent(p.text, settings.allowColors)
+        val message: Component = (if (r.modified && r.messageJson.isNotEmpty()) parseOrNull(r.messageJson, p.node) else null)
+            ?: ChatFormatter.messageComponent(p.text, settings.allowColors)   // a backend's component that does not parse: the original text goes out instead of the message being lost
         val line = ChatFormatter.format(settings, p.session.playerName, r.displayName.ifEmpty { p.session.playerName }, p.node, message, p.session.uuid ?: java.util.UUID(0, 0))
         val plain = ChatFormatter.plain(line)
         log("[chat] [global] $plain")

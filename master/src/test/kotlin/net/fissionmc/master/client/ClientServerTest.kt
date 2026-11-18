@@ -329,6 +329,23 @@ class ClientServerTest {
         }
     }
 
+    @Test fun `a limbo player waits while the only backend boots and is attached as soon as it reports ready`() {
+        val registry = net.fissionmc.master.NodeRegistry(); val link = FakeBackendLink()
+        registry.register(net.fissionmc.net.PeerInfo("b1", net.fissionmc.protocol.NodeRole.BACKEND, 1, MC_VERSION), link, ready = false)
+        val relay = net.fissionmc.master.PlayerRelay(registry)
+        ClientServer(ClientConfig(host = "127.0.0.1", port = 0, onlineMode = false, compressionThreshold = 256), relay = relay, log = {}).start().use { s ->
+            TestClient(s.port).use { c ->
+                joinLimbo(c, s.port, "Booting")
+                c.send(WrapperPlayClientPlayerLoaded())
+                kotlin.test.assertNull(link.sent.poll(1500, java.util.concurrent.TimeUnit.MILLISECONDS), "a booting backend gets no player")
+                relay.handle(registry["b1"]!!, net.fissionmc.protocol.NodeReady(5000))   // what the backend sends after its server is up
+                s.attachWaiting()
+                val attach = link.next { it is net.fissionmc.protocol.PlayerAttach } as net.fissionmc.protocol.PlayerAttach
+                assertEquals("Booting", attach.name)
+            }
+        }
+    }
+
     @Test fun `a backend whose configuration differs falls back to StartConfiguration with a reason`() {
         val r = rig("b1"); val link = r.links.getValue("b1")
         val logs = java.util.concurrent.CopyOnWriteArrayList<String>()

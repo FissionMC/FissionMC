@@ -24,8 +24,9 @@ object BorderDebug {
         return when (args.firstOrNull()?.lowercase()) {
             "entities" -> entities(srv, args.getOrNull(1) == "all")
             "ghost-set" -> ghostSet(srv, args.drop(1))
+            "bigitem" -> bigItem(srv, args.drop(1))
             "ghost-sync" -> listOf("ghost sync: ${GhostSyncBackend.syncsSent.get()} checks sent, ${GhostSyncBackend.syncsMismatched.get()} answered with differences (as owner), ${GhostSyncBackend.blocksFixed.get()} ghost blocks repaired (as viewer), ${GhostSyncBackend.demandTicketsHeld.get()} demanded chunks kept ticking, refused placements ${Replication.refused}, pistons blocked ${RegionsBackend.pistonsBlocked.get()}, foreign entities not loaded ${RegionsBackend.foreignEntitiesSkipped.get()}")
-            else -> listOf("Usage: /fission debug entities [all] | ghost-set <x> <y> <z> <block> | ghost-sync")
+            else -> listOf("Usage: /fission debug entities [all] | ghost-set <x> <y> <z> <block> | ghost-sync | bigitem <x> <y> <z> <bytes>")
         }
     }
 
@@ -48,6 +49,18 @@ object BorderDebug {
         }
         out += " not loaded because they belong to another backend: ${RegionsBackend.foreignEntitiesSkipped.get()}"
         return out
+    }
+
+    /** Sends an item stack with [bytes] incompressible bytes of custom data to the block at x y z as an item transfer (the owner of that chunk gets it): the check that items far over 64 KiB cross a border. */
+    private fun bigItem(srv: MinecraftServer, a: List<String>): List<String> {
+        if (a.size != 4) return listOf("Usage: /fission debug bigitem <x> <y> <z> <bytes>")
+        val level: ServerLevel = srv.overworld()
+        val pos = BlockPos(a[0].toInt(), a[1].toInt(), a[2].toInt())
+        val tag = net.minecraft.nbt.CompoundTag(); tag.putByteArray("blob", ByteArray(a[3].toInt()).also { java.util.Random(7).nextBytes(it) })
+        val stack = net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.PAPER)
+        stack.set(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag))
+        ItemTransferBackend.send(level, pos, stack)
+        return listOf("bigitem sent to ${pos.x},${pos.y},${pos.z}: ${a[3]} bytes of custom data")
     }
 
     private fun ghostSet(srv: MinecraftServer, a: List<String>): List<String> {

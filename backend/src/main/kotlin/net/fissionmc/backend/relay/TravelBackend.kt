@@ -73,7 +73,7 @@ object TravelBackend {
 
     // ---------------------------------------------------------------- old backend: collect
     private fun encode(tag: CompoundTag): ByteArray { val o = ByteArrayOutputStream(); DataOutputStream(DeflaterOutputStream(o)).use { NbtIo.write(tag, it) }; return o.toByteArray() }
-    private fun decode(b: ByteArray): CompoundTag = DataInputStream(InflaterInputStream(b.inputStream()).buffered()).use { NbtIo.read(it, NbtAccounter.unlimitedHeap()) }
+    private fun decode(b: ByteArray): CompoundTag = net.fissionmc.backend.relay.BoundedNbt.read(b, net.fissionmc.protocol.MAX_ENTITY_BLOB)
 
     /** Serialized form of [e] for a handover or transfer (null when it cannot be saved or is too big). */
     fun blobFor(kind: Int, e: Entity): EntityBlob? = blob(kind, e)
@@ -82,7 +82,7 @@ object TravelBackend {
         val out = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, e.level().registryAccess())
         if (!e.saveAsPassenger(out)) return null
         val bytes = encode(out.buildResult())
-        return if (bytes.size > MAX_ENTITY_BLOB) { log.warning("[fission] ${e.type} ${e.uuid} is too big to travel"); null } else EntityBlob(kind, e.uuid.mostSignificantBits, e.uuid.leastSignificantBits, bytes)
+        return if (bytes.size > MAX_ENTITY_BLOB) { log.warning("[fission] ${e.type} ${e.uuid} is ${bytes.size} bytes saved, over limits.entity-blob ($MAX_ENTITY_BLOB): it stays where it is and does not travel (raise limits.entity-blob on every node)"); null } else EntityBlob(kind, e.uuid.mostSignificantBits, e.uuid.leastSignificantBits, bytes)
     }
 
     /** The shared vehicle [root] of [player] as a MOUNT blob: the seat (the entity [player] sits on) in front of the vehicle tree. */
@@ -146,22 +146,24 @@ object TravelBackend {
         var pets = 0
         for (b in blobs) {
             if (b.kind == EntityBlobKind.MOUNT) { try { mount(level, player, b) } catch (t: Throwable) { log.warning("[fission] re-mounting ${player.gameProfile.name()} failed: $t") }; continue }
-            val old = level.getEntity(UUID(b.uuidHigh, b.uuidLow))
-            if (old != null && old !is ServerPlayer) old.discard()          // a stale copy with the same uuid: the transferred one is newer
-            val tag = decode(b.bytes)
-            val input = TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), tag)
-            val angle = (pets++) * 1.0472 + 0.5   // pets stand in a ring about 2 blocks around the owner
-            val e = EntityType.loadEntityRecursive(input, level, EntitySpawnReason.LOAD, EntityProcessor { ent ->
-                if (b.kind == EntityBlobKind.PET) placeNear(level, ent, player, angle) else ent.setPos(player.x, player.y, player.z)
-                if (level.addWithUUID(ent)) ent else null
-            })
-            if (e == null) { log.warning("[fission] could not spawn a traveling entity ${b.uuidHigh.toString(16)} for ${player.gameProfile.name()}"); continue }
-            if (b.kind == EntityBlobKind.RIDER) e.startRiding(player, true, false)
-            for (x in listOf(e) + e.indirectPassengers) { spawned += x.uuid.mostSignificantBits; spawned += x.uuid.leastSignificantBits }
-            net.fissionmc.net.trace.Trace.emit("entity.spawn.transferred") { str("entity", e.uuid.toString()); str("type", e.type.descriptionId); int("id", e.id); str("dim", level.dimension().identifier().toString()); double("x", e.x); double("y", e.y); double("z", e.z); int("passengers", e.indirectPassengers.count()) }
+            try {
+                val old = level.getEntity(UUID(b.uuidHigh, b.uuidLow))
+                if (old != null && old !is ServerPlayer) old.discard()          // a stale copy with the same uuid: the transferred one is newer
+                val tag = decode(b.bytes)
+                val input = TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), tag)
+                val angle = (pets++) * 1.0472 + 0.5   // pets stand in a ring about 2 blocks around the owner
+                val e = EntityType.loadEntityRecursive(input, level, EntitySpawnReason.LOAD, EntityProcessor { ent ->
+                    if (b.kind == EntityBlobKind.PET) placeNear(level, ent, player, angle) else ent.setPos(player.x, player.y, player.z)
+                    if (level.addWithUUID(ent)) ent else null
+                })
+                if (e == null) { log.warning("[fission] could not spawn a traveling entity ${b.uuidHigh.toString(16)} for ${player.gameProfile.name()}"); continue }
+                if (b.kind == EntityBlobKind.RIDER) e.startRiding(player, true, false)
+                for (x in listOf(e) + e.indirectPassengers) { spawned += x.uuid.mostSignificantBits; spawned += x.uuid.leastSignificantBits }
+                net.fissionmc.net.trace.Trace.emit("entity.spawn.transferred") { str("entity", e.uuid.toString()); str("type", e.type.descriptionId); int("id", e.id); str("dim", level.dimension().identifier().toString()); double("x", e.x); double("y", e.y); double("z", e.z); int("passengers", e.indirectPassengers.count()) }
+            } catch (t: Throwable) { log.warning("[fission] a traveling entity of ${player.gameProfile.name()} failed to spawn, the others go on: $t") }   // else one bad blob would skip the ack and the old backend would keep every original
         }
         log.info("[fission] ${player.gameProfile.name()}: ${spawned.size / 2} traveling entities spawned")
-        NodeBootstrap.link?.takeIf { it.isOpen }?.send(EntityTransferAck(player.uuid.mostSignificantBits, player.uuid.leastSignificantBits, spawned))
+        NodeBootstrap.link?.takeIf { it.isOpen }?.let { l -> for (part in splitUuidPairs(spawned)) l.send(EntityTransferAck(player.uuid.mostSignificantBits, player.uuid.leastSignificantBits, part)) }
     }
 
     // ---------------------------------------------------------------- shared vehicles (several players aboard)
@@ -257,7 +259,9 @@ object TravelBackend {
             level.getEntity(UUID(b.uuidHigh, b.uuidLow))?.let { if (it !is ServerPlayer) it.discard() }
             val tag = decode(b.bytes)
             val input = TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), tag)
-            val e = EntityType.loadEntityRecursive(input, level, EntitySpawnReason.LOAD, EntityProcessor { ent -> if (level.addWithUUID(ent)) ent else null }) ?: continue
+            if (net.fissionmc.net.FissionDebug.on) log.info("[fission] handover: spawning blob kind ${b.kind} ${UUID(b.uuidHigh, b.uuidLow)} (${b.bytes.size} bytes, leash in tag: ${tag.contains("leash")})")
+            val e = EntityType.loadEntityRecursive(input, level, EntitySpawnReason.LOAD, EntityProcessor { ent -> if (level.addWithUUID(ent)) ent else null })
+            if (e == null) { log.warning("[fission] handover: entity ${b.uuidHigh.toString(16)}${b.uuidLow.toString(16)} (kind ${b.kind}) was not spawned (unreadable, or the level refused it); the old backend keeps it"); continue }
             restoreMotion(e, tag)
             for (x in listOf(e) + e.indirectPassengers) { spawned += x.uuid.mostSignificantBits; spawned += x.uuid.leastSignificantBits }
         } catch (t: Throwable) { log.warning("[fission] handover spawn failed: $t") }
@@ -267,11 +271,19 @@ object TravelBackend {
     // ---------------------------------------------------------------- old backend: remove after the ack
     private fun remove(server: MinecraftServer, pairs: List<Long>) {
         var n = 0
+        val gone = ArrayList<Entity>()
         for (i in 0 until pairs.size / 2) {
             val u = UUID(pairs[i * 2], pairs[i * 2 + 1])
-            for (level in server.allLevels) { val e = level.getEntity(u); if (e != null && e !is ServerPlayer) { e.discard(); n++; break } }
+            for (level in server.allLevels) { val e = level.getEntity(u); if (e != null && e !is ServerPlayer) { gone += e; break } }
         }
+        if (net.fissionmc.net.FissionDebug.on) log.info("[fission] handover ack: ${pairs.size / 2} uuids confirmed, found here: ${gone.map { it.type.descriptionId + " " + it.uuid + " leashed=" + ((it as? Leashable)?.isLeashed == true) }}")
+        // the copies leave together with their leashes: cut them silently first, or the holder's removal would drop a lead item per follower (the real ones live on the other backend)
+        for (e in gone) if (e is Leashable && e.leashData != null) e.leashData = null
+        // a leashed follower the new owner did not confirm loses its lead when its holder goes: say so, it is the visible symptom of a group that did not cross whole
+        val goneIds = gone.mapTo(HashSet()) { it.uuid }
+        for (e in gone) for (f in net.minecraft.world.entity.Leashable.leashableLeashedTo(e)) if (f is Entity && f.uuid !in goneIds && f !is ServerPlayer) log.warning("[fission] handover: ${f.type.descriptionId} ${f.uuid} was leashed to ${e.type.descriptionId} ${e.uuid} that moved to another backend, but the new owner did not confirm it: its lead is lost")
+        for (e in gone) { e.discard(); n++ }
         net.fissionmc.net.trace.Trace.emit("entity.remove.moved") { int("requested", pairs.size / 2); int("removed", n) }
-        log.info("[fission] removed $n entities that moved to another backend")
+        if (net.fissionmc.net.FissionDebug.on) log.info("[fission] removed $n entities that moved to another backend")   // one line per border crossing of any entity: debug only (the trace event above stays)
     }
 }

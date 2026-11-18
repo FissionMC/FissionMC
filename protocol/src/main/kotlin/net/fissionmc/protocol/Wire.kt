@@ -25,7 +25,7 @@ fun ByteBuf.readVarInt(): Int {
     }
 }
 
-fun ByteBuf.writeString(s: String, maxBytes: Int = 32767): ByteBuf {
+fun ByteBuf.writeString(s: String, maxBytes: Int = Limits.cur().string): ByteBuf {
     val bytes = s.toByteArray(Charsets.UTF_8)
     require(bytes.size <= maxBytes) { "String of ${bytes.size} bytes exceeds $maxBytes" }
     writeVarInt(bytes.size)
@@ -33,9 +33,9 @@ fun ByteBuf.writeString(s: String, maxBytes: Int = 32767): ByteBuf {
     return this
 }
 
-fun ByteBuf.readString(maxBytes: Int = 32767): String {
+fun ByteBuf.readString(maxBytes: Int = Limits.cur().string): String {
     val len = readVarInt()
-    require(len in 0..maxBytes) { "Bad string length $len" }
+    require(len in 0..maxBytes) { "string of $len bytes exceeds its limit of $maxBytes" }
     val bytes = ByteArray(len)
     readBytes(bytes)
     return String(bytes, Charsets.UTF_8)
@@ -50,6 +50,7 @@ fun ByteBuf.writeByteArray(a: ByteArray, max: Int = Int.MAX_VALUE): ByteBuf {
 
 fun ByteBuf.readByteArray(max: Int = Int.MAX_VALUE): ByteArray {
     val len = readVarInt()
-    require(len in 0..max && len <= readableBytes()) { "Bad array length $len" }
+    require(len in 0..max) { "byte array of $len bytes exceeds its limit of $max (see limits: in fission.yml)" }
+    require(len <= readableBytes()) { "byte array of $len bytes is longer than the rest of the message" }
     return ByteArray(len).also { readBytes(it) }
 }

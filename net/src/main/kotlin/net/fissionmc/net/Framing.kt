@@ -7,7 +7,6 @@ import io.netty.handler.codec.MessageToByteEncoder
 import net.fissionmc.protocol.MessageRegistry
 import net.fissionmc.protocol.NodeMessage
 
-internal const val MAX_FRAME = 8 * 1024 * 1024
 /** Frame limit until the handshake is done: a peer that has not proven who it is cannot make this node buffer megabytes. */
 internal const val PREAUTH_FRAME = 4096
 

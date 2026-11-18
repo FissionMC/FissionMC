@@ -33,6 +33,8 @@ object NodeBootstrap {
     @Volatile private var loopbackOnly = false
     @JvmStatic fun bindLoopbackOnly(): Boolean = loopbackOnly
     private val extraHandlers = java.util.concurrent.CopyOnWriteArrayList<(NodeMessage) -> Unit>()
+    /** Every registered handler sees the message; one that throws is logged and does not stop the others (or kill the link). */
+    private fun dispatch(msg: NodeMessage) { for (h in extraHandlers) try { h(msg) } catch (t: Exception) { log.log(java.util.logging.Level.WARNING, "[fission] a message handler failed on ${msg.javaClass.simpleName}: $t", t) } }
     private var closeables = mutableListOf<AutoCloseable>()
 
     /** Later subsystems (replication, packet routing) register here to receive master messages. */
@@ -49,11 +51,13 @@ object NodeBootstrap {
     private var combinedClientCfg: net.fissionmc.master.client.ClientConfig? = null
 
     @Volatile private var started = false
+    /** A link the master connection got after the first one but before startup finished (the first died during the world pull): the pull moves to it instead of waiting on the dead one. */
+    @Volatile private var freshLink: NodeLink? = null
 
     /** A new master link after the first one (reconnect): route its messages, then tell the listeners. */
     private fun relinked(l: NodeLink) {
+        l.handler = { msg -> dispatch(msg) }   // before the link is published: what the master sends right after Welcome must not hit the empty default handler
         link = l
-        l.handler = { msg -> extraHandlers.forEach { it(msg) } }
         connectListeners.forEach { runCatching { it(l) }.onFailure { e -> log.warning("connect listener failed: $e") } }
     }
 
@@ -68,15 +72,14 @@ object NodeBootstrap {
         val pluginsCfg = net.fissionmc.net.plugins.PluginsConfig.from(root)
         val debugOn = root.bool("debug", false)
         val traceCfg = net.fissionmc.net.trace.TraceConfig.from(root)
+        val limitsCfg = LimitsConfig.from(root)
         root.finish()
+        LimitsConfig.apply(limitsCfg)
         net.fissionmc.net.FissionDebug.fromConfig(debugOn)
         // the backend id: node.id by hand wins; otherwise a random one is generated once and saved (net/NodeIds.kt), so it survives restarts
         val cfg = if (parsed.mode == NodeMode.STANDALONE) parsed else {
             val r = net.fissionmc.net.NodeIds.resolve(file, parsed.nodeId.ifBlank { null }, persistInYml = parsed.mode != NodeMode.COMBINED)
             log.info("backend id: ${r.id}" + (if (r.generated) " (generated, saved to ${r.savedTo})" else if (parsed.nodeId.isBlank()) " (generated earlier, from .fission-node-id)" else " (node.id)"))
-            if (parsed.security && parsed.mode == NodeMode.BACKEND) runCatching { net.fissionmc.net.Keys.encode(net.fissionmc.net.Keys.loadOrCreate(parsed.keyFile).public) }.getOrNull()?.let {
-                log.info("master authorized keys line for this backend (add it as one line to the master's authorized keys FILE, named by `authorized:` under `node:` in the master's fission.yml, default fission-authorized.keys next to that fission.yml, if it is not there): ${r.id} $it")
-            }
             nodeId = r.id
             parsed.copy(nodeId = r.id)
         }
@@ -98,9 +101,21 @@ object NodeBootstrap {
             NodeMode.COMBINED -> startCombinedMaster(cfg)
             else -> cfg.master!!
         }
+        if (cfg.mode == NodeMode.BACKEND) NodeSupport.insecureMasterProblem(cfg)?.let { error(it) }
+        // link security: the pinned master key (node.master-public or .fission-master-key) or, with neither, pairing mode: the one-time code is printed to the CONSOLE (never to the log file)
+        val security = if (address is NodeAddress.Tcp) NodeSupport.backendSecurity(cfg, announce = { code, expires, fp, renewed -> announcePairing(cfg, code, expires, fp, renewed) }, onPaired = { m, first ->
+            log.info("PAIRED with the master: pinned its key, fingerprint ${net.fissionmc.net.pairing.Fingerprint.of(m)}" + (if (first) " (saved to ${cfg.masterKeyFile}). Compare this fingerprint with the one `node add` printed on the master console." else ""))
+        }, warn = { log.warning(it) }) else null
+        security?.pairingClient?.let { pc ->
+            if (pc.wanted()) { pc.session(); log.warning("This backend is not paired with a master yet: paste the pairing code above into the master console (`node add <code>`). The code expires; a new one is printed then.") }
+            else log.info("Master key pinned (${pc.pin.fingerprint}); node ${cfg.nodeId} key ${net.fissionmc.net.pairing.Fingerprint.of(security.publicKey!!)}")
+            val identity = net.fissionmc.net.pairing.BackendIdentity(cfg.nodeId, cfg.keyFile, security, pc.pin) { log.info(it) }
+            extraHandlers += { m -> link?.let { identity.handle(it, m) } }
+        }
+        BackendNet.install()
         val transport = NettyTransport(
             LocalNode(cfg.nodeId, NodeRole.BACKEND, MC_VERSION),
-            security = if (address is NodeAddress.Tcp) NodeSupport.backendSecurity(cfg) else null,
+            security = security,
         )
         closeables += transport
 
@@ -110,10 +125,10 @@ object NodeBootstrap {
             transport, address,
             onReady = { l, peer ->
                 log.info("Connected to master ${peer.nodeId}")
-                if (!ready.complete(l) && started) relinked(l)
+                if (!ready.complete(l)) { if (started) relinked(l) else freshLink = l }
             },
             onFailure = { log.warning("Master connection failed (dialing ${client0?.address ?: address}): ${it.message}") },
-            onDisconnect = { log.warning("Lost connection to master: $it") },
+            onDisconnect = { log.warning("Lost connection to master: $it"); runCatching { net.fissionmc.backend.chunk.ChunkAuthorityBackend.linkLost() } },
         ).start()
         client0 = client
         closeables += client
@@ -139,28 +154,48 @@ object NodeBootstrap {
             if (later.isNotEmpty() && cfg.mode == NodeMode.BACKEND) log.info("needs a restart to take effect: ${later.joinToString()}")
         }.start()
         // a backend that starts before its master waits for it (a hosting panel may start them in any order) instead of exiting after a few seconds
+        // (waiting for the admin to paste the pairing code is not a connect timeout: the backend waits for ever then, the code renews itself)
         val waitUntil = if (cfg.connectTimeoutSeconds == 0L) Long.MAX_VALUE else System.nanoTime() + cfg.connectTimeoutSeconds * 1_000_000_000L
         var l0: NodeLink? = null; var waited = 0
         while (l0 == null) {
             try { l0 = ready.get(10, TimeUnit.SECONDS) }
             catch (e: java.util.concurrent.TimeoutException) {
                 waited += 10
-                if (System.nanoTime() > waitUntil) { stop(); error("Could not reach the master at ${client.address} within ${cfg.connectTimeoutSeconds}s (node.connect-timeout)") }
+                if (System.nanoTime() > waitUntil && security?.pairingClient?.wanted() != true) { stop(); error("Could not reach the master at ${client.address} within ${cfg.connectTimeoutSeconds}s (node.connect-timeout)") }
                 log.info("Still waiting for the master at ${client.address} (${waited}s; node.connect-timeout is ${if (cfg.connectTimeoutSeconds == 0L) "off" else "${cfg.connectTimeoutSeconds}s"})")
             }
         }
-        val l: NodeLink = l0
+        var l: NodeLink = l0
         link = l
 
         log.info("Pulling world '$levelName' from the master into $dest")
         var puller = WorldPuller(l, dest)
         val seededSignal = java.util.concurrent.Semaphore(0)   // the master says a world now exists (the seeder finished): wakes a waiting backend
-        l.handler = { msg -> if (msg is net.fissionmc.protocol.WorldSeeded) seededSignal.release() else if (!puller.handle(msg)) extraHandlers.forEach { it(msg) } }
+        l.handler = { msg -> if (msg is net.fissionmc.protocol.WorldSeeded) seededSignal.release() else if (!puller.handle(msg)) dispatch(msg) }
         val t0 = System.nanoTime()
         val giveUpAt = System.nanoTime() + SEED_WAIT_MINUTES * 60_000_000_000L
         var ready0: net.fissionmc.net.world.PullResult? = null
         while (true) {
-            try { ready0 = puller.pull(levelName).get(PULL_TIMEOUT_S, TimeUnit.SECONDS); break }
+            try {
+                val pulling = puller.pull(levelName); val pullEnd = System.nanoTime() + PULL_TIMEOUT_S * 1_000_000_000L
+                var relink = false
+                while (true) {
+                    try { ready0 = pulling.get(2, TimeUnit.SECONDS); break }
+                    catch (te: java.util.concurrent.TimeoutException) {
+                        val f = freshLink
+                        if (!l.isOpen && f != null && f !== l && f.isOpen) { relink = true; break }   // the link died during the pull and the master is back: ask again on the new one
+                        if (System.nanoTime() > pullEnd) throw te
+                    }
+                }
+                if (relink) {
+                    val f = freshLink!!; freshLink = null
+                    log.warning("The master link was lost during the world pull: starting it again on the new link")
+                    l = f; link = f; puller = WorldPuller(f, dest)
+                    f.handler = { msg -> if (msg is net.fissionmc.protocol.WorldSeeded) seededSignal.release() else if (!puller.handle(msg)) dispatch(msg) }
+                    continue
+                }
+                break
+            }
             catch (e: java.util.concurrent.ExecutionException) {
                 val missing = e.cause as? net.fissionmc.net.world.WorldMissingException
                 if (missing == null) { stop(); throw IllegalStateException("World pull failed: ${e.cause?.message ?: e.message}", e) }
@@ -178,14 +213,26 @@ object NodeBootstrap {
         }
         ready0?.let { r -> log.info("World ready: ${r.downloaded} downloaded (${r.bytes / 1024} KiB), ${r.unchanged} unchanged, ${r.deleted} removed in ${(System.nanoTime() - t0) / 1_000_000} ms") }
         // plugin replication: the master's jars into the plugins folder, before Paper discovers plugins (combined mode shares the folder with its own master half: nothing to pull)
-        if (cfg.mode == NodeMode.BACKEND && pluginsCfg.replicate) PluginReplicationStatus.run(l, pluginsDir.toAbsolutePath().normalize(), pluginsCfg.conflict) { msg -> extraHandlers.forEach { it(msg) } }
+        if (cfg.mode == NodeMode.BACKEND && pluginsCfg.replicate) PluginReplicationStatus.run(l, pluginsDir.toAbsolutePath().normalize(), pluginsCfg.conflict) { msg -> dispatch(msg) }
         // From here on, messages from the master go to the registered handlers.
-        l.handler = { msg -> extraHandlers.forEach { it(msg) } }
+        l.handler = { msg -> dispatch(msg) }
         nodeId = cfg.nodeId
         net.fissionmc.backend.replication.Replication.attach(cfg.nodeId)
         net.fissionmc.backend.relay.PlayerRelayBackend.attach()
         started = true
         connectListeners.forEach { it(l) }
+    }
+
+    /** Prints a pairing code to the console (not the log) with the steps; the log only learns THAT a code was made. */
+    private fun announcePairing(cfg: NodeConfig, code: String, expiresAt: Long, fingerprint: String, renewed: Boolean) {
+        val minutes = ((expiresAt - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
+        val out = net.fissionmc.net.pairing.ConsoleOut::secretLine
+        out("")
+        out("[FissionMC] ${if (renewed) "NEW " else ""}PAIRING CODE for backend ${cfg.nodeId} (key fingerprint $fingerprint), valid $minutes min, works once:")
+        out("[FissionMC]   $code")
+        out("[FissionMC] On the master console type:  node add <the code above>   (check that the master shows the fingerprint $fingerprint). node.master is ${cfg.master?.host}:${cfg.master?.port}.")
+        out("")
+        log.info("A pairing code for this backend was printed to the console (it is not written to this log); fingerprint $fingerprint")
     }
 
     /** Hosts the master in this JVM; returns the in-JVM address the backend should dial. */
@@ -213,7 +260,8 @@ object NodeBootstrap {
         closeables += m
         master = m
         cfg.listen?.let { tcp ->
-            val tcpT = NettyTransport(NodeSupport.masterNode(MC_VERSION), security = NodeSupport.masterSecurity(cfg))
+            NodeSupport.insecureListenerProblem(cfg)?.let { error(it) }
+            val tcpT = NettyTransport(NodeSupport.masterNode(MC_VERSION), security = NodeSupport.masterSecurity(cfg), guard = NodeSupport.preAuthGuard(cfg))
             closeables += tcpT
             closeables += MasterServer(tcpT, tcp, cfg.worldRoot, registry, onMessage).start()
             log.info("Master also listening for remote backends on ${tcp.host}:${tcp.port}")

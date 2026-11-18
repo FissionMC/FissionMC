@@ -14,7 +14,7 @@ import java.util.logging.Logger
 
 /**
  * Ghost chunks, both ends (see .dev/docs/design/regions-and-traveling-entities.md, "Ghost blocks"):
- *  - VIEWER: every second it tells each owner which of the owner's chunks its players look at ([GhostDemand]); about every [SYNC_INTERVAL_TICKS] ticks (and at once for a newly loaded or reloaded
+ *  - VIEWER: every second it tells each owner which of the owner's chunks its players look at ([GhostDemand]); about every [SYNC_INTERVAL_MS] ms (and at once for a newly loaded or reloaded
  *    ghost chunk) it sends the owner a hash per section of its copy ([GhostSync]); sections the owner reports different are overwritten ([GhostFix]).
  *  - OWNER: keeps demanded chunks loaded and ticking (a ticket that expires 2 s after the last demand), compares hashes with its live chunk and answers with the differing sections.
  * The owner's world is the truth, so the repair always flows owner -> ghost. The ghost copy goes stale when the master hands out an older stored version of a chunk (reload after the
@@ -22,21 +22,27 @@ import java.util.logging.Logger
  */
 object GhostSyncBackend {
     private val log = Logger.getLogger("FissionMC")
-    const val SYNC_INTERVAL_TICKS = 300L           // 15 s per chunk
-    private const val DEMAND_EVERY = 20             // ticks
-    private const val SCAN_EVERY = 10
-    private const val BUDGET = 6                    // syncs per scan
+    const val SYNC_INTERVAL_MS = 15_000L           // per chunk, wall clock
+    private const val SCAN_EVERY_MS = 500L
+    private const val DEMAND_EVERY_MS = 1_000L      // the owner's ticket lives 2 s of ITS ticks: the demand must come at a real-time rate, whatever this backend's tick rate is
+    private const val BUDGET = 6                    // syncs per scan at 20 tps; a slower server gets more per scan (see [scan])
+    private const val MAX_WORK_PER_TICK = 64        // GhostSync / GhostFix messages handled per tick (hashing and block writes); the rest waits in the inbox for the next tick
     private const val MAX_FIX_BLOCKS = 40_000
 
-    private val scheduler = GhostSyncScheduler(SYNC_INTERVAL_TICKS, BUDGET)
-    private var ticks = 0L
+    private val scheduler = GhostSyncScheduler(SYNC_INTERVAL_MS, BUDGET)
+    private val scanPace = net.fissionmc.net.Pacer(SCAN_EVERY_MS)
+    private val demandPace = net.fissionmc.net.Pacer(DEMAND_EVERY_MS / 2)
+    /** The last demand snapshot taken on the game thread; the scheduler thread sends it every second (a stalled or slow game thread keeps its owners' tickets alive). */
+    @Volatile private var demandSnapshot: List<GhostDemand> = emptyList()
+    @Volatile private var senderStarted = false
     @JvmField val syncsSent = java.util.concurrent.atomic.AtomicLong()
     @JvmField val syncsMismatched = java.util.concurrent.atomic.AtomicLong()
     @JvmField val blocksFixed = java.util.concurrent.atomic.AtomicLong()
     @JvmField val demandTicketsHeld = java.util.concurrent.atomic.AtomicLong()
     private val inbox = java.util.concurrent.ConcurrentLinkedQueue<NodeMessage>()
 
-    fun onMessage(m: NodeMessage) { inbox.add(m) }
+    fun onMessage(m: NodeMessage) { if (m is GhostDemand) demands.add(m) else inbox.add(m) }
+    private val demands = java.util.concurrent.ConcurrentLinkedQueue<GhostDemand>()
 
     /** Block state ids of one section in y, z, x order (the order [SectionCodec] uses). */
     fun stateIds(chunk: LevelChunk, index: Int): IntArray {
@@ -49,16 +55,22 @@ object GhostSyncBackend {
 
     fun hashes(chunk: LevelChunk): IntArray = IntArray(chunk.sectionsCount) { SectionCodec.hash(stateIds(chunk, it)) }
 
+    /** Regions are off: queued work from a neighbour is stale. */
+    fun discardInbox() { inbox.clear(); demands.clear(); demandSnapshot = emptyList() }
+
     fun tick(server: MinecraftServer) {
-        ticks++
-        while (true) {
+        if (!senderStarted) { senderStarted = true; net.fissionmc.backend.node.LinkScheduler.every("ghost demand", DEMAND_EVERY_MS, ::sendDemand) }
+        while (true) { val d = demands.poll() ?: break; onDemand(server, d) }   // cheap (tickets only): all of them, every tick
+        var work = 0
+        while (work < MAX_WORK_PER_TICK) {
             val m = inbox.poll() ?: break
-            when (m) { is GhostDemand -> onDemand(server, m); is GhostSync -> onSync(server, m); is GhostFix -> onFix(server, m) }
+            work++
+            when (m) { is GhostSync -> onSync(server, m); is GhostFix -> onFix(server, m); else -> {} }
         }
-        if (!RegionsBackend.enabled) return
+        if (!RegionsBackend.enabled) { demandSnapshot = emptyList(); return }
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
-        if (ticks % SCAN_EVERY == 0L) scan(server, link)
-        if (ticks % DEMAND_EVERY == 0L) demand(server, link)
+        if (scanPace.due()) scan(server, link)
+        if (demandPace.due()) demandSnapshot = demand(server)
     }
 
     /** Ghost chunks (not owned here, loaded) inside [radius] chunks of a player, per level. */
@@ -83,7 +95,8 @@ object GhostSyncBackend {
             val loaded = HashMap<Long, LevelChunk>()
             for (k in packed) { val c = level.chunkSource.getChunkNow(ChunkPos.getX(k), ChunkPos.getZ(k)) ?: continue; loaded[k] = c }
             val cand = loaded.map { (k, c) -> GhostSyncScheduler.Candidate(k, System.identityHashCode(c)) }
-            for (c in scheduler.pick(ticks, cand)) {
+            // a server that ticks slower than the scan period (1 tps) gets a bigger budget per scan, so the checks keep their pace in real time
+            for (c in scheduler.pick(System.nanoTime() / 1_000_000L, cand, BUDGET * (1 + net.fissionmc.backend.node.LinkScheduler.msPerTick() / 100).coerceAtMost(10))) {
                 val chunk = loaded[c.key] ?: continue
                 val cx = ChunkPos.getX(c.key); val cz = ChunkPos.getZ(c.key)
                 val owner = RegionsBackend.chunkOwner(dim, cx, cz) ?: continue
@@ -93,13 +106,22 @@ object GhostSyncBackend {
         }
     }
 
-    private fun demand(server: MinecraftServer, link: net.fissionmc.net.NodeLink) {
+    /** Game thread: the chunks of every owner this backend's players look at. */
+    private fun demand(server: MinecraftServer): List<GhostDemand> {
         val radius = server.playerList.simulationDistance.coerceAtMost(10)
+        val out = ArrayList<GhostDemand>()
         for ((_, dim, packed) in ghostChunks(server, radius)) {
             val byOwner = HashMap<String, MutableList<Long>>()
             for (k in packed) { val o = RegionsBackend.chunkOwner(dim, ChunkPos.getX(k), ChunkPos.getZ(k)) ?: continue; byOwner.computeIfAbsent(o) { ArrayList() } += k }
-            for ((o, list) in byOwner) list.chunked(MAX_GHOST_CHUNKS).forEach { link.send(GhostDemand(RegionsBackend.youId(), o, dim, it.toLongArray())) }
+            for ((o, list) in byOwner) list.chunked(MAX_GHOST_CHUNKS).forEach { out += GhostDemand(RegionsBackend.youId(), o, dim, it.toLongArray()) }
         }
+        return out
+    }
+
+    /** Scheduler thread, every second: sends the last snapshot (wall clock; see [demandSnapshot]). */
+    private fun sendDemand() {
+        val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
+        for (d in demandSnapshot) link.send(d)
     }
 
     // ---- owner

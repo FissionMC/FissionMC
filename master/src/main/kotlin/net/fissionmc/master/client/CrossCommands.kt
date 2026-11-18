@@ -25,11 +25,11 @@ data class CrossCommandSettings(
 }
 
 /** `ghosts:` of fission.yml. */
-data class GhostSettings(val enabled: Boolean = true, val range: Int = 128) {
+data class GhostSettings(val enabled: Boolean = true, val range: Int = 128, val entityExpirySeconds: Int = 30) {
     companion object {
         fun from(root: ConfigSection): GhostSettings {
             val d = GhostSettings(); val s = root.section("ghosts")
-            return GhostSettings(s.bool("enabled", d.enabled), s.int("range", d.range).also { if (it !in 16..1024) throw ConfigException("ghosts.range: expected 16-1024 blocks, got $it") })
+            return GhostSettings(s.bool("enabled", d.enabled), s.int("range", d.range).also { if (it !in 16..1024) throw ConfigException("ghosts.range: expected 16-1024 blocks, got $it") }, s.int("entity-expiry-seconds", d.entityExpirySeconds).also { if (it !in 5..3600) throw ConfigException("ghosts.entity-expiry-seconds: expected 5-3600 seconds, got $it") })
         }
     }
 }

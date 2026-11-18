@@ -52,6 +52,41 @@ class PlayerDataTest {
         assertTrue(timedOut.await(3, TimeUnit.SECONDS), "no save: carry on after the timeout")
     }
 
+    @Test fun `a flush with an onTimeout does not go on with the stored data when it times out`() {
+        val s = PlayerDataStore(Files.createTempDirectory("pd"))
+        val timedOut = CountDownLatch(1); val done = java.util.concurrent.atomic.AtomicBoolean()
+        s.awaitSave(UUID(8, 8), 100, { timedOut.countDown() }) { done.set(true) }
+        assertTrue(timedOut.await(3, TimeUnit.SECONDS)); assertFalse(done.get())
+        val ok = CountDownLatch(1); s.awaitSave(UUID(7, 7), 5000, { fail("no timeout expected") }) { ok.countDown() }
+        s.flushed(UUID(7, 7)); assertTrue(ok.await(2, TimeUnit.SECONDS))
+    }
+
+    @Test fun `collected pets of a player who left are not delivered at a later attach`() {
+        class Link : net.fissionmc.net.NodeLink {
+            val sent = mutableListOf<NodeMessage>()
+            override val ready = java.util.concurrent.CompletableFuture<net.fissionmc.net.PeerInfo>(); override val closed = java.util.concurrent.CompletableFuture<String>()
+            override val latencyNanos = -1L; @Volatile override var isOpen = true; override val isWritable = true
+            override var handler: (NodeMessage) -> Unit = {}
+            override fun send(msg: NodeMessage) { sent += msg }
+            override fun close(reason: String) { isOpen = false }
+        }
+        val reg = NodeRegistry(); val link = Link()
+        reg.register(net.fissionmc.net.PeerInfo("b1", NodeRole.BACKEND, 1, MC_VERSION), link)
+        val relay = PlayerRelay(reg); relay.playerData = PlayerDataStore(Files.createTempDirectory("pd"))
+        val client = object : RelayClient {
+            override val profile = net.fissionmc.master.client.PlayerProfile(u, "Steve"); override val protocol = 777
+            override fun deliver(frame: ByteArray) {}; override fun detached(reason: String, backendLost: Boolean) {}
+        }
+        val id = relay.attach(client)!!
+        val transfer = EntityTransfer(u.mostSignificantBits, u.leastSignificantBits, listOf(EntityBlob(0, 1, 1, ByteArray(10))))
+        relay.handle(reg["b1"]!!, transfer)
+        relay.dropPendingTransfer(u); relay.detach(id, "left")
+        link.sent.clear(); relay.attach(client)
+        assertTrue(link.sent.none { it is EntityTransfer }, "no stale pets")
+        relay.handle(reg["b1"]!!, transfer); relay.detach(relay.bindingNodes().keys.first(), "x"); link.sent.clear(); relay.attach(client)
+        assertTrue(link.sent.any { it is EntityTransfer }, "control: without the drop they are delivered")
+    }
+
     @Test fun `player data messages survive the wire`() {
         val reg = MessageRegistry.core().registerPlayerMessages()
         val data = gz("player")

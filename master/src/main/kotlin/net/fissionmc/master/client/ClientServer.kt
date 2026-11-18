@@ -66,13 +66,13 @@ class ClientServer(
     val chat: GlobalChatHub? = relay?.let { r -> GlobalChatHub(this, r, tlog).also { h -> r.chatResultHandler = h::onResult } }
     /** The network wide tab list and the ghost players (see `.dev/docs/tablist-ghosts-commands.md`). */
     val tabs = TabListHub(tlog)
-    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { p -> tabs.entry(p) }, tlog)
+    val ghosts = net.fissionmc.master.seamless.GhostHub(settings.ghosts.range.toDouble(), { p -> tabs.entry(p) }, tlog, settings.ghosts.entityExpirySeconds * 1000L)
     val crossCommands = CrossCommands(settings.cross)
     init {
         if (settings.ghosts.enabled) {
             tabs.onShown = ghosts::tabShown
-            ghosts.pickupAsk = { node, entity, player, playerNode -> relay?.sendToNode(node, net.fissionmc.protocol.ItemPickup(node, entity.mostSignificantBits, entity.leastSignificantBits, player.mostSignificantBits, player.leastSignificantBits, playerNode)) }
-            relay?.ghostHandler = { m -> when (m) { is net.fissionmc.protocol.GhostPose -> ghosts.pose(m); is net.fissionmc.protocol.GhostMeta -> ghosts.meta(m); is net.fissionmc.protocol.GhostSwing -> ghosts.swing(m); is net.fissionmc.protocol.EntityGhostBatch -> ghosts.entityBatch(m); else -> {} } }
+            ghosts.pickupAsk = { node, entity, player, playerNode -> relay?.notePickup(node, player, playerNode); relay?.sendToNode(node, net.fissionmc.protocol.ItemPickup(node, entity.mostSignificantBits, entity.leastSignificantBits, player.mostSignificantBits, player.leastSignificantBits, playerNode)) }
+            relay?.ghostHandler = { m -> when (m) { is net.fissionmc.protocol.GhostPose -> ghosts.pose(m); is net.fissionmc.protocol.GhostMeta -> ghosts.meta(m); is net.fissionmc.protocol.GhostSwing -> ghosts.swing(m); is net.fissionmc.protocol.EntityGhostBatch -> ghosts.entityBatch(m); is net.fissionmc.protocol.EntityGhostLinks -> ghosts.entityLinks(m); else -> {} } }
         }
     }
     private val dumpCounter = java.util.concurrent.atomic.AtomicInteger()
@@ -98,6 +98,11 @@ class ClientServer(
 
     /** Looks at the first byte of a connection on a shared port, hands the channel to the node link or to the player pipeline and gets out of the way (its buffered bytes are forwarded). */
     private class ProtocolSniffer(val node: (Channel) -> Unit, val players: (Channel) -> Unit) : io.netty.handler.codec.ByteToMessageDecoder() {
+        /** A connection that never sends a byte has no other timeout (the session's idle task starts after the hand-over): drop it. */
+        override fun handlerAdded(ctx: io.netty.channel.ChannelHandlerContext) {
+            super.handlerAdded(ctx)
+            ctx.executor().schedule({ if (!ctx.isRemoved && ctx.channel().isActive) ctx.close() }, 10, java.util.concurrent.TimeUnit.SECONDS)
+        }
         override fun decode(ctx: io.netty.channel.ChannelHandlerContext, buf: io.netty.buffer.ByteBuf, out: MutableList<Any>) {
             if (!buf.isReadable) return
             if (buf.getUnsignedByte(buf.readerIndex()).toInt() == 0) node(ctx.channel()) else players(ctx.channel())
@@ -150,15 +155,18 @@ class ClientServer(
     init {
         admissionTimer.scheduleWithFixedDelay({
             try {
-                val up = relay?.liveNodeIds()?.isNotEmpty() == true
+                val up = relay?.readyNodeIds()?.isNotEmpty() == true   // a backend that has joined the link but still boots cannot log a player in
                 admission.admit(up).forEach { it.admitFromQueue() }
-                if (++noticeTicks * 250L >= settings.limbo.noticeSeconds * 1000L) { noticeTicks = 0; admission.snapshot().forEachIndexed { i, c -> c.waitingNotice(i + 1, up) } }
+                if (++noticeTicks * 250L >= settings.limbo.noticeSeconds * 1000L) { noticeTicks = 0; val starting = !up && relay?.bootingNodeIds()?.isNotEmpty() == true; admission.snapshot().forEachIndexed { i, c -> c.waitingNotice(i + 1, up, starting) } }
             } catch (t: Throwable) { tlog("[limbo] queue failed: $t") }
         }, 250, 250, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
 
     /** A backend became available: the waiting limbo players are let in by the queue. */
     fun attachWaiting() { sessions.values.forEach { it.tryAttach() } }
+
+    /** A backend became ready: players held back at a border towards it are checked again (a player who stands still sends no new position). */
+    fun regionRecheck() { sessions.values.forEach { it.regionRecheck() } }
 
     /** Registers [s] for its account; returns the session that held the account before (the caller ends it: a second login replaces the first, like vanilla). */
     internal fun register(s: ClientSession, p: PlayerProfile): ClientSession? = sessions.put(p.uuid, s)?.takeIf { it !== s }

@@ -28,14 +28,23 @@ object ItemTransferBackend {
     @JvmField val dropped = java.util.concurrent.atomic.AtomicLong()
 
     private fun encode(tag: CompoundTag): ByteArray { val o = ByteArrayOutputStream(); DataOutputStream(DeflaterOutputStream(o)).use { NbtIo.write(tag, it) }; return o.toByteArray() }
-    private fun decode(b: ByteArray): CompoundTag = DataInputStream(InflaterInputStream(b.inputStream()).buffered()).use { NbtIo.read(it, NbtAccounter.unlimitedHeap()) }
+    private fun decode(b: ByteArray): CompoundTag = net.fissionmc.backend.relay.BoundedNbt.read(b, MAX_ITEM_BLOB)
 
     @JvmStatic fun ghostContainerAt(level: ServerLevel, pos: BlockPos): Boolean = RegionsBackend.enabled && !RegionsBackend.ownsBlockAt(level, pos) && level.getBlockEntity(pos) != null
 
     fun encodeStack(level: ServerLevel, stack: ItemStack): ByteArray? {
         val tag = ItemStack.OPTIONAL_CODEC.encodeStart(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), stack).result().orElse(null) as? CompoundTag ?: return null
-        return encode(tag).takeIf { it.size <= MAX_ITEM_BLOB }
+        val bytes = encode(tag)
+        if (bytes.size > MAX_ITEM_BLOB) { tooBig(stack, bytes.size); return null }
+        return bytes
     }
+
+    /** An item stack whose saved form is over `limits.item-blob`: it cannot cross the border. Said out loud, because the stack then stays (pickup) or is dropped as an item (hopper). */
+    private fun tooBig(stack: ItemStack, size: Int) {
+        tooBigCount.incrementAndGet()
+        log.warning("[fission] item ${stack.item} x${stack.count} is $size bytes saved, over limits.item-blob ($MAX_ITEM_BLOB): it cannot cross the region border (raise limits.item-blob on every node)")
+    }
+    @JvmField val tooBigCount = java.util.concurrent.atomic.AtomicLong()
 
     fun decodeStack(level: ServerLevel, bytes: ByteArray): ItemStack = try {
         ItemStack.OPTIONAL_CODEC.parse(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), decode(bytes)).result().orElse(ItemStack.EMPTY)
@@ -47,8 +56,10 @@ object ItemTransferBackend {
         if (owner == null || owner == RegionsBackend.youId() || link == null) { drop(level, pos, stack); return }
         val tag = ItemStack.OPTIONAL_CODEC.encodeStart(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), stack).result().orElse(null) as? CompoundTag
         val bytes = tag?.let { encode(it) }
+        if (bytes != null && bytes.size > MAX_ITEM_BLOB) tooBig(stack, bytes.size)
         if (bytes == null || bytes.size > MAX_ITEM_BLOB) { drop(level, pos, stack); return }
         sent.incrementAndGet()
+        if (bytes.size > 65536) log.info("[fission] item transfer sent to $owner: ${stack.item} x${stack.count}, ${bytes.size} bytes saved")
         link.send(ItemTransfer(RegionsBackend.youId(), owner, level.dimension().identifier().toString(), pos.x, pos.y, pos.z, listOf(bytes)))
     }
 
@@ -61,6 +72,7 @@ object ItemTransferBackend {
             val stack = try { ItemStack.OPTIONAL_CODEC.parse(level.registryAccess().createSerializationContext(NbtOps.INSTANCE), decode(bytes)).result().orElse(ItemStack.EMPTY) } catch (t: Throwable) { log.warning("[fission] item transfer: bad stack from ${m.origin}: $t"); ItemStack.EMPTY }
             if (stack.isEmpty) continue
             received.incrementAndGet()
+            if (bytes.size > 65536) log.info("[fission] item transfer received from ${m.origin}: ${stack.item} x${stack.count}, ${bytes.size} bytes saved")
             val container = HopperBlockEntity.getContainerAt(level, pos)
             val rest = if (container != null) HopperBlockEntity.addItem(null, container, stack, null) else stack
             if (!rest.isEmpty) drop(level, pos, rest)

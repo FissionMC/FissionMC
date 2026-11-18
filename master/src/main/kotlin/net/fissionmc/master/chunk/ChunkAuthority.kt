@@ -25,7 +25,10 @@ class ChunkAuthority(
     private val regionOwner: (dimension: String, x: Int, z: Int) -> String? = { _, _, _ -> null },
     /** Where requests and pushes run (they read and write the store on disk). The master gives a thread of its own, so chunk IO never blocks the network thread that also relays players' packets. */
     private val executor: java.util.concurrent.Executor = java.util.concurrent.Executor { it.run() },
+    /** Optional: the executor for a given chunk (a few threads, the same one for every message about one chunk so a request never overtakes the push before it). Default: [executor] for everything. */
+    private val executorFor: ((ChunkKey) -> java.util.concurrent.Executor)? = null,
 ) {
+    private companion object { const val MAX_PARKED_PER_NODE = 4096 }
     private class Lease(val node: String, var expiresAt: Long)
     private class Waiter(val node: RegisteredNode, val reqId: Long)
     private val lock = Any()
@@ -56,19 +59,44 @@ class ChunkAuthority(
     /** Last time a backend pushed anything: a holder that keeps pushing is alive and generating, so its leases do not run out (they would make a waiting backend generate the same chunks again). */
     private val progress = HashMap<String, Long>()
 
-    private fun validUntil(l: Lease): Long = maxOf(l.expiresAt, (progress[l.node] ?: 0L) + leaseMs)
+    /** A holder that ticks slowly generates slowly: its lease and its progress window are as many times longer as its ticks are (backends report it, see NodeTickRate). */
+    private fun validUntil(l: Lease): Long { val f = registry[l.node]?.let { net.fissionmc.protocol.TickScale.factor(it.tickMs) } ?: 1.0; return maxOf(l.expiresAt + (leaseMs * (f - 1)).toLong(), (progress[l.node] ?: 0L) + (leaseMs * f).toLong()) }
 
     // counters for the log / tests
     val requests = AtomicLong(); val served = AtomicLong(); val leasesGranted = AtomicLong(); val parked = AtomicLong(); val leaseExpired = AtomicLong()
+    // why a request was not answered with a chunk (the "served" counter only counts [ChunkData]; every chunk load asks for the chunk AND its entities AND its poi, and the last two are mostly empty)
+    val absentKind = AtomicLong(); val absentPeek = AtomicLong(); val absentDeterministic = AtomicLong(); val absentFar = AtomicLong(); val absentInvalid = AtomicLong()
+    val pushesNotOwnerEntities = AtomicLong()
+    // IO queue: how long a message waited for the store thread, how long it took (reads and writes, a write includes its fsync), how many are waiting now
+    private val ioWaitNanos = AtomicLong(); private val ioWaitMaxNanos = AtomicLong(); private val ioJobs = AtomicLong(); private val ioInflight = java.util.concurrent.atomic.AtomicInteger(); private val ioInflightMax = java.util.concurrent.atomic.AtomicInteger()
+    private val readNanos = AtomicLong(); private val reads = AtomicLong(); private val writeNanos = AtomicLong(); private val writes = AtomicLong()
     val generateJobs = AtomicLong(); val pushesNotOwner = AtomicLong(); val pushesAccepted = AtomicLong(); val pushesRejected = AtomicLong(); val bytesIn = AtomicLong(); val bytesOut = AtomicLong()
 
     fun statsLine(): String = "[chunks] store ${store.count()} blobs; requests ${requests.get()} served ${served.get()} leases ${leasesGranted.get()} parked ${parked.get()} expired ${leaseExpired.get()}; " +
-        "pushes accepted ${pushesAccepted.get()} rejected ${pushesRejected.get()}; bytes in ${bytesIn.get()} out ${bytesOut.get()}; generate jobs ${generateJobs.get()} pushes refused (not the owner) ${pushesNotOwner.get()}"
+        "pushes accepted ${pushesAccepted.get()} rejected ${pushesRejected.get()}; bytes in ${bytesIn.get()} out ${bytesOut.get()}; generate jobs ${generateJobs.get()} pushes refused (not the owner) ${pushesNotOwner.get()}" +
+        "; unserved: entities/poi ${absentKind.get()} peek ${absentPeek.get()} deterministic ${absentDeterministic.get()} far ${absentFar.get()}" +
+        "; io: wait avg ${avgMs(ioWaitNanos.get(), ioJobs.get())} ms max ${ioWaitMaxNanos.get() / 1_000_000} ms, queued now ${ioInflight.get()} (max ${ioInflightMax.get()}), read avg ${avgMs(readNanos.get(), reads.get())} ms, push avg ${avgMs(writeNanos.get(), writes.get())} ms"
+    private fun avgMs(nanos: Long, n: Long): String = if (n == 0L) "0" else "%.2f".format(java.util.Locale.ROOT, nanos / n / 1e6)
+
+    /** Runs [body] on the executor of [key], measuring the wait in its queue and the service time ([write] = a push: it includes the fsync of the store). */
+    private fun io(key: ChunkKey, write: Boolean, body: () -> Unit) {
+        val t0 = System.nanoTime(); val q = ioInflight.incrementAndGet(); var m = ioInflightMax.get(); while (q > m && !ioInflightMax.compareAndSet(m, q)) m = ioInflightMax.get()
+        (executorFor?.invoke(key) ?: executor).execute {
+            val t1 = System.nanoTime(); val w = t1 - t0; ioWaitNanos.addAndGet(w); ioJobs.incrementAndGet(); var mx = ioWaitMaxNanos.get(); while (w > mx && !ioWaitMaxNanos.compareAndSet(mx, w)) mx = ioWaitMaxNanos.get()
+            try { body() } finally { val d = System.nanoTime() - t1; if (write) { writeNanos.addAndGet(d); writes.incrementAndGet() } else { readNanos.addAndGet(d); reads.incrementAndGet() }; ioInflight.decrementAndGet() }
+        }
+    }
+
+    /** Level ids are `namespace:path`: nothing else is accepted from a backend (the id becomes part of a file path in the store). */
+    private fun validKey(node: RegisteredNode, dimension: String, kind: Int): Boolean {
+        if (kind in 0..2 && ChunkKey.validDimension(dimension)) return true
+        net.fissionmc.net.pairing.Audit.failure("chunk:${node.info.nodeId}", "node ${node.info.nodeId} sent a chunk message with level '${net.fissionmc.net.pairing.Audit.clean(dimension, 40)}' kind $kind: dropped"); return false
+    }
 
     fun handle(node: RegisteredNode, msg: NodeMessage): Boolean {
         when (msg) {
-            is ChunkRequest -> executor.execute { try { request(node, msg) } catch (t: Throwable) { log("[chunks] request ${msg.dimension} ${msg.x},${msg.z} from ${node.info.nodeId} failed: $t"); node.link.send(ChunkAbsent(msg.reqId, false)) } }
-            is ChunkPush -> executor.execute { try { push(node, msg) } catch (t: Throwable) { log("[chunks] push ${msg.dimension} ${msg.x},${msg.z} from ${node.info.nodeId} failed: $t") } }
+            is ChunkRequest -> if (!validKey(node, msg.dimension, msg.kind)) { absentInvalid.incrementAndGet(); node.link.send(ChunkAbsent(msg.reqId, false)) } else io(ChunkKey(msg.dimension, msg.kind, msg.x, msg.z), false) { try { request(node, msg) } catch (t: Throwable) { log("[chunks] request ${msg.dimension} ${msg.x},${msg.z} from ${node.info.nodeId} failed: $t"); node.link.send(ChunkAbsent(msg.reqId, false)) } }
+            is ChunkPush -> if (validKey(node, msg.dimension, msg.kind)) io(ChunkKey(msg.dimension, msg.kind, msg.x, msg.z), true) { try { push(node, msg) } catch (t: Throwable) { log("[chunks] push ${msg.dimension} ${msg.x},${msg.z} from ${node.info.nodeId} failed: $t") } }
             else -> return false
         }
         return true
@@ -80,12 +108,13 @@ class ChunkAuthority(
         val key = ChunkKey(m.dimension, m.kind, m.x, m.z)
         val have = store.get(key)
         if (have != null) { send(node, have, m.reqId); return }
-        if (m.peek || m.kind != ChunkKind.CHUNK || deterministic(m.dimension)) { node.link.send(ChunkAbsent(m.reqId, false)); return }   // entities/poi are created with the chunk, deterministic worlds are generated locally: no lease
+        if (m.peek || m.kind != ChunkKind.CHUNK || deterministic(m.dimension)) { (if (m.peek) absentPeek else if (m.kind != ChunkKind.CHUNK) absentKind else absentDeterministic).incrementAndGet(); node.link.send(ChunkAbsent(m.reqId, false)); return }   // entities/poi are created with the chunk, deterministic worlds are generated locally: no lease
         val genOwner = generationOwner(m.dimension, m.x, m.z)?.takeIf { registry[it]?.link?.isOpen == true }   // an owner that is not connected cannot generate: the requester does
-        if (genOwner != null && genOwner != node.info.nodeId && !ownerGenerates(node.info.nodeId, m.dimension, m.x, m.z)) { node.link.send(ChunkAbsent(m.reqId, false)); return }   // far from any border: local, unkept
+        if (genOwner != null && genOwner != node.info.nodeId && !ownerGenerates(node.info.nodeId, m.dimension, m.x, m.z)) { absentFar.incrementAndGet(); node.link.send(ChunkAbsent(m.reqId, false)); return }   // far from any border: local, unkept
         if (genOwner != null && genOwner != node.info.nodeId) {
             // somebody else owns this chunk: park the request, the owner generates it (GenerateChunk) and its push serves everybody who waits
             synchronized(lock) {
+                if (waiting.values.sumOf { l -> l.count { w -> w.node === node } } >= MAX_PARKED_PER_NODE) { node.link.send(ChunkAbsent(m.reqId, false)); return }   // a backend cannot make the master queue without limit
                 parked.incrementAndGet()
                 val first = waiting[key].isNullOrEmpty() && leases[key] == null
                 waiting.computeIfAbsent(key) { ArrayList() } += Waiter(node, m.reqId)
@@ -141,7 +170,7 @@ class ChunkAuthority(
         }
         if (m.kind != ChunkKind.CHUNK) regionOwner(m.dimension, m.x, m.z)?.takeIf { it != node.info.nodeId && registry[it]?.link?.isOpen == true }?.let {
             // a ghost copy never has live entities: its (empty or stale) entity and poi data must not overwrite the owner's
-            pushesRejected.incrementAndGet(); pushesNotOwner.incrementAndGet(); node.link.send(ChunkStored(m.dimension, m.kind, m.x, m.z, false, store.get(key)?.version ?: 0L)); return
+            pushesRejected.incrementAndGet(); pushesNotOwner.incrementAndGet(); pushesNotOwnerEntities.incrementAndGet(); node.link.send(ChunkStored(m.dimension, m.kind, m.x, m.z, false, store.get(key)?.version ?: 0L)); return
         }
         val r = store.put(key, m.status, m.baseVersion, m.bytes, node.info.nodeId)
         if (r.accepted) pushesAccepted.incrementAndGet() else pushesRejected.incrementAndGet()

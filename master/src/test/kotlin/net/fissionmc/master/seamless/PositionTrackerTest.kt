@@ -27,8 +27,10 @@ class PositionTrackerTest {
 
     @Test fun `a teleport sized jump is not momentum and the vehicle packet counts`() {
         now = 0; t.observe(s("MovePlayerPos") { writeDouble(0.0); writeDouble(0.0); writeDouble(0.0); writeByte(0) })
-        now = 50_000_000; t.observe(s("MovePlayerPos") { writeDouble(500.0); writeDouble(0.0); writeDouble(0.0); writeByte(0) }); assertEquals(0.0, t.latest()!!.vx)
-        now = 100_000_000; t.observe(s("MoveVehicle") { writeDouble(501.0); writeDouble(0.0); writeDouble(0.0); writeFloat(0f); writeFloat(0f); writeByte(0) }); assertEquals(501.0, t.latest()!!.x)
+        now = 50_000_000; t.observe(s("MovePlayerPos") { writeDouble(500.0); writeDouble(0.0); writeDouble(0.0); writeByte(0) })
+        assertEquals(0.0, t.latest()!!.x, "a forged jump is not a position"); assertEquals(1L, t.rejected)
+        now = 100_000_000; t.observe(s("MoveVehicle") { writeDouble(1.0); writeDouble(0.0); writeDouble(0.0); writeFloat(0f); writeFloat(0f); writeByte(0) }); assertEquals(1.0, t.latest()!!.x)
+        t.observe(s("MovePlayerPos") { writeDouble(Double.NaN); writeDouble(0.0); writeDouble(0.0); writeByte(0) }); assertEquals(1.0, t.latest()!!.x); assertEquals(2L, t.rejected)
     }
 
     @Test fun `a server teleport moves the known position and clears the momentum`() {

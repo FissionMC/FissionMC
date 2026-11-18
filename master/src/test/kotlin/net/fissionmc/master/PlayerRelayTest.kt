@@ -37,6 +37,37 @@ class PlayerRelayTest {
         return reg to links
     }
 
+    private fun bootingRegistry(vararg ids: String): Pair<NodeRegistry, Map<String, FakeLink>> {
+        val reg = NodeRegistry(); val links = ids.associateWith { FakeLink() }
+        links.forEach { (id, l) -> reg.register(PeerInfo(id, NodeRole.BACKEND, 1, "26.3"), l, ready = false) }
+        return reg to links
+    }
+
+    @Test fun `a backend that joined the link but still boots gets no player until its NodeReady`() {
+        val (reg, links) = bootingRegistry("backend-a", "backend-b")
+        val relay = PlayerRelay(reg)
+        assertEquals(listOf("backend-a", "backend-b"), relay.liveNodeIds()); assertEquals(emptyList(), relay.readyNodeIds()); assertEquals(listOf("backend-a", "backend-b"), relay.bootingNodeIds())
+        assertNull(relay.attach(FakeClient("a")), "round robin must not pick a booting backend")
+        assertNull(relay.attach(FakeClient("a"), "backend-b"), "a named booting backend is refused too")
+        assertTrue(links.values.all { l -> l.sent.none { it is PlayerAttach } })
+        assertTrue(relay.isBooting("backend-b") && !relay.isReady("backend-b"))
+
+        relay.handle(reg["backend-a"]!!, NodeReady(5000))
+        assertEquals(listOf("backend-a"), relay.readyNodeIds()); assertTrue(relay.isReady("backend-a")); assertTrue(relay.isBooting("backend-b"))
+        // round robin only sees the ready one; the booting one is still refused by name
+        val id = relay.attach(FakeClient("c")); assertNotNull(id); assertEquals("backend-a", relay.nodeIdOf(id))
+        assertNull(relay.attach(FakeClient("d"), "backend-b"))
+        relay.handle(reg["backend-b"]!!, NodeReady(5750))
+        assertNotNull(relay.attach(FakeClient("e"), "backend-b")); assertEquals(1, links["backend-b"]!!.sent.count { it is PlayerAttach })
+    }
+
+    @Test fun `a ready node that drops is no longer ready`() {
+        val (reg, links) = bootingRegistry("backend-a")
+        val relay = PlayerRelay(reg); relay.handle(reg["backend-a"]!!, NodeReady(1))
+        assertTrue(relay.isReady("backend-a")); links["backend-a"]!!.close("gone")
+        assertFalse(relay.isReady("backend-a")); assertNull(relay.attach(FakeClient("x")))
+    }
+
     @Test fun `messages survive the wire`() {
         val reg = MessageRegistry.core().registerPlayerMessages()
         val msgs = listOf(

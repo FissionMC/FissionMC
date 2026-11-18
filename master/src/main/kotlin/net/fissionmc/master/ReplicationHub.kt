@@ -74,7 +74,11 @@ class ReplicationHub(val log: EventLog = EventLog(), val epoch: Long = java.util
         if (r.epoch != epoch) { link.send(LogReset(epoch)); from = 0 }
         else if (r.lastSeq > log.lastSeq) { link.send(LogReset(epoch)); from = 0 }
         when (val s = log.since(from)) {
-            is EventLog.Since.Gap -> { link.send(LogTruncated(s.oldestSeq)); logger.warning("${node.info.nodeId} is behind the retained log (oldest ${s.oldestSeq})") }
+            is EventLog.Since.Gap -> {
+                link.send(LogTruncated(s.oldestSeq)); logger.warning("${node.info.nodeId} is behind the retained log (oldest ${s.oldestSeq})")
+                // the backend continues from oldest-1: the events the log still holds follow at once (it used to get them only when the next live event showed a gap and asked again: "gap: got seq=N+1, expected N")
+                (log.since(s.oldestSeq - 1) as? EventLog.Since.Events)?.events?.forEach(link::send)
+            }
             is EventLog.Since.Events -> s.events.forEach(link::send)
         }
         live[node.info.nodeId] = link

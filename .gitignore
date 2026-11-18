@@ -7,3 +7,5 @@ build/
 .dev/
 .fission-builtin/
 .kotlin/
+/.cache
+/.dev

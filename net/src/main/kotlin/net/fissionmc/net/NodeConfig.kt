@@ -28,6 +28,12 @@ enum class NodeMode {
  *   direct-connections: false  # backend: true = players may also connect to the backend's own port (bypasses the master)
  *   allow-insecure: false    # master: allow security: false on a non-loopback listener
  *   connect-timeout: 300     # backend: seconds to wait for the master at start (0 = for ever)
+ *   master-key: .fission-master-key  # backend: where the pinned master key is kept (written by pairing)
+ *   pairing: true            # master: accept `node add <code>` pairings
+ *   pairing-minutes: 15      # backend: lifetime of a printed pairing code
+ *   pairing-max-pending: 8   # master: pairings that may wait at once
+ *   max-unauthenticated: 8   # master: handshakes in progress per remote address
+ *   connections-per-minute: 60  # master: new connections per remote address
  * ```
  * (every key documented in `fission.default.yml` / `fission.backend.default.yml`)
  */
@@ -49,6 +55,18 @@ data class NodeConfig(
     val allowInsecure: Boolean = false,
     /** `node.connect-timeout` seconds a starting backend waits for the master (default 300, 0 = for ever). */
     val connectTimeoutSeconds: Long = 300,
+    /** `node.master-key` (backend): the pinned master key file, written by pairing (default `.fission-master-key` next to fission.yml). */
+    val masterKeyFile: Path = keyFile.resolveSibling(".fission-master-key"),
+    /** `node.pairing` (master, default true): `node add <code>` and the pairing handshake are accepted. */
+    val pairing: Boolean = true,
+    /** `node.pairing-minutes` (backend): how long a printed pairing code is valid. */
+    val pairingMinutes: Long = 15,
+    /** `node.pairing-max-pending` (master): pairings waiting for their first contact. */
+    val pairingMaxPending: Int = 8,
+    /** `node.max-unauthenticated` (master): connections per remote address that have not finished the handshake. */
+    val maxUnauthenticatedPerIp: Int = 8,
+    /** `node.connections-per-minute` (master): new connections per remote address. */
+    val connectionsPerMinute: Int = 60,
 ) {
     companion object {
         /** Parses the file and reads only the `node:` section (no unknown-key check: the caller owns the whole tree; see [from]). */
@@ -75,13 +93,17 @@ data class NodeConfig(
                 dir.resolve(text("world-root") ?: "."),
                 n.bool("direct-connections", false), n.bool("allow-insecure", false),
                 n.long("connect-timeout", 300L).also { if (it < 0) throw ConfigException("node.connect-timeout: expected 0 or more seconds, got $it") },
+                dir.resolve(text("master-key") ?: ".fission-master-key"), n.bool("pairing", true),
+                n.long("pairing-minutes", 15L).also { if (it !in 1..60) throw ConfigException("node.pairing-minutes: expected 1-60, got $it") },
+                n.int("pairing-max-pending", 8).also { if (it !in 1..64) throw ConfigException("node.pairing-max-pending: expected 1-64, got $it") },
+                n.int("max-unauthenticated", 8).also { if (it !in 1..1000) throw ConfigException("node.max-unauthenticated: expected 1-1000, got $it") },
+                n.int("connections-per-minute", 60).also { if (it !in 1..100000) throw ConfigException("node.connections-per-minute: expected 1-100000, got $it") },
             ).also { it.validate() }
         }
     }
 
     private fun validate() {
         if (mode == NodeMode.BACKEND && master == null) throw ConfigException("node.master: mode backend needs host:port")
-        if (mode == NodeMode.BACKEND && security && masterPublic == null) throw ConfigException("node.master-public: mode backend needs the master's public key (or node.security: false)")
         if (masterProcess && listen == null) throw ConfigException("node.listen: mode master needs host:port")
     }
 }

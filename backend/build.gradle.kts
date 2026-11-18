@@ -9,6 +9,7 @@ dependencies {
     api(project(":net"))
     api(project(":master"))
     api(project(":packets"))
+    api(project(":fission-api"))
     implementation(project(":loader"))
     implementation(project(":craft"))
     compileOnly("net.fabricmc:sponge-mixin:0.17.5+mixin.0.8.7")
@@ -44,6 +45,7 @@ tasks.register<JavaExec>("run") {
     val loaderCp = project(":loader").extensions.getByType<SourceSetContainer>()["main"].runtimeClasspath
     val gameCp = files(mcJar, mcLibs, sourceSets["main"].runtimeClasspath)
     dependsOn(":loader:classes", "classes", ":testplugin:installTestPlugin")
+    dependsOn(gameCp) // the game class path holds the project jars (protocol, net, fission-api ...); nothing else builds them for a plain run
     classpath = loaderCp
     mainClass = "net.fissionmc.loader.Bootstrap"
     // -PrunDir=run-a -Pport=25566 lets several backends run side by side (eula/server.properties are seeded from run/)
@@ -79,6 +81,7 @@ tasks.register<JavaExec>("run") {
         (project.findProperty("testStopThrows") as String?)?.let { systemProperty("fission.test.stop-throws", it) }
         (project.findProperty("testNoGuard") as String?)?.let { systemProperty("fission.test.no-guard", it) }
         (project.findProperty("checkStream") as String?)?.let { systemProperty("fission.check-stream", it) }
+        (project.findProperty("checkSafety") as String?)?.let { systemProperty("fission.check-safety", it) }   // the client safety layer against vanilla's codecs (SafetyCheck)
         (project.findProperty("checkEntityIds") as String?)?.let { systemProperty("fission.check-entity-ids", it) }   // with -PcheckStream: the entity id rewriter against vanilla's codecs
     }
     // ./gradlew :backend:run -PmixinExport=1 : Mixin writes the transformed classes to run/.mixin.out (javap them to see what really got merged)

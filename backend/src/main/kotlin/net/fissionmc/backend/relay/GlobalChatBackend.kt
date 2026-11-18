@@ -31,7 +31,9 @@ object GlobalChatBackend {
     private const val MARK_TTL_MS = 10_000L
     private val marks = ConcurrentHashMap<UUID, ConcurrentLinkedDeque<Mark>>()
     private val uuidOf = ConcurrentHashMap<Long, UUID>()           // relay player id -> uuid
-    private val ghosts = ConcurrentHashMap<UUID, ServerPlayer>()
+    /** One never-spawned player per distinct remote sender, only touched on the server thread; bounded (least recently used goes first) so unique senders over time do not pile up. */
+    private const val MAX_GHOSTS = 256
+    private val ghosts = object : LinkedHashMap<UUID, ServerPlayer>(64, 0.75f, true) { override fun removeEldestEntry(e: MutableMap.MutableEntry<UUID, ServerPlayer>) = size > MAX_GHOSTS }
     private val pool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "fission-global-chat").also { it.isDaemon = true } }
     @Volatile private var server: MinecraftServer? = null
 
@@ -78,7 +80,10 @@ object GlobalChatBackend {
         val srv = server ?: return
         val uuid = UUID(m.uuidHigh, m.uuidLow)
         srv.execute {   // entity creation on the server thread; the event path on a worker like real async chat
-            val ghost = try { ghosts.computeIfAbsent(uuid) { ServerPlayer(srv, srv.overworld(), GameProfile(uuid, m.name), ClientInformation.createDefault()) } }
+            val ghost = try {
+                    ghosts[uuid]?.takeIf { it.gameProfile.name() == m.name }   // a renamed player gets a new one
+                        ?: ServerPlayer(srv, srv.overworld(), GameProfile(uuid, m.name), ClientInformation.createDefault()).also { ghosts[uuid] = it }
+                }
                 catch (t: Throwable) { log.warning("[fission] observed global chat: cannot create the ghost player for ${m.name}: $t"); return@execute }
             pool.execute {
                 try {

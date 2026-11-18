@@ -32,10 +32,13 @@ class MasterServer(
     /** A channel the client listener accepted whose first bytes were a node link's: handshake and registration as for any other link. */
     fun adopt(ch: io.netty.channel.Channel) { (transport as? NettyTransport ?: error("port sharing needs the Netty transport")).adopt(ch, ::accept) }
 
+    /** Key rotation messages and the node administration (set by the master main when link security is on). */
+    @Volatile var nodeAdmin: net.fissionmc.master.nodes.NodeAdmin? = null
+
     private fun accept(link: NodeLink) {
-        link.handler = { msg -> if (!seeding.handle(link, msg) && !worlds.handle(link, msg) && !handlePlugins(link, msg)) registry[linkOwner(link)]?.let { onMessage(it, msg) } }
+        link.handler = { msg -> if (nodeAdmin?.let { a -> registry[linkOwner(link)]?.let { n -> a.handle(n, msg) } } != true && !seeding.handle(link, msg) && !worlds.handle(link, msg) && !handlePlugins(link, msg) && !bus.handle(link, linkOwner(link), msg)) registry[linkOwner(link)]?.let { onMessage(it, msg) } }
         link.ready.thenAccept { peer ->
-            if (peer.role == NodeRole.BACKEND) { owners[link] = peer.nodeId; registry.register(peer, link) }
+            if (peer.role == NodeRole.BACKEND) { owners[link] = peer.nodeId; registry.register(peer, link, ready = false) }
             else link.close("masters cannot connect to a master")
         }
         link.closed.thenRun { owners.remove(link) }
@@ -66,6 +69,8 @@ class MasterServer(
         return msg is net.fissionmc.protocol.PluginFileRequest
     }
 
+    /** Plugin messages between backends and to the master (see PluginBus). */
+    val bus = PluginBus(registry)
     private val owners = java.util.concurrent.ConcurrentHashMap<NodeLink, String>()
     private fun linkOwner(link: NodeLink) = owners[link] ?: ""
 

@@ -105,6 +105,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private var batchOutstanding = 0; private var staleBatchAcks = 0
     private val pBatchFinished by lazy { net.fissionmc.master.seamless.PlayPacketIds.c("ChunkBatchFinished") }
     private val pBatchAck by lazy { net.fissionmc.master.seamless.PlayPacketIds.s("ChunkBatchReceived") }
+    private val limboPackets = java.util.LinkedHashMap<String, Int>()
     private var graceTask: ScheduledFuture<*>? = null
     /** Waiting for the old backend to save the player before the new one is attached. */
     private var switchPending = false
@@ -133,10 +134,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     private fun refreshLive() { liveNode = if (mode == Mode.RELAY && tracker.clientState == ConnectionState.PLAY && tracker.serverState == ConnectionState.PLAY) currentNodeId else null }
     override val tabUuid: java.util.UUID get() = prof!!.uuid
     override val tabNode: String? get() = liveNode
-    override fun tabSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { cleanup.observe(frame); writeRelay(frame) } } }
+    override fun tabSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { val f = safety.checkMasterFrame(frame) ?: return@execute; cleanup.observe(f); writeRelay(f) } } }
     override val ghostUuid: java.util.UUID get() = prof!!.uuid
     override val ghostNode: String? get() = liveNode
-    override fun ghostSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { cleanup.observe(frame); clientView.observe(frame); writeRelay(frame) } } }   // tab lines and the team are removed again by a transplant's cleanup
+    override fun ghostSend(frame: ByteArray) { channel.eventLoop().execute { if (liveNode != null && channel.isActive) { val f = safety.checkMasterFrame(frame) ?: return@execute; cleanup.observe(f); clientView.observe(f); writeRelay(f) } } }   // tab lines and the team are removed again by a transplant's cleanup
     override fun ghostAdded(clientId: Int) { channel.eventLoop().execute { idMap.onAdded(clientId, -1) } }
     override fun ghostRemoved(clientId: Int) { channel.eventLoop().execute { idMap.onRemoved(clientId) } }
     private val tabDecode: (ByteArray) -> com.github.retrooper.packetevents.event.PacketSendEvent? = { f -> runCatching { EventCreationUtil.createSendEvent(channel, user, null, io.netty.buffer.Unpooled.wrappedBuffer(f), false) }.getOrNull() }
@@ -187,12 +188,12 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (!channel.isActive || mode != Mode.RELAY || id == null) { arrival = null; server.tlog("[cross] $playerName: gone before '/${pc.cmd}' could run"); return }
         val seq = ++checkSeq
         val probe = PendingCheck(seq, pc.frame, pc.cmd, pc.targetName, pc.targetNode); arrival = probe
-        probe.timeout = channel.eventLoop().schedule({ if (arrival === probe) retryArrival(probe, "no answer") }, 400, TimeUnit.MILLISECONDS)
+        probe.timeout = channel.eventLoop().schedule({ if (arrival === probe) retryArrival(probe, "no answer") }, maxOf(400L, minOf(server.relay?.scaledFor(id, 400L) ?: 400L, 2000L)), TimeUnit.MILLISECONDS)
         server.relay?.sendTo(id, net.fissionmc.protocol.CommandCheck(id, seq, pc.cmd))
     }
     private fun retryArrival(pc: PendingCheck, why: String) {
         if (arrival !== pc) return
-        if (++arrivalTries >= 15) { arrival = null; server.tlog("[cross] $playerName: $why after $arrivalTries tries on $currentNodeId, running '/${pc.cmd}' anyway"); passCommand(pc.frame); return }
+        if (++arrivalTries >= (relayId?.let { server.relay?.scaledFor(it, 15L) } ?: 15L)) { arrival = null; server.tlog("[cross] $playerName: $why after $arrivalTries tries on $currentNodeId, running '/${pc.cmd}' anyway"); passCommand(pc.frame); return }   // 15 tries (~8 s), times 20 for a backend at 1 tps (it needs that long to have the player)
         channel.eventLoop().schedule({ if (arrival === pc) probeArrival(pc) }, 150, TimeUnit.MILLISECONDS)
     }
     private fun arrivalAnswer(pc: PendingCheck, allowed: Boolean, present: Boolean) {
@@ -215,7 +216,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val id = relayId ?: return false
         val m = insp.match
         val pc = PendingCheck(++checkSeq, bytes, cmd, m.targetName, m.targetNode); pendingCheck = pc
-        pc.timeout = channel.eventLoop().schedule({ if (pendingCheck === pc) { server.tlog("[cross] $playerName: ${currentNodeId} did not answer the check for '/$cmd' in ${server.settings.cross.checkTimeoutMs} ms"); commandChecked(pc.seq, false) } }, server.settings.cross.checkTimeoutMs, TimeUnit.MILLISECONDS)
+        pc.timeout = channel.eventLoop().schedule({ if (pendingCheck === pc) { server.tlog("[cross] $playerName: ${currentNodeId} did not answer the check for '/$cmd' in ${server.settings.cross.checkTimeoutMs} ms"); commandChecked(pc.seq, false) } }, server.relay?.scaledFor(id, server.settings.cross.checkTimeoutMs) ?: server.settings.cross.checkTimeoutMs, TimeUnit.MILLISECONDS)
         server.tlog("[cross] $playerName on $currentNodeId: intercepted '/$cmd' -> ${m.targetName} is on ${m.targetNode}, asking $currentNodeId whether the player may run it")
         relay.sendTo(id, net.fissionmc.protocol.CommandCheck(id, pc.seq, cmd))
         return true
@@ -251,11 +252,15 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val target = regionPolicy.decide(regions, dimension, x, z, cur, now)
         if (target == null) return
         Trace.emit("region.decision") { player(playerName, uuid); str("dim", dimension); int("x", x); int("z", z); str("on", cur); str("owner", regions.owner(dimension, x, z)); str("target", target) }
-        if (server.relay?.liveNodeIds()?.contains(target) != true) { Trace.emit("region.target.offline") { player(playerName, uuid); str("target", target) }; return }
+        // a target that is offline, or connected but still booting, gets nobody: the player stays where it is and is checked again at its next position report / when the target says it is ready
+        if (server.relay?.isReady(target) != true) { Trace.emit("region.target.offline") { player(playerName, uuid); str("target", target); bool("booting", server.relay?.isBooting(target) == true) }; return }
         regionPolicy.switched(cur, now)
         server.tlog("[regions] $playerName at $dimension $x,$z leaves $cur for $target")
         startSwitch(target, "region") { why -> server.tlog("[regions] $playerName: cannot move to $target: $why") }
     }
+
+    /** A backend became ready: look again whether this player belongs to another backend now (it stood at a border whose target was still booting). */
+    fun regionRecheck() { channel.eventLoop().execute { if (lastDimension.isNotEmpty()) checkRegion(lastDimension, lastX, lastZ) } }
 
     /** The master's permissions changed: tell the player's backend (it resends the command tree, which the master patches again). */
     fun pushPermission() { channel.eventLoop().execute {
@@ -274,6 +279,13 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     /** Backend frame heading for the client through the packet bus; null = dropped. */
     private fun toClient(bytes: ByteArray): ByteArray? = tap?.toClient(bytes) ?: if (tap == null) bytes.also { tracker.onServerFrame(it) } else null
     private val pendingFromBackend = java.util.ArrayDeque<ByteArray>()
+    private val safety = net.fissionmc.master.safety.ClientSafety({ playerName }, { currentNodeId }, { server.tlog(it) }, net.fissionmc.master.safety.PeItemSanitizer)
+    /** Client safety layer (.dev/docs/design/client-safety.md): the frame a client may get instead of [frame], or null (dropped; a kick is already under way). */
+    private fun safe(st: ConnectionState, frame: ByteArray): ByteArray? {
+        val v = safety.check(st, frame)
+        if (v.kick != null) { disconnect(v.kick); return null }
+        return v.frame
+    }
     private lateinit var channel: Channel
     private lateinit var user: User
     private var protocolVersion = 0
@@ -336,7 +348,9 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (registered && lastDimension.isNotEmpty()) uuid?.let { u -> server.relay?.playerData?.savePosition(u, lastDimension, lastX, lastZ) }
         if (announcedJoin && registered) { announcedJoin = false; server.unregister(this); registered = false; server.announce(server.settings.announcements.leave(playerName, currentNodeId)) }
         relayId?.let { server.relay?.detach(it, "client left") }
-        switching?.let { server.relay?.detach(it.id, "client left") }
+        uuid?.let { server.relay?.dropPendingTransfer(it) }   // collected pets that were never delivered: their originals stay
+        switching?.let { sw -> sw.timeout?.cancel(false); server.relay?.detach(sw.id, "client left") }
+        switching = null   // the transplant timers test `switching === sw`: a client that left must not be "taken over" and announced again later
         if (registered) server.unregister(this)
         afterClose?.let { afterClose = null; it() }
         ctx.fireChannelInactive()
@@ -348,7 +362,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         channel.config().isAutoRead = false
         channel.eventLoop().scheduleWithFixedDelay({
             val id = relayId
-            if (id == null || !channel.isActive) throw RuntimeException("stop")
+            if (id == null || !channel.isActive) { if (channel.isActive) channel.config().isAutoRead = true; throw RuntimeException("stop") }   // the backend is gone: do not leave the client unread
             if (server.relay!!.isWritable(id)) { channel.config().isAutoRead = true; throw RuntimeException("stop") }
         }, 20, 20, TimeUnit.MILLISECONDS)
     }
@@ -357,7 +371,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
 
     override fun deliverFrom(bindingId: Long, rawFrame: ByteArray) { channel.eventLoop().execute {
         val sw = switching
-        if (sw != null && sw.id == bindingId) { onSwitchFrame(sw, rawFrame); return@execute }
+        if (sw != null && sw.id == bindingId) { onSwitchFrame(sw, safe(if (sw.inPlay) ConnectionState.PLAY else ConnectionState.CONFIGURATION, rawFrame) ?: return@execute); return@execute }
         if (bindingId != relayId) return@execute   // a binding that was already detached
         deliverRelay(rawFrame)
     } }
@@ -369,13 +383,15 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         VarInts.tryRead(b); VarInts.tryRead(b)
         if (b.readableBytes() < 16) return
         val uuid = java.util.UUID(b.readLong(), b.readLong())
+        server.ghosts.realPlayerArrived(this, uuid)   // a player's ghost kept over a transplant (its own frames go through ghostSend)
         val ghost = server.ghosts.realArrived(this, uuid) ?: return
         val remove = net.fissionmc.master.seamless.GhostFrames.remove(ghost)
         cleanup.observe(remove); clientView.observe(remove); writeRelay(remove); idMap.onRemoved(ghost)
     }
 
-    private fun deliverRelay(rawFrame: ByteArray) {
+    private fun deliverRelay(unchecked: ByteArray) {
         if (mode != Mode.RELAY && mode != Mode.AWAIT_ACK) return
+        val rawFrame = safe(tracker.serverState, unchecked) ?: return
         // A frame whose id does not exist in the phase the client is in would make the vanilla client drop the connection
         // ("Received unknown packet id N" in IdDispatchCodec). Vanilla's server cannot produce one (its outbound protocol is switched
         // together with the client's: ServerGamePacketListenerImpl.switchToConfig / handleConfigurationFinished); a backend that does
@@ -466,7 +482,8 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     fun tell(text: String) = tell(Component.text(text))
     fun tell(c: Component) { channel.eventLoop().execute {
         if (!channel.isActive || mode != Mode.RELAY || tracker.serverState != ConnectionState.PLAY) return@execute
-        writeRelay(Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage(false, c)))
+        val f = safety.checkMasterFrame(Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage(false, c))) ?: return@execute
+        writeRelay(f)
     } }
 
     /** The backend died while the client was playing: put it into the limbo without leaving the PLAY state (cleanup, then the limbo's Login). */
@@ -485,9 +502,10 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
     fun admitFromQueue() { channel.eventLoop().execute { if (mode == Mode.LIMBO) startSwitch(null, "limbo") } }
 
     /** Tells a waiting limbo player its place, or that every server is down. */
-    fun waitingNotice(place: Int, backendsUp: Boolean) { channel.eventLoop().execute {
+    fun waitingNotice(place: Int, backendsUp: Boolean, starting: Boolean = false) { channel.eventLoop().execute {
         if (!channel.isActive || mode != Mode.LIMBO || !clientLoaded || user.decoderState != ConnectionState.PLAY) return@execute
-        val text = if (!backendsUp) Component.text("All servers are down. You will join as soon as one is back.", net.kyori.adventure.text.format.NamedTextColor.RED)
+        val text = if (starting) Component.text("The servers are starting. You will join in a moment.", net.kyori.adventure.text.format.NamedTextColor.YELLOW)
+            else if (!backendsUp) Component.text("All servers are down. You will join as soon as one is back.", net.kyori.adventure.text.format.NamedTextColor.RED)
             else Component.text("Joining the server, you are number $place in the queue.", net.kyori.adventure.text.format.NamedTextColor.YELLOW)
         channel.writeAndFlush(io.netty.buffer.Unpooled.wrappedBuffer(Limbo.encode(com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSystemChatMessage(true, text))))
     } }   // timers and backend joins only ever move LIMBO players
@@ -507,25 +525,46 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
             // loaded (the real-client failure happened when StartConfiguration followed the limbo burst immediately), or the grace period is over: see onSwitchFrame / releaseHeld.
         } else if (mode != Mode.RELAY || tracker.clientState != ConnectionState.PLAY || tracker.serverState != ConnectionState.PLAY) { Trace.emit("switch.refused") { player(playerName, uuid); str("to", nodeId); str("reason", reason); str("why", "busy"); str("mode", mode.name); str("clientState", tracker.clientState.name); str("serverState", tracker.serverState.name) }; report("the player is busy"); return@execute }
         if (nodeId != null && nodeId == currentNodeId) { report("already on $nodeId"); return@execute }
+        // a backend that has joined the node link but still boots cannot log the player in: starting now would only end in the switch timeout (20 s) and "did not answer in time"
+        if (nodeId != null && server.relay?.isBooting(nodeId) == true) { waitForBackend(nodeId, reason, report); return@execute }
         Trace.emit("switch.start") { player(playerName, uuid); str("from", currentNodeId); str("to", nodeId); str("reason", reason); str("mode", mode.name) }
         switchReason = if (mode == Mode.LIMBO) "limbo" else reason; switchT0 = System.nanoTime()
         // leaving a backend: it saves the player first, so the next backend starts from the player's latest state (position, inventory, ...)
         val from = relayId; val id = uuid
         if (mode == Mode.RELAY && from != null && id != null && server.relay?.playerData != null) {
             switchPending = true
-            server.relay!!.flushPlayerData(from, id, 3000) { channel.eventLoop().execute {
+            // a flush that times out stops the switch: going on would hand the new backend an older save and the old backend's real one would then be refused (rollback)
+            val timedOut = { channel.eventLoop().execute {
+                switchPending = false; server.tlog("[client $playerName] the old backend did not save the player in time: the switch stays where it is")
+                restoreDataOwner(); commandAfterSwitch = null; report("the current backend did not save your data in time, try again")
+            } }
+            server.relay!!.flushPlayerData(from, id, 3000, timedOut) { channel.eventLoop().execute {
                 switchPending = false
                 if (channel.isActive && mode == Mode.RELAY && relayId == from) attachSwitch(nodeId, report)
             } }
         } else attachSwitch(nodeId, report)
     } }
 
+    private var awaitingBackend: String? = null
+    /** [nodeId] is booting: start the switch when it reports ready (checked twice a second, at most [BACKEND_START_WAIT_MS]), else say so. Event loop. */
+    private fun waitForBackend(nodeId: String, reason: String, report: (String) -> Unit, waitedMs: Long = 0) {
+        if (waitedMs == 0L) { if (awaitingBackend != null) { report("a switch is already waiting for a backend to start"); return }; awaitingBackend = nodeId; server.tlog("[client $playerName] $nodeId is still booting: the switch ($reason) starts when it is ready") }
+        if (!channel.isActive || awaitingBackend != nodeId) { if (awaitingBackend == nodeId) awaitingBackend = null; return }
+        val relay = server.relay
+        if (relay != null && relay.isReady(nodeId)) { awaitingBackend = null; startSwitch(nodeId, reason, report); return }
+        if (relay == null || !relay.isBooting(nodeId) || waitedMs >= BACKEND_START_WAIT_MS) {
+            awaitingBackend = null; commandAfterSwitch = null
+            report(if (relay?.isBooting(nodeId) == true) "backend $nodeId is still starting, try again in a moment" else "backend $nodeId is not connected"); return
+        }
+        channel.eventLoop().schedule({ waitForBackend(nodeId, reason, report, waitedMs + 500) }, 500, TimeUnit.MILLISECONDS)
+    }
+
     /** First entry with regions: the backend that owns the spot the player was at when it left (remembered by the master), if it is connected. */
     private fun preferredNode(): String? {
         val relay = server.relay ?: return null; val u = uuid ?: return null
         if (mode != Mode.LIMBO || !relay.regions.enabled) return null
         val pos = relay.playerData?.readPosition(u) ?: return null
-        return relay.regions.owner(pos.first, pos.second, pos.third)?.takeIf { it in relay.liveNodeIds() }
+        return relay.regions.owner(pos.first, pos.second, pos.third)?.takeIf { relay.isReady(it) }
     }
 
     /** The backend accepted the player but its Login never came (it hangs, or a plugin blocks the pre-login): give the switch up so the player is not stuck with it. */
@@ -543,11 +582,16 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val preferred = if (nodeId0 == null) preferredNode() else null
         val nodeId = nodeId0 ?: preferred
         val id = server.relay?.attach(this, nodeId) ?: (if (nodeId0 == null && preferred != null) server.relay?.attach(this, null) else null)
-        if (id == null) { Trace.emit("switch.attach.failed") { player(playerName, uuid); str("to", nodeId) }; report(if (nodeId == null) "no backend is alive" else "backend $nodeId is not connected"); return }
+        if (id == null) {
+            Trace.emit("switch.attach.failed") { player(playerName, uuid); str("to", nodeId) }
+            report(if (nodeId == null) "no backend is ready" else "backend $nodeId is not ready or not connected"); restoreDataOwner()
+            if (mode == Mode.LIMBO) channel.eventLoop().schedule({ tryAttach() }, 1, TimeUnit.SECONDS)   // the backend that was ready when the queue let this player in went away: ask the queue again instead of waiting for an event
+            return
+        }
         val node = server.relay!!.nodeIdOf(id) ?: "?"
         Trace.emit("switch.attach") { player(playerName, uuid); str("to", node); long("binding", id) }
         val sw = Switch(id, node); switching = sw; join?.attached()
-        channel.eventLoop().schedule({ switchTimedOut(sw) }, server.settings.switchTimeoutMs, TimeUnit.MILLISECONDS)
+        channel.eventLoop().schedule({ switchTimedOut(sw) }, server.relay!!.scaledForNode(node, server.settings.switchTimeoutMs), TimeUnit.MILLISECONDS)   // the new backend logs the player in on its game thread: more time when it ticks slowly
         // the client's real options go first, like in the first configuration of a fresh vanilla connection
         clientInfoPayload?.let { p -> server.relay?.toBackend(id, PlayIds.frame(0, p)) }
         server.tlog("[client] $playerName -> backend $node (player $id), seamless")
@@ -640,19 +684,22 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
      */
     private fun completeTransplant(sw: Switch) {
         val login = sw.login ?: return
-        if (switching !== sw) return
+        if (switching !== sw || !channel.isActive) return
         sw.timeout?.cancel(false)
         val old = relayId; val before = currentNodeId
         Trace.emit("switch.transplant.begin") { player(playerName, uuid); str("from", before); str("to", sw.nodeId); int("buffered", sw.buffer.size); bool("freshPosition", sw.freshPosition); int("heldEntities", idMap.heldIds().size) }
         val cleanupTab = cleanup.cleanupFrames()
-        val removal = net.fissionmc.master.seamless.TransplantBuilder.cleanup(idMap, clientView, cleanupTab)
-        val removedEntities = idMap.heldIds().size
-        hubsReset()
+        // ghosts that are still right (of the new backend's own entities and players: they stay until its copy arrives; all others) are not removed and re-added: nothing a player can see goes away
+        val ghosts = server.ghosts.transplant(this, sw.nodeId)
+        val removal = net.fissionmc.master.seamless.TransplantBuilder.cleanup(idMap, clientView, cleanupTab, ghosts.keep)
+        val removedEntities = idMap.heldIds().count { it !in ghosts.keep }
+        server.tabs.reset(this)
         relayId = sw.id; currentNodeId = sw.nodeId; switching = null; refreshLive()
         if (old != null) server.relay?.detach(old, "switched to ${sw.nodeId}")
         backendKeepAlives.clear(); pendingFromBackend.clear()
         staleBatchAcks = batchOutstanding; batchOutstanding = 0
         idMap.transplantTo(login.playerId)
+        ghosts.keep.forEach { idMap.onAdded(it, -1) }
         val heldChunks = clientView.chunks.toList(); clientView.objectives.clear(); clientView.teams.clear(); clientView.effects.clear()
         currentSpawn = login
         val chunkish = setOf("LevelChunkWithLight", "LightUpdate", "ChunkBatchStart", "ChunkBatchFinished", "ForgetLevelChunk", "ChunksBiomes").map { net.fissionmc.master.seamless.PlayPacketIds.c(it) }.toSet()
@@ -665,7 +712,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         val bundled = removal.size + other.size < 3500
         if (bundled) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(net.fissionmc.master.seamless.TransplantBuilder.bundleDelimiter))
         removal.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); clientView.observe(it) }
-        server.ghosts.entityFramesFor(this, sw.nodeId).forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); cleanup.observe(it); clientView.observe(it) }
+        ghosts.frames.forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)); cleanup.observe(it); clientView.observe(it) }
         net.fissionmc.master.seamless.TransplantBuilder.fromLogin(login, idMap.clientSelf).forEach { channel.write(io.netty.buffer.Unpooled.wrappedBuffer(it)) }
         other.forEach { deliverRelay(it) }
         if (bundled) channel.write(io.netty.buffer.Unpooled.wrappedBuffer(net.fissionmc.master.seamless.TransplantBuilder.bundleDelimiter))
@@ -682,7 +729,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         hubsPlaced(); runCommandAfterSwitch()
         Trace.emit("switch.transplant.done") { player(playerName, uuid); str("from", before); str("to", sw.nodeId); long("ms", (System.nanoTime() - sw.startedNanos) / 1_000_000); int("removedEntities", removedEntities); int("selfBackend", login.playerId); int("selfClient", idMap.clientSelf); int("chunkFrames", chunkFrames.size) }
         announceArrival(sw.nodeId, if (old != null) before else null); debugSwitchLine(before, sw.nodeId, "transplant")
-        server.tlog("[client] $playerName now on ${sw.nodeId} (transplant: no Login/Respawn, client keeps entity id ${idMap.clientSelf}, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, $removedEntities entities removed, ${removal.size} cleanup frames, ${sw.buffer.size} buffered frames, ${forgets.size} chunks forgotten, position hand-off ${if (lastTeleportId != null) "to the client's real position" else "off"})")
+        server.tlog("[client] $playerName now on ${sw.nodeId} (transplant: no Login/Respawn, client keeps entity id ${idMap.clientSelf}, switch took ${(System.nanoTime() - sw.startedNanos) / 1_000_000} ms, $removedEntities entities removed (${ghosts.keep.size} ghosts kept), ${removal.size} cleanup frames, ${sw.buffer.size} buffered frames, ${forgets.size} chunks forgotten, position hand-off ${if (lastTeleportId != null) "to the client's real position" else "off"})")
     }
 
     /** The new backend's Login arrived: leave the old binding, clean up what a new level does not reset, hand the client the Login. */
@@ -970,7 +1017,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
      * backend: cleanup frames); the second Login makes the client build a new level, like vanilla's ClientPacketListener.handleLogin does.
      */
     private fun startLimboPlay(before: List<ByteArray>) {
-        clientLoaded = false; graceOver = false   // a re-entered limbo (backend lost) loads its level again
+        limboPackets.clear(); clientLoaded = false; graceOver = false   // a re-entered limbo (backend lost) loads its level again
         user.decoderState = ConnectionState.PLAY; user.encoderState = ConnectionState.PLAY
         currentNodeId = null; backendKeepAlives.clear()
         val frames = Limbo.playFrames(server.config.shownMax(server.onlinePlayers), Limbo.config.overworldDimensionId)
@@ -981,7 +1028,7 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         server.tlog("[client] $playerName joined limbo"); join?.limboJoined()
         tryAttach()   // the backend's configuration overlaps with the client loading the limbo
         graceTask?.cancel(false)
-        graceTask = channel.eventLoop().schedule({ graceOver = true; if (!clientLoaded) join?.limboLoaded(true); tryAttach(); switching?.let { releaseHeld(it) } }, LOAD_GRACE_SECONDS, TimeUnit.SECONDS)
+        graceTask = channel.eventLoop().schedule({ graceOver = true; if (!clientLoaded) { join?.limboLoaded(true); server.tlog("[join] $playerName: the limbo client did not report its level loaded within ${server.settings.limbo.loadGraceSeconds} s (limbo.load-grace-seconds); it sent: ${limboPackets.entries.joinToString { "${it.key} x${it.value}" }.ifEmpty { "no play packets" }}") }; tryAttach(); switching?.let { releaseHeld(it) } }, server.settings.limbo.loadGraceSeconds.toLong(), TimeUnit.SECONDS)
         lastKeepAliveAck = System.nanoTime()
         keepAlive?.cancel(false)
         keepAlive = channel.eventLoop().scheduleAtFixedRate({
@@ -1009,8 +1056,9 @@ class ClientSession(private val server: ClientServer) : ChannelInboundHandlerAda
         if (e.packetType == PacketType.Play.Client.KEEP_ALIVE) {
             WrapperPlayClientKeepAlive(e); lastKeepAliveAck = System.nanoTime()
         }
+        if (limboPackets.size < 16 || limboPackets.containsKey(e.packetType.name)) limboPackets.merge(e.packetType.name, 1, Int::plus)   // what a client that never reports PlayerLoaded does send (logged when the grace is over)
         // everything else is ignored in limbo (movement, chat, settings...)
     }
 
-    companion object { const val PROTOCOL = 777; var LOAD_GRACE_SECONDS = 5L }
+    companion object { const val PROTOCOL = 777; const val BACKEND_START_WAIT_MS = 30_000L }
 }

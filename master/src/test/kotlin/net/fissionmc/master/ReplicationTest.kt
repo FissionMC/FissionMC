@@ -93,6 +93,17 @@ class ReplicationTest {
         val l = FakeLink()
         hub.handle(node("b", l), ResumeFrom(hub.epoch, 1))
         assertEquals(4L, l.sent.filterIsInstance<LogTruncated>().single().oldestSeq)
+        assertEquals(listOf(4L, 5), l.seqs(), "the retained events follow the truncation notice: the backend continues from oldest-1 and would otherwise report a gap at the next live event")
+    }
+
+    @Test fun restartedMasterReplaysTheEventsItAlreadyHoldsToAFreshBackend() {
+        val hub = ReplicationHub(EventLog().also { it.restore(11_000_656) })
+        hub.submit("a", bc(1))   // seq 11000657, appended while backend-b was still booting
+        val l = FakeLink()
+        hub.handle(node("b", l), ResumeFrom(hub.epoch, 0))
+        assertEquals(11_000_657L, l.sent.filterIsInstance<LogTruncated>().single().oldestSeq)
+        assertEquals(listOf(11_000_657L), l.seqs())
+        hub.submit("a", bc(2)); assertEquals(listOf(11_000_657L, 11_000_658L), l.seqs(), "live delivery continues without a gap")
     }
 
     @Test fun messagesRoundTripOnTheWire() {

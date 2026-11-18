@@ -1,5 +1,6 @@
 dependencies {
     compileOnly("io.papermc.paper:paper-api:26.3.build.240-stable")
+    compileOnly(project(":fission-api"))
 }
 
 // Drops the jar into run/plugins for :backend:run.

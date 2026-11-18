@@ -56,6 +56,8 @@ public abstract class IOWorkerChunkAuthorityMixin {
             CompoundTag tag = supplier.get();
             if (tag != null) {
                 ChunkAuthorityBackend.onStore(dim, kind, pos.x(), pos.z(), tag);
+            } else {
+                ChunkAuthorityBackend.onClear(dim, kind, pos.x(), pos.z());   // vanilla deletes the entities of a chunk whose last entity left: the master must forget them too
             }
             return tag;
         };

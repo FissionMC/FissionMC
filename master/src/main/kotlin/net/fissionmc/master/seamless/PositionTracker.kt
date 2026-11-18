@@ -16,6 +16,9 @@ class PositionTracker(private val clockNanos: () -> Long = System::nanoTime) {
     class Pos(val x: Double, val y: Double, val z: Double, val yaw: Float, val pitch: Float, val vx: Double, val vy: Double, val vz: Double)
 
     @Volatile var known = false; private set
+    /** Positions refused as forged or impossible (not finite, outside the world, further than a client can move). */
+    @Volatile var rejected = 0L; private set
+    private companion object { const val MAX_COORD = 3.0E7; const val SLACK = 8.0; const val STEP_PER_TICK = 12.0 }
     /** The client sent a position packet since the last server teleport: only then can it be anywhere but where the backend last put it. */
     @Volatile var moved = false; private set
     private var x = 0.0; private var y = 0.0; private var z = 0.0; private var yaw = 0f; private var pitch = 0f
@@ -38,9 +41,14 @@ class PositionTracker(private val clockNanos: () -> Long = System::nanoTime) {
     }
 
     private fun position(nx: Double, ny: Double, nz: Double) {
+        if (!nx.isFinite() || !ny.isFinite() || !nz.isFinite() || Math.abs(nx) > MAX_COORD || Math.abs(ny) > MAX_COORD || Math.abs(nz) > MAX_COORD) { rejected++; return }
         val now = clockNanos()
         if (known) {
             val ticks = Math.max(1.0, Math.round((now - lastNanos) / 50_000_000.0).toDouble())
+            // a position far from the last known one is not movement: only a server teleport (see [teleported]) moves a client that far. It must not steer the region routing or the
+            // hand-off spot (a modified client could otherwise teleport itself to any backend); the backend rejects such a move as well and snaps the player back.
+            val max = SLACK + STEP_PER_TICK * ticks
+            if ((nx - x) * (nx - x) + (ny - y) * (ny - y) + (nz - z) * (nz - z) > max * max) { rejected++; return }
             val dx = (nx - x) / ticks; val dy = (ny - y) / ticks; val dz = (nz - z) / ticks
             // a teleport (a jump of more than 16 blocks per tick) is not momentum
             if (dx * dx + dy * dy + dz * dz < 256.0) { vx = dx; vy = dy; vz = dz } else { vx = 0.0; vy = 0.0; vz = 0.0 }

@@ -4,13 +4,14 @@ import net.fissionmc.net.ConfigException
 import net.fissionmc.net.ConfigSection
 
 /** `limbo:` of fission.yml. */
-data class LimboSettings(val admitPerSecond: Double = 2.0, val burst: Int = 4, val noticeSeconds: Int = 2) {
+data class LimboSettings(val admitPerSecond: Double = 2.0, val burst: Int = 4, val noticeSeconds: Int = 2, val loadGraceSeconds: Int = 5) {
     companion object {
         fun from(root: ConfigSection): LimboSettings {
             val d = LimboSettings(); val s = root.section("limbo")
             val rate = s.string("admit-per-second", d.admitPerSecond.toString()).toDoubleOrNull()?.also { if (it < 0.1 || it > 1000.0) throw ConfigException("limbo.admit-per-second: expected 0.1-1000, got $it") } ?: throw ConfigException("limbo.admit-per-second: expected a number")
             return LimboSettings(rate, s.int("burst", d.burst).also { if (it !in 1..1000) throw ConfigException("limbo.burst: expected 1-1000, got $it") },
-                s.int("notice-seconds", d.noticeSeconds).also { if (it !in 1..60) throw ConfigException("limbo.notice-seconds: expected 1-60, got $it") })
+                s.int("notice-seconds", d.noticeSeconds).also { if (it !in 1..60) throw ConfigException("limbo.notice-seconds: expected 1-60, got $it") },
+                s.int("load-grace-seconds", d.loadGraceSeconds).also { if (it !in 1..60) throw ConfigException("limbo.load-grace-seconds: expected 1-60, got $it") })
         }
     }
 }

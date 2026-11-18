@@ -64,5 +64,9 @@ class TransplantTest {
         val cl = TransplantBuilder.cleanup(m, v, listOf(byteArrayOf(1)))
         assertTrue(cl.size >= 7, "removal, tab, objective, team, effect, container, 3 weather: ${cl.size}")
         val first = Unpooled.wrappedBuffer(cl[0]).also { VarInts.tryRead(it) }; assertEquals(2, VarInts.tryRead(first)); assertEquals(500, VarInts.tryRead(first)); assertEquals(501, VarInts.tryRead(first))
+        // ghosts that are still right are kept: only the others are removed
+        val kept = TransplantBuilder.cleanup(m, v, emptyList(), setOf(501))
+        val k = Unpooled.wrappedBuffer(kept[0]).also { VarInts.tryRead(it) }; assertEquals(1, VarInts.tryRead(k)); assertEquals(500, VarInts.tryRead(k)); assertEquals(0, k.readableBytes())
+        assertTrue(TransplantBuilder.cleanup(m, v, emptyList(), setOf(500, 501)).none { Unpooled.wrappedBuffer(it).let { b -> VarInts.tryRead(b) } == PlayPacketIds.c("RemoveEntities") }, "nothing to remove: no RemoveEntities at all")
     }
 }

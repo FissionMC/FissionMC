@@ -31,4 +31,10 @@ class PlayerCountsTest {
         assertFailsWith<ConfigException> { cfg("fake-max-players: -2") }
         assertFailsWith<ConfigException> { cfg("fake-online-minimum: -1") }
     }
+
+    @Test fun `compression threshold and listen port are range checked`() {
+        assertFailsWith<net.fissionmc.net.ConfigException> { cfg("compression-threshold: -2") }
+        assertFailsWith<net.fissionmc.net.ConfigException> { cfg("listen: \"0.0.0.0:70000\"") }
+        assertEquals(-1, cfg("compression-threshold: -1").compressionThreshold)
+    }
 }

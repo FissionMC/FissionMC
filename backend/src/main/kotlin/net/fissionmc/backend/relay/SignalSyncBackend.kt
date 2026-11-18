@@ -9,12 +9,14 @@ import net.minecraft.world.level.block.entity.ComparatorBlockEntity
 
 /** Keeps the comparator output of a ghost copy equal to the owner's, because the output lives in the block entity and is not part of the block state. */
 object SignalSyncBackend {
+    /** Ghost copies exist in every chunk of a neighbour that a viewer can see, not only next to the border: 4 chunks. */
+    private const val RADIUS = 4
     @JvmStatic fun onOutput(level: ServerLevel, pos: BlockPos, value: Int) {
         if (!RegionsBackend.enabled || !RegionsBackend.ownsBlockAt(level, pos)) return
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
         val dim = level.dimension().identifier().toString()
         val targets = HashSet<String>()
-        for (dx in -1..1) for (dz in -1..1) RegionsBackend.chunkOwner(dim, (pos.x shr 4) + dx, (pos.z shr 4) + dz)?.let { if (it != RegionsBackend.youId()) targets += it }
+        for (dx in -RADIUS..RADIUS) for (dz in -RADIUS..RADIUS) RegionsBackend.chunkOwner(dim, (pos.x shr 4) + dx, (pos.z shr 4) + dz)?.let { if (it != RegionsBackend.youId()) targets += it }
         for (t in targets) link.send(BlockEntitySignal(RegionsBackend.youId(), t, dim, pos.x, pos.y, pos.z, value))
     }
 

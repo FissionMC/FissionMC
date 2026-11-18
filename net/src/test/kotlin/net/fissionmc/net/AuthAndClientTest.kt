@@ -29,7 +29,7 @@ class AuthAndClientTest {
         val bound = m.bind(a) {}
         try {
             val ex = assertFailsWith<ExecutionException> { b.connect(a).get(5, TimeUnit.SECONDS).ready.get(5, TimeUnit.SECONDS) }
-            assertTrue(ex.cause!!.message!!.contains("unknown node"), ex.cause!!.message)
+            assertTrue(ex.cause!!.message!!.startsWith("not authorized"), ex.cause!!.message)
         } finally { bound.close(); b.close(); m.close() }
     }
 
@@ -40,7 +40,7 @@ class AuthAndClientTest {
         try {
             val link = b.connect(a).get(5, TimeUnit.SECONDS)
             val ex = assertFailsWith<ExecutionException> { link.ready.get(5, TimeUnit.SECONDS) }
-            assertTrue(ex.cause!!.message!!.contains("failed authentication") || ex.cause!!.message!!.contains("lost"), ex.cause!!.message)
+            assertTrue(ex.cause!!.message!!.startsWith("not authorized") || ex.cause!!.message!!.contains("lost"), ex.cause!!.message)
         } finally { bound.close(); b.close(); m.close() }
     }
 
@@ -69,6 +69,21 @@ class AuthAndClientTest {
             val second = readies.poll(5, TimeUnit.SECONDS)
             assertNotNull(second, "client did not reconnect")
             assertNotSame(first, second)
+        } finally { client.close(); bound.close(); b.close(); m.close() }
+    }
+
+    @Test fun backoffKeepsGrowingWhileTheLinkDoesNotStayUp() {
+        val a = addr()
+        val m = NettyTransport(LocalNode("master", NodeRole.MASTER, "26.3"))
+        val b = NettyTransport(LocalNode("be", NodeRole.BACKEND, "26.3"))
+        val serverLinks = java.util.concurrent.LinkedBlockingQueue<NodeLink>()
+        val bound = m.bind(a) { serverLinks.add(it) }
+        val readies = java.util.concurrent.LinkedBlockingQueue<NodeLink>()
+        val client = NodeClient(b, a, { l, _ -> readies.add(l) }, initialDelayMs = 50, maxDelayMs = 10_000).start()
+        try {
+            readies.poll(5, TimeUnit.SECONDS)!!
+            repeat(3) { serverLinks.poll(5, TimeUnit.SECONDS)!!.close("kick"); assertNotNull(readies.poll(5, TimeUnit.SECONDS), "client did not reconnect") }
+            assertTrue(client.currentDelayMs >= 200, "a master that keeps closing the link is retried less and less often, not every 50 ms: ${client.currentDelayMs}")
         } finally { client.close(); bound.close(); b.close(); m.close() }
     }
 

@@ -60,6 +60,9 @@ object BorderForwardBackend {
     fun onMessage(m: BorderForward) { inbox.add(m) }
 
     /** Server thread, every tick: send what was queued, apply what arrived. */
+    /** Regions are off: what a neighbour still sends is stale; drop it instead of queueing without limit. */
+    fun discardInbox() { inbox.clear() }
+
     fun tick(server: MinecraftServer) {
         serverTicks++
         val link = NodeBootstrap.link?.takeIf { it.isOpen }

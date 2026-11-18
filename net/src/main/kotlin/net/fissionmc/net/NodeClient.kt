@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Keeps one link to [address] alive: connects, completes the handshake, calls [onReady], waits for the
- * link to close, then reconnects with exponential backoff (reset after every successful handshake).
+ * link to close, then reconnects with exponential backoff (reset only after a link that stayed up for [stableMs]: a master that closes the link right after the handshake must not be hit every [initialDelayMs]).
  * Rejections that will not fix themselves (auth/version) still retry, but at [maxDelayMs], and are reported to [onFailure].
  */
 class NodeClient(
@@ -18,6 +18,8 @@ class NodeClient(
     private val onDisconnect: (String) -> Unit = {},
     private val initialDelayMs: Long = 500,
     private val maxDelayMs: Long = 30_000,
+    /** A link that stayed up this long counts as stable: only then the reconnect back-off starts from [initialDelayMs] again. */
+    private val stableMs: Long = 30_000,
 ) : Closeable {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "node-client").apply { isDaemon = true } }
     private val stopped = AtomicBoolean()
@@ -25,7 +27,9 @@ class NodeClient(
         private set
     @Volatile var link: NodeLink? = null
         private set
-    private var delay = initialDelayMs
+    @Volatile private var delay = initialDelayMs
+    /** The wait before the next reconnect attempt (visible for tests). */
+    internal val currentDelayMs: Long get() = delay
 
     fun start(): NodeClient { scheduler.execute(::attempt); return this }
 
@@ -45,12 +49,17 @@ class NodeClient(
                 val rejected = (err.cause ?: err) is LinkClosed
                 onFailure(err.cause ?: err)
                 link?.close("handshake failed")
-                retry(if (rejected) maxDelayMs else delay)
+                // "not authorized" / "no pending pairing": the admin is probably about to paste the pairing code, so try again soon (8 s: stays below the master's per-address failure limit)
+                val pairingWait = rejected && (err.cause ?: err).message.orEmpty().let { it.startsWith(NOT_AUTHORIZED) || it.startsWith(NO_PENDING) }
+                retry(if (pairingWait) minOf(maxDelayMs, 8_000L) else if (rejected) maxDelayMs else delay)
             } else {
                 val (l, peer) = r
-                delay = initialDelayMs
+                val upAt = System.nanoTime()
                 runCatching { onReady(l, peer) }.onFailure(onFailure)
-                l.closed.thenAccept { reason -> onDisconnect(reason); retry(delay) }
+                l.closed.thenAccept { reason ->
+                    if (System.nanoTime() - upAt >= stableMs * 1_000_000L) delay = initialDelayMs
+                    onDisconnect(reason); retry(delay)
+                }
             }
         }
     }

@@ -22,9 +22,9 @@ object PlayerDataBackend {
     /** uuid -> time until which saves are still reported (the disconnect save happens after the master's detach). */
     private val relayedUntil = ConcurrentHashMap<UUID, Long>()
     private const val LINGER_MS = 15_000L
-    private var tickCount = 0
+    private val savePace = net.fissionmc.net.Pacer(SAVE_EVERY_MS)
     /** Periodic save of relayed players, in addition to vanilla's autosave (which is every 5 minutes): a crash loses at most this much. */
-    private const val SAVE_EVERY_TICKS = 600
+    private const val SAVE_EVERY_MS = 30_000L   // wall clock: 600 ticks at 20 tps, but a server at 1 tps must not wait 10 minutes
 
     /** Node link thread. */
     fun onMessage(m: NodeMessage, server: MinecraftServer?) {
@@ -98,7 +98,7 @@ object PlayerDataBackend {
 
     /** Server thread, every tick. */
     fun tick(server: MinecraftServer) {
-        if (++tickCount % SAVE_EVERY_TICKS != 0) return
+        if (!savePace.due()) return
         val now = System.currentTimeMillis()
         relayedUntil.entries.removeIf { it.value < now }
         for (u in byBinding.values.toSet()) savePlayer(server, u)

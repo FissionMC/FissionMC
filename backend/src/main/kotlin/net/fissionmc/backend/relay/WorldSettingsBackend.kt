@@ -38,7 +38,9 @@ object WorldSettingsBackend {
     private val known = HashMap<String, String>()
     /** Previous local samples of the polled keys: a change versus these is a local change. */
     private val lastLocal = HashMap<String, String>()
-    private var ticks = 0L
+    private val pollPace = net.fissionmc.net.Pacer(500)     // 10 ticks at 20 tps
+    private val statsPace = net.fissionmc.net.Pacer(5_000)
+    private const val HOLD_NANOS = 3_000_000_000L          // after reporting a change the master's (older) state for that key is ignored for 3 s of wall clock (60 ticks at 20 tps)
     val reported = AtomicLong(); val applied = AtomicLong(); val adopted = AtomicLong()
     /** Effective explicit applications per key (the scripted test counts these: every change must be applied exactly once). */
     val appliedByKey = ConcurrentHashMap<String, AtomicLong>()
@@ -84,7 +86,7 @@ object WorldSettingsBackend {
 
     private fun report(key: String, value: String) {
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
-        link.send(WorldSettingChange(key, value)); reported.incrementAndGet(); holdUntil[key] = ticks + 60
+        link.send(WorldSettingChange(key, value)); reported.incrementAndGet(); holdUntil[key] = System.nanoTime() + HOLD_NANOS
         log.info("[fission] world setting reported: $key = ${value.take(80)}")
     }
 
@@ -128,7 +130,6 @@ object WorldSettingsBackend {
     fun tick(server: MinecraftServer) {
         this.server = server
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
-        ticks++
         if (!helloSent) { helloSent = true; link.send(WorldSettingsHello(readAll(server))); lastLocal.clear(); lastLocal.putAll(readAll(server)) }
         if (synced && !inbox.isEmpty()) poll(server)   // local changes made since the last sample go out BEFORE a master snapshot can overwrite them
         while (true) {
@@ -137,8 +138,8 @@ object WorldSettingsBackend {
                 is WorldSettingApply -> { if ("" != m.key && cat(m.key) in categories) applyKey(server, m.key, m.value, exact = true) }
             }
         }
-        if (synced && ticks % 10 == 0L) poll(server)
-        if (ticks % 100 == 0L) { val l = "reported=$reported applied=$applied adopted=$adopted synced=$synced"; if (l != lastStats && net.fissionmc.net.FissionDebug.on) { lastStats = l; log.info("[fission] world settings: $l (${describeTime(server)})") } }
+        if (synced && pollPace.due()) poll(server)
+        if (statsPace.due()) { val l = "reported=$reported applied=$applied adopted=$adopted synced=$synced"; if (l != lastStats && net.fissionmc.net.FissionDebug.on) { lastStats = l; log.info("[fission] world settings: $l (${describeTime(server)})") } }
     }
 
     private fun cat(key: String): String = when { key.startsWith("clock:") || key == "gametime" -> "time"; key == "weather" -> "weather"; key.startsWith("rule:") -> "gamerules"; key == "difficulty" -> "difficulty"; key == "gametype" -> "gamemode"; key == "spawn" -> "spawn"; key.startsWith("border:") -> "border"; else -> "" }
@@ -168,7 +169,7 @@ object WorldSettingsBackend {
 
     // ------------------------------------------------------------------ applying the master's state
     private fun applyState(s: MinecraftServer, state: Map<String, String>, exact: Boolean) {
-        for ((k, v) in state) if (cat(k) in categories && (holdUntil[k] ?: 0L) <= ticks) applyKey(s, k, v, exact)
+        for ((k, v) in state) if (cat(k) in categories && (holdUntil[k] ?: 0L) <= System.nanoTime()) applyKey(s, k, v, exact)
     }
 
     private fun count(key: String) { applied.incrementAndGet(); appliedByKey.computeIfAbsent(key) { AtomicLong() }.incrementAndGet(); if (net.fissionmc.net.FissionDebug.on) log.info("[fission] world setting applied: $key") }

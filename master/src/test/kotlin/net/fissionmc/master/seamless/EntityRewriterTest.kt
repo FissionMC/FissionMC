@@ -67,6 +67,19 @@ class EntityRewriterTest {
         val o2 = r(rw.toClient(cow)!!); o2.rv(); o2.skipBytes(16); o2.rv(); o2.skipBytes(24 + 1 + 3); assertEquals(21, o2.rv())
     }
 
+    @Test fun `every buffer the rewriter allocates is released, also for dropped and truncated frames`() {
+        val (_, rw) = mapped()
+        val all = ArrayList<ByteBuf>(); rw.allocated = { all += it }
+        rw.toClient(frame("AddEntity") { v(30); writeBytes(ByteArray(16)); v(6); writeBytes(ByteArray(24)); writeByte(0); writeBytes(ByteArray(3)); v(21) })
+        rw.toClient(frame("AddEntity") { v(31); writeBytes(ByteArray(16)); v(30); writeBytes(ByteArray(24)); writeByte(5); writeBytes(ByteArray(5)); v(1) })   // long movement vector
+        rw.toClient(frame("AddEntity") { v(32); writeBytes(ByteArray(4)) })        // truncated: the read throws half way through
+        rw.toClient(frame("RemoveEntities") { v(1); v(30) })
+        rw.toClient(frame("Animate") { v(21); writeByte(0) })
+        rw.toBackend(sframe("Interact") { v(123456); v(0) })
+        assertTrue(all.isNotEmpty())
+        assertTrue(all.all { it.refCnt() == 0 }, "unreleased: ${all.count { it.refCnt() > 0 }} of ${all.size}")
+    }
+
     @Test fun `add entity with a long movement vector keeps the data position`() {
         val (_, rw) = mapped()
         val f = frame("AddEntity") { v(40); writeBytes(ByteArray(16)); v(6); writeBytes(ByteArray(24)); writeByte(0x05); writeBytes(ByteArray(5)); v(300); writeBytes(ByteArray(3)); v(0) }

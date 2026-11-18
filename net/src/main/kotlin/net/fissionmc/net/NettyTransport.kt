@@ -16,6 +16,9 @@ import net.fissionmc.protocol.registerPlayerMessages
 import net.fissionmc.protocol.registerChunkMessages
 import net.fissionmc.protocol.registerRegionMessages
 import net.fissionmc.protocol.registerTraceMessages
+import net.fissionmc.protocol.registerLimitsMessages
+import net.fissionmc.protocol.registerTickSyncMessages
+import net.fissionmc.protocol.registerReadyMessages
 import net.fissionmc.protocol.registerChatFormatMessages
 import net.fissionmc.protocol.registerWorldSettingsMessages
 import net.fissionmc.protocol.registerGhostMessages
@@ -31,21 +34,26 @@ import java.util.concurrent.CompletableFuture
  */
 class NettyTransport(
     private val me: LocalNode,
-    private val registry: MessageRegistry = MessageRegistry.core().registerWorldMessages().registerReplicationMessages().registerPlayerMessages().registerChunkMessages().registerRegionMessages().registerChatFormatMessages().registerWorldSettingsMessages().registerPositionMessages().registerPluginMessages().registerGhostMessages().registerEntityGhostMessages().registerTraceMessages(),
+    private val registry: MessageRegistry = MessageRegistry.core().registerWorldMessages().registerReplicationMessages().registerPlayerMessages().registerChunkMessages().registerRegionMessages().registerChatFormatMessages().registerWorldSettingsMessages().registerPositionMessages().registerPluginMessages().registerGhostMessages().registerEntityGhostMessages().registerTraceMessages().registerLimitsMessages().registerTickSyncMessages().registerReadyMessages(),
     private val heartbeatMs: Long = 5_000,
     private val timeoutMs: Long = 20_000,
     private val security: NodeSecurity? = null,
+    /** Limits for connections that have not authenticated yet (acceptor side, TCP only); null = none (tests, in-JVM). */
+    private val guard: net.fissionmc.net.pairing.PreAuthGuard? = null,
 ) : Transport {
     private val tcpGroup = MultiThreadIoEventLoopGroup(0, io.netty.util.concurrent.DefaultThreadFactory("fission-node-tcp", true), NioIoHandler.newFactory())
     private val localGroup = MultiThreadIoEventLoopGroup(1, io.netty.util.concurrent.DefaultThreadFactory("fission-node-local", true), LocalIoHandler.newFactory())
 
     private fun init(ch: Channel, initiator: Boolean, onLink: (NodeLink) -> Unit) {
-        val link = LinkHandler(me, initiator, heartbeatMs, timeoutMs, security)
+        val link = LinkHandler(me, initiator, heartbeatMs, timeoutMs, security, if (initiator) null else guard)
+        if (!initiator && guard != null && ch is io.netty.channel.socket.SocketChannel) ch.pipeline().addLast("preauth-gate", guard.gate())
+        val state = LinkState().also { ch.attr(STATE_ATTR).set(it) }
         ch.pipeline()
             .addLast("frame-dec", LinkFrameDecoder(PREAUTH_FRAME))
             .addLast("frame-enc", LengthFieldPrepender(4))
             .addLast("dec", MessageDecoder(registry))
-            .addLast("enc", MessageEncoder(registry))
+            .addLast("enc", LinkWriter(registry, state))
+            .addLast("frag", LinkReader(registry, state))
             .addLast("link", link)
         onLink(link)
     }
@@ -56,7 +64,9 @@ class NettyTransport(
      */
     fun adopt(ch: Channel, onLink: (NodeLink) -> Unit) {
         init(ch, false, onLink)
-        ch.pipeline().context("enc").fireChannelActive()
+        val gate = ch.pipeline().context("preauth-gate")
+        if (gate != null) (gate.handler() as io.netty.channel.ChannelInboundHandler).channelActive(gate)   // counts the connection (and closes it over the limits), then passes channelActive on to the link handler
+        else ch.pipeline().context("enc").fireChannelActive()
     }
 
     override fun bind(address: NodeAddress, onLink: (NodeLink) -> Unit): Closeable {

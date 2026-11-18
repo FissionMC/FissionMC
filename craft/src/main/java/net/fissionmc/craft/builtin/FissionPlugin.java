@@ -12,6 +12,9 @@ public final class FissionPlugin {
     public static void load(JavaPlugin plugin) {}
 
     public static void enable(JavaPlugin plugin) {
+        // plugin messaging between backends: installed by the backend when it runs in a network; plugins find it with FissionNet.get() or through the ServicesManager
+        net.fissionmc.api.FissionNet svc = net.fissionmc.api.FissionNet.get();
+        if (svc != null) plugin.getServer().getServicesManager().register(net.fissionmc.api.FissionNet.class, svc, plugin, org.bukkit.plugin.ServicePriority.Normal);
         plugin.getCommand("fission").setExecutor(new CommandExecutor() {
             @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
                 if (args.length >= 1 && args[0].equalsIgnoreCase("debug")) {

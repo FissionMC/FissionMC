@@ -14,7 +14,10 @@ object MasterCommands {
                 "send" -> { send(session, server, parts.drop(2)); true }
                 "admin" -> { admin(session, server, parts.drop(2)); true }
                 "regions" -> { regions(session, server); true }
+                "node" -> { net.fissionmc.master.nodes.NodeGameCommand.run(session, parts.drop(2)); true }
                 "debug" -> { debug(session, parts.drop(2)); true }
+                "safety" -> { if (!session.isAdmin) session.tell(Component.text("You are not allowed to do that.", NamedTextColor.RED)) else net.fissionmc.master.safety.SafetyStats.status(net.fissionmc.master.safety.Safety.config).forEach { session.tell(Component.text(it, NamedTextColor.GRAY)) }; true }
+                "status" -> { if (session.isAdmin) net.fissionmc.master.safety.SafetyStats.status(net.fissionmc.master.safety.Safety.config).forEach { session.tell(Component.text(it, NamedTextColor.GRAY)) }; false }   // also runs on the backend
                 "trace" -> { trace(session, server, command.trim().split(Regex("\\s+"), 4).drop(2)); true }
                 else -> false
             }
@@ -30,6 +33,7 @@ object MasterCommands {
         val parts = line.trim().split(Regex("\\s+"))
         when (parts[0].lowercase()) {
             "players" -> say(server.allSessions().sortedBy { it.playerName.lowercase() }.joinToString { "${it.playerName}@${it.currentNodeId ?: "limbo"}" }.ifEmpty { "nobody is online" })
+            "safety", "status" -> net.fissionmc.master.safety.SafetyStats.status(net.fissionmc.master.safety.Safety.config).forEach(say)
             "admin" -> {
                 val store = server.settings.permissions; val action = parts.getOrNull(1)?.lowercase(); val who = parts.getOrNull(2)
                 if (action == "list" || action == null) { store.describe().ifEmpty { listOf("no player has permissions") }.forEach(say); return true }

@@ -40,6 +40,11 @@ object GhostFrames {
         b.writeBytes(payload, i + 16, payload.size - i - 16)
         return ByteArray(b.readableBytes()).also { b.readBytes(it) }
     }
+    /** ClientboundSetEntityLinkPacket: [id] is leashed to [holderId] (0 ends the link). Layout verified against vanilla's codec (two ints). */
+    fun link(id: Int, holderId: Int): ByteArray {
+        val b = Unpooled.buffer(12); VarInts.write(b, PlayPacketIds.c("SetEntityLink")); b.writeInt(id).writeInt(holderId)
+        return ByteArray(b.readableBytes()).also { b.readBytes(it) }
+    }
     fun head(id: Int, headYaw: Float): ByteArray = Limbo.encode(WrapperPlayServerEntityHeadLook(id, headYaw))
     fun remove(vararg ids: Int): ByteArray = Limbo.encode(WrapperPlayServerDestroyEntities(*ids))
 
@@ -93,6 +98,9 @@ class GhostHub(
     @Volatile var range: Double = 128.0,
     private val tabEntry: (player: UUID) -> TabEntry? = { null },
     private val log: (String) -> Unit = {},
+    /** `ghosts.entity-expiry-seconds`: the entity ghosts of a backend that sent no batch (heartbeats included) for this long are dropped. The backends send a heartbeat every 2 s from a wall-clock thread, so this only has to cover a stalled process. */
+    private val entityExpiryMs: Long = ENTITY_EXPIRY_MS,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     companion object {
         const val GHOST_BASE = 1_500_000_000; const val HYSTERESIS = 16.0
@@ -100,10 +108,10 @@ class GhostHub(
         const val MIN_SPAWN_DISTANCE = 1.5
         fun ghostUuidOf(player: UUID): UUID = UUID.nameUUIDFromBytes("fission-ghost:$player".toByteArray())
         fun entityGhostUuidOf(entity: UUID): UUID = UUID.nameUUIDFromBytes("fission-ghost-entity:$entity".toByteArray())
-        const val ENTITY_BASE = 1_600_000_000; const val ENTITY_EXPIRY_MS = 10_000L; const val REAL_WAIT_MS = 3_000L
+        const val ENTITY_BASE = 1_600_000_000; const val ENTITY_EXPIRY_MS = 30_000L; const val REAL_WAIT_MS = 8_000L
     }
 
-    private class Spawned(val clientId: Int, val name: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean)
+    private class Spawned(val clientId: Int, val name: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean, var sameNodeSince: Long = 0L)
     private class Member(val viewer: GhostViewer) {
         var pose: GhostPose? = null; var meta: GhostMeta? = null
         val ghosts = HashMap<UUID, Spawned>()    // players this member sees as entities
@@ -112,9 +120,13 @@ class GhostHub(
         val entGhosts = HashMap<UUID, SpawnedEntity>()   // entities of other backends this member sees
         var nextEntityId = ENTITY_BASE
     }
-    private class SpawnedEntity(val clientId: Int, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean, var sameNodeSince: Long = 0L)
-    private class SrcEntity(val node: String, var dim: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean,
-                            var add: ByteArray, var data: ByteArray?, var equip: ByteArray?, var item: Boolean = false)
+    private class SpawnedEntity(val clientId: Int, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean, var sameNodeSince: Long = 0L, var linkedTo: Int = 0)
+    private class SrcEntity(var node: String, var dim: String, var x: Double, var y: Double, var z: Double, var yaw: Float, var pitch: Float, var head: Float, var onGround: Boolean,
+                            var add: ByteArray, var data: ByteArray?, var equip: ByteArray?, var item: Boolean = false, var holder: UUID? = null) {
+        /** Where the cached AddEntity payload [add] puts the entity (the pose of the report that carried it): a ghost spawned later must be moved to the current pose. */
+        var ax = x; var ay = y; var az = z; var ayaw = yaw; var apitch = pitch; var ahead = head
+        fun markAdd() { ax = x; ay = y; az = z; ayaw = yaw; apitch = pitch; ahead = head }
+    }
     private val entities = HashMap<UUID, SrcEntity>()
     /** Asks the owner backend [node] to hand the item entity to the viewer player (called with the hub's lock held: enqueue, never call back). */
     @Volatile var pickupAsk: ((node: String, entity: UUID, player: UUID, playerNode: String) -> Unit)? = null
@@ -184,15 +196,16 @@ class GhostHub(
     private fun refresh(m: Member) {
         for (o in members.values) { if (o === m) continue; evaluate(o, m); evaluate(m, o) }
         for ((u, e) in entities) evaluateEntity(m, u, e)
+        relink(m) { m.viewer.ghostSend(it) }
     }
 
     /** Entities near a border of a backend, as that backend sees them (batches arrive every two ticks). */
     fun entityBatch(b: net.fissionmc.protocol.EntityGhostBatch) {
         synchronized(lock) {
-            val now = System.currentTimeMillis()
+            val now = clock()
             nodeSeen[b.origin] = now
             var i = 0
-            while (i + 1 < b.removed.size) { val u = UUID(b.removed[i], b.removed[i + 1]); i += 2; entities.remove(u); for (v in members.values) dropEntity(v, u) }
+            while (i + 1 < b.removed.size) { val u = UUID(b.removed[i], b.removed[i + 1]); i += 2; if (entities[u]?.node != b.origin) continue; entities.remove(u); for (v in members.values) dropEntity(v, u) }   // only the current owner removes it: after a handover the old owner's "gone" must not delete the new owner's ghost
             for (g in b.upserts) {
                 val u = UUID(g.uuidHigh, g.uuidLow)
                 var e = entities[u]
@@ -200,9 +213,10 @@ class GhostHub(
                     if (g.flags and 1 == 0) continue
                     e = SrcEntity(b.origin, b.dimension, g.x, g.y, g.z, g.yaw, g.pitch, g.headYaw, g.onGround, g.add, null, null); entities[u] = e
                 }
+                if (e.node != b.origin) { if (g.flags and 1 == 0) continue; e.node = b.origin }   // a handover: the node that reports the entity as new is its owner now; the old one's updates are stale
                 if (g.flags and 8 != 0) e.item = true
                 e.dim = b.dimension; e.x = g.x; e.y = g.y; e.z = g.z; e.yaw = g.yaw; e.pitch = g.pitch; e.head = g.headYaw; e.onGround = g.onGround
-                if (g.flags and 1 != 0) e.add = g.add
+                if (g.flags and 1 != 0) { e.add = g.add; e.markAdd() }
                 if (g.flags and 2 != 0) e.data = g.data
                 if (g.flags and 4 != 0) e.equip = g.equip
                 for (v in members.values) {
@@ -211,12 +225,35 @@ class GhostHub(
                     evaluateEntity(v, u, e)
                 }
             }
-            val stale = nodeSeen.filter { now - it.value > ENTITY_EXPIRY_MS }.keys
+            for (v in members.values) relink(v) { v.viewer.ghostSend(it) }
+            val stale = nodeSeen.filter { now - it.value > entityExpiryMs }.keys
             if (stale.isNotEmpty()) {
                 val gone = entities.filter { it.value.node in stale }.keys.toList()
                 for (u in gone) { entities.remove(u); for (v in members.values) dropEntity(v, u) }
                 nodeSeen.keys.removeAll(stale)
             }
+        }
+    }
+
+    /** The leashes of the entities [b] shows (a complete snapshot per backend and dimension): a link is shown to a viewer while both its ends are ghosts for it. */
+    fun entityLinks(b: net.fissionmc.protocol.EntityGhostLinks) {
+        synchronized(lock) {
+            nodeSeen[b.origin] = clock()
+            val now = HashMap<UUID, UUID>()
+            var i = 0
+            while (i + 3 < b.links.size) { now[UUID(b.links[i], b.links[i + 1])] = UUID(b.links[i + 2], b.links[i + 3]); i += 4 }
+            for ((u, e) in entities) if (e.node == b.origin && e.dim == b.dimension) e.holder = now[u]
+            for (v in members.values) relink(v) { v.viewer.ghostSend(it) }
+        }
+    }
+
+    /** Makes the leash links of [v]'s ghosts what they should be: a ghost is linked to the ghost of its holder while that exists for [v], else it is free. Called after every change. */
+    private fun relink(v: Member, emit: (ByteArray) -> Unit) {
+        if (v.viewer.ghostNode == null) return
+        for ((u, sp) in v.entGhosts) {
+            val h = entities[u]?.holder
+            val want = if (h == null) 0 else v.entGhosts[h]?.clientId ?: 0
+            if (want != sp.linkedTo) { sp.linkedTo = want; emit(GhostFrames.link(sp.clientId, want)) }
         }
     }
 
@@ -231,9 +268,69 @@ class GhostHub(
         ask(e.node, uuid, v.viewer.ghostUuid, viewerNode)
     }
 
+    /** The frames that bring a new ghost of [e] to the client under [id]: the cached AddEntity, then the current pose (the cached payload holds the pose of the report that carried it), data and equipment. */
+    private fun spawnFramesOf(id: Int, uuid: UUID, e: SrcEntity): List<ByteArray> {
+        val out = ArrayList<ByteArray>(5)
+        out += GhostFrames.entityAdd(e.add, id, entityGhostUuidOf(uuid))
+        if (e.x != e.ax || e.y != e.ay || e.z != e.az || e.yaw != e.ayaw || e.pitch != e.apitch) out += GhostFrames.entityPosition(id, e.x, e.y, e.z, e.yaw, e.pitch, e.onGround)
+        if (e.head != e.ahead) out += GhostFrames.head(id, e.head)
+        e.data?.takeIf { it.isNotEmpty() }?.let { out += GhostFrames.entityData(id, it) }
+        e.equip?.takeIf { it.isNotEmpty() }?.let { out += GhostFrames.equipment(id, it) }
+        return out
+    }
+
+    /** What a transplant of a viewer keeps on its client and what it adds: [keep] = the client ids of the ghosts that stay (the caller must not remove them), [frames] = written inside the bundle after the removal. */
+    class TransplantGhosts(val keep: Set<Int>, val frames: List<ByteArray>)
+
     /**
-     * The frames that show the entities of the other backends to [viewer] as if it already played on [node]; used inside the bundle of a transfer so nothing disappears in between.
-     * The ghosts are registered; the caller writes the frames.
+     * The viewer's client moves to [node] without a Login (a transplant): the caller removes everything the old backend put on the client EXCEPT [TransplantGhosts.keep], then writes
+     * [TransplantGhosts.frames]; all inside one bundle, so nothing a player can see goes away in between. Ghosts stay when the thing they show is still in range and still not
+     * provided by the new backend: a ghost of an entity or player OWNED BY [node] stays until the new backend's own copy arrives ([realArrived], [realPlayerArrived], else after [REAL_WAIT_MS]),
+     * because the new backend streams its entities with its chunks, seconds after the cut-over. Entities of the other backends that are not ghosts yet (the old backend's own, real until now) are
+     * shown as ghosts at once. Player ghosts come back with their tab line and the team (the cleanup removed those: the client's tab list and scoreboard are cleared by every transplant).
+     */
+    fun transplant(viewer: GhostViewer, node: String): TransplantGhosts = synchronized(lock) {
+        val m = members[viewer.ghostUuid] ?: return TransplantGhosts(emptySet(), emptyList())
+        val now = clock(); val vp = m.pose
+        val keep = HashSet<Int>(); val out = ArrayList<ByteArray>()
+        // players
+        val keptNames = ArrayList<String>(); val tabs = ArrayList<ByteArray>()
+        val itp = m.ghosts.entries.iterator()
+        while (itp.hasNext()) {
+            val (u, sp) = itp.next(); val s = members[u]; val sPose = s?.pose
+            val entry = tabEntry(u)
+            val inRange = vp != null && sPose != null && vp.dimension == sPose.dimension && Math.hypot(vp.x - sPose.x, vp.z - sPose.z) <= range + HYSTERESIS
+            if (s == null || entry == null || !inRange) { itp.remove(); continue }   // gone: the cleanup removes its entity (its id is not in [keep])
+            keep += sp.clientId; keptNames += sp.name
+            sp.sameNodeSince = if (s.viewer.ghostNode == node) now else 0L
+            tabs += GhostFrames.tabAdd(ghostUuidOf(u), entry)
+        }
+        out += tabs
+        if (keptNames.isNotEmpty()) { out += GhostFrames.teamCreate(keptNames); m.teamSent = true } else m.teamSent = false
+        // entities
+        val it = m.entGhosts.entries.iterator()
+        while (it.hasNext()) {
+            val (u, sp) = it.next(); val e = entities[u]
+            val inRange = e != null && vp != null && e.dim == vp.dimension && Math.hypot(vp.x - e.x, vp.z - e.z) <= range + HYSTERESIS
+            if (e == null || !inRange) { it.remove(); continue }
+            keep += sp.clientId
+            sp.sameNodeSince = if (e.node == node) now else 0L
+        }
+        if (vp != null) for ((u, e) in entities) {
+            if (e.node == node || e.dim != vp.dimension || u in m.entGhosts) continue
+            val dx = vp.x - e.x; val dz = vp.z - e.z
+            if (dx * dx + dz * dz > range * range) continue
+            val id = m.nextEntityId++
+            m.entGhosts[u] = SpawnedEntity(id, e.x, e.y, e.z, e.yaw, e.pitch, e.head, e.onGround); viewer.ghostAdded(id)
+            out += spawnFramesOf(id, u, e)
+        }
+        for ((u, sp) in m.entGhosts) { val h = entities[u]?.holder ?: continue; val hid = m.entGhosts[h]?.clientId ?: continue; sp.linkedTo = hid; out += GhostFrames.link(sp.clientId, hid) }
+        TransplantGhosts(keep, out)
+    }
+
+    /**
+     * The frames that show the entities of the other backends to [viewer] as if it already played on [node], after [reset]: everything is new, nothing is kept (use [transplant] to keep
+     * what is still right). The ghosts are registered; the caller writes the frames.
      */
     fun entityFramesFor(viewer: GhostViewer, node: String): List<ByteArray> = synchronized(lock) {
         val m = members[viewer.ghostUuid] ?: return emptyList()
@@ -246,15 +343,17 @@ class GhostHub(
             if (dx * dx + dz * dz > range * range) continue
             val id = m.nextEntityId++
             m.entGhosts[u] = SpawnedEntity(id, e.x, e.y, e.z, e.yaw, e.pitch, e.head, e.onGround); viewer.ghostAdded(id)
-            out += GhostFrames.entityAdd(e.add, id, entityGhostUuidOf(u))
-            e.data?.takeIf { it.isNotEmpty() }?.let { out += GhostFrames.entityData(id, it) }
-            e.equip?.takeIf { it.isNotEmpty() }?.let { out += GhostFrames.equipment(id, it) }
+            out += spawnFramesOf(id, u, e)
         }
+        for ((u, sp) in m.entGhosts) { val h = entities[u]?.holder ?: continue; val hid = m.entGhosts[h]?.clientId ?: continue; sp.linkedTo = hid; out += GhostFrames.link(sp.clientId, hid) }
         out
     }
 
     /** The real entity with [uuid] was just sent to [viewer]: the client id of its ghost, which the caller removes, or null. */
     fun realArrived(viewer: GhostViewer, uuid: UUID): Int? = synchronized(lock) { members[viewer.ghostUuid]?.entGhosts?.remove(uuid)?.clientId }
+
+    /** The real player entity of [player] was just sent to [viewer]: its ghost (kept over a transplant) goes, with its tab line and team entry. */
+    fun realPlayerArrived(viewer: GhostViewer, player: UUID) { synchronized(lock) { members[viewer.ghostUuid]?.let { drop(it, player) } } }
 
     private fun dropEntity(v: Member, uuid: UUID) {
         val sp = v.entGhosts.remove(uuid) ?: return
@@ -269,7 +368,7 @@ class GhostHub(
         if (vn == e.node) {
             // the viewer just arrived on the entity's backend: keep the ghost until the real entity shows up ([realArrived]) so it never vanishes in between
             if (existing != null) {
-                val now = System.currentTimeMillis()
+                val now = clock()
                 if (existing.sameNodeSince == 0L) existing.sameNodeSince = now
                 if (now - existing.sameNodeSince > REAL_WAIT_MS) dropEntity(v, uuid)
             }
@@ -283,9 +382,7 @@ class GhostHub(
         if (existing == null) {
             val id = v.nextEntityId++
             v.entGhosts[uuid] = SpawnedEntity(id, e.x, e.y, e.z, e.yaw, e.pitch, e.head, e.onGround); v.viewer.ghostAdded(id)
-            v.viewer.ghostSend(GhostFrames.entityAdd(e.add, id, entityGhostUuidOf(uuid))); spawnedFrames++
-            e.data?.takeIf { it.isNotEmpty() }?.let { v.viewer.ghostSend(GhostFrames.entityData(id, it)) }
-            e.equip?.takeIf { it.isNotEmpty() }?.let { v.viewer.ghostSend(GhostFrames.equipment(id, it)) }
+            spawnFramesOf(id, uuid, e).forEach { v.viewer.ghostSend(it) }; spawnedFrames++
             if (e.item) maybePickup(v, uuid, e, vp, vn)
             return
         }
@@ -318,7 +415,19 @@ class GhostHub(
         val vp = v.pose; val sp = s.pose; val meta = s.meta
         val existing = v.ghosts[s.viewer.ghostUuid]
         val ok = vn != null && sn != null && vn != sn && vp != null && sp != null && meta != null && vp.dimension == sp.dimension
-        if (!ok) { if (existing != null) drop(v, s.viewer.ghostUuid); return }
+        if (!ok) {
+            if (existing != null) {
+                // the viewer arrived on the player's backend: keep the ghost until the real player entity shows up ([realPlayerArrived]) so the player never vanishes in between
+                if (vn != null && vn == sn && vp != null && sp != null && vp.dimension == sp.dimension) {
+                    val now = clock()
+                    if (existing.sameNodeSince == 0L) existing.sameNodeSince = now
+                    if (now - existing.sameNodeSince <= REAL_WAIT_MS) return
+                }
+                drop(v, s.viewer.ghostUuid)
+            }
+            return
+        }
+        existing?.sameNodeSince = 0L
         val dx = vp!!.x - sp!!.x; val dz = vp.z - sp.z; val d2 = dx * dx + dz * dz
         val limit = if (existing != null) range + HYSTERESIS else range
         if (d2 > limit * limit) { if (existing != null) drop(v, s.viewer.ghostUuid); return }

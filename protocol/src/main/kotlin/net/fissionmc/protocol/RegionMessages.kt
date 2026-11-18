@@ -7,7 +7,7 @@ package net.fissionmc.protocol
 data class RegionRule(val dimension: String, val x1: Int, val z1: Int, val x2: Int, val z2: Int, val backend: String)
 
 /** Master -> backend (77), sent when the backend joins and whenever the map changes: [you] is the backend's own node id. An empty rule list = regions off, every backend owns everything. */
-data class RegionMap(val you: String, val rules: List<RegionRule>) : NodeMessage
+data class RegionMap(val you: String, val rules: List<RegionRule>, val mobAiBorder: Boolean = true) : NodeMessage
 
 /** Master -> backend (78): generate this chunk (the backend is its generation owner): load it to FULL through the normal path, which leases, generates and pushes it. */
 data class GenerateChunk(val dimension: String, val x: Int, val z: Int) : NodeMessage
@@ -43,8 +43,6 @@ class ItemTransfer(val origin: String, val toBackend: String, val dimension: Str
 /** Backend to a neighbouring backend via master (107): the comparator at x, y, z now outputs [value]. */
 class BlockEntitySignal(val origin: String, val toBackend: String, val dimension: String, val x: Int, val y: Int, val z: Int, val value: Int) : NodeMessage
 
-const val MAX_ITEM_TRANSFER = 64
-const val MAX_ITEM_BLOB = 65536
 
 const val MAX_BORDER_ITEMS = 4096
 
@@ -82,16 +80,16 @@ object SectionCodec {
     }
 }
 
-const val MAX_GHOST_CHUNKS = 4096
 const val MAX_GHOST_SECTIONS = 64
 
 fun MessageRegistry.registerRegionMessages(): MessageRegistry = this
     .register<RegionMap>(77, { m, b ->
         b.writeString(m.you, 64).writeVarInt(m.rules.size)
         m.rules.forEach { r -> b.writeString(r.dimension, 128).writeInt(r.x1).writeInt(r.z1).writeInt(r.x2).writeInt(r.z2).writeString(r.backend, 64) }
+        b.writeBoolean(m.mobAiBorder)   // regions.mob-ai-border
     }, { b ->
         val you = b.readString(64); val n = b.readVarInt(); require(n in 0..4096) { "too many region rules" }
-        RegionMap(you, List(n) { RegionRule(b.readString(128), b.readInt(), b.readInt(), b.readInt(), b.readInt(), b.readString(64)) })
+        RegionMap(you, List(n) { RegionRule(b.readString(128), b.readInt(), b.readInt(), b.readInt(), b.readInt(), b.readString(64)) }, b.readBoolean())
     })
     .register<GenerateChunk>(78, { m, b -> b.writeString(m.dimension, 128).writeInt(m.x).writeInt(m.z) }, { b -> GenerateChunk(b.readString(128), b.readInt(), b.readInt()) })
     .register<PlayerPosition>(79, { m, b -> b.writeLong(m.uuidHigh).writeLong(m.uuidLow).writeString(m.dimension, 128).writeInt(m.x).writeInt(m.z) },

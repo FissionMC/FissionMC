@@ -3,6 +3,8 @@ package net.fissionmc.backend.chunk
 import net.fissionmc.backend.node.NodeBootstrap
 import net.fissionmc.protocol.*
 import net.minecraft.nbt.CompoundTag
+import net.minecraft.nbt.ListTag
+import net.minecraft.nbt.NbtUtils
 import net.minecraft.nbt.NbtAccounter
 import net.minecraft.nbt.NbtIo
 import java.io.ByteArrayOutputStream
@@ -35,8 +37,15 @@ object ChunkAuthorityBackend {
     private val pending = ConcurrentHashMap<Long, Pending>()
     /** Version of each chunk blob this backend loaded from / pushed to the master in this session; removed when another backend stores a newer one. */
     private val known = ConcurrentHashMap<K, Long>()
+    private fun remember(k: K, version: Long) { if (known.size >= MAX_KNOWN) known.clear(); known[k] = version }   // bounded: forgetting only costs a re-request
+    private const val MAX_KNOWN = 2_000_000
     private val queue = ConcurrentHashMap<K, Queued>()
     private val skip = ThreadLocal<Boolean>()
+    /** Chunks of another backend's region that the master refused (it only accepts a chunk from its generation owner): they are not offered again for [FOREIGN_RETRY_NANOS], that was most of the "rejected" pushes (a ghost/neighbour copy is saved every 5 s). */
+    private val foreignRefused = ConcurrentHashMap<K, Long>()
+    private const val FOREIGN_RETRY_NANOS = 60_000_000_000L
+    private val skippedForeign = AtomicLong(); private val clears = AtomicLong()
+    private fun foreign(dim: String, x: Int, z: Int): Boolean { if (!net.fissionmc.backend.relay.RegionsBackend.enabled) return false; val o = net.fissionmc.backend.relay.RegionsBackend.chunkOwner(dim, x, z); return o != null && o != net.fissionmc.backend.relay.RegionsBackend.youId() }
     @Volatile private var pusherStarted = false
     private const val REQUEST_TIMEOUT_SEC = 600L   // far longer than any lease: the master, not this timeout, decides when a waiting backend generates itself; this only covers a lost answer
 
@@ -61,8 +70,8 @@ object ChunkAuthorityBackend {
         when (m) {
             is ChunkData -> pending.remove(m.reqId)?.future?.complete(Reply(m, false))
             is ChunkAbsent -> pending.remove(m.reqId)?.future?.complete(Reply(null, m.lease))
-            is ChunkStored -> { if (m.accepted) { known[K(m.dimension, m.kind, m.x, m.z)] = m.version; accepted.incrementAndGet() } else rejected.incrementAndGet() }
-            is ChunkAvailable -> known.remove(K(m.dimension, m.kind, m.x, m.z))   // another backend has a newer one: the next load of it asks the master again
+            is ChunkStored -> { val k = K(m.dimension, m.kind, m.x, m.z); if (m.accepted) { remember(k, m.version); accepted.incrementAndGet() } else { known.remove(k); rejected.incrementAndGet(); if (foreign(m.dimension, m.x, m.z)) { if (foreignRefused.size > 100_000) foreignRefused.clear(); foreignRefused[k] = System.nanoTime() } } }   // refused: not in sync, the next load asks the master again
+            is ChunkAvailable -> { known.remove(K(m.dimension, m.kind, m.x, m.z)); foreignRefused.remove(K(m.dimension, m.kind, m.x, m.z)) }   // another backend has a newer one: the next load of it asks the master again
         }
     }
 
@@ -86,7 +95,7 @@ object ChunkAuthorityBackend {
             if (d != null) {
                 fetchHits.incrementAndGet(); pulledBytes.addAndGet(d.bytes.size.toLong())
                 try {
-                    val tag = decode(d.bytes); known[key] = d.version
+                    val tag = decode(d.bytes); remember(key, d.version)
                     cache.accept(tag)
                     Optional.of(tag)
                 } catch (t: Throwable) { log.warning("[fission] chunk $dim $kind $x,$z from the master is unreadable ($t), using the local result"); local }
@@ -98,15 +107,34 @@ object ChunkAuthorityBackend {
         }, net.minecraft.util.Util.ioPool())
     }
 
+    /**
+     * The master link was lost: the answers to the requests in flight went with it, so finish them with the local result now (without pushing it: the master may well have a newer chunk) instead of after
+     * [REQUEST_TIMEOUT_SEC] (a chunk load would hang that long). Node link thread.
+     */
+    @JvmStatic fun linkLost() {
+        known.clear()   // ChunkAvailable messages sent while the link was down are gone: nothing is known to be in sync any more
+        for (id in pending.keys.toList()) pending[id]?.future?.completeExceptionally(java.io.IOException("master link lost"))   // the error path keeps the local result without pushing it as new
+    }
+
     /** Structure scans of unloaded neighbours: the master's data if it has any (no lease, no waiting, nothing cached). */
     @JvmStatic fun peek(dim: String, kind: Int, x: Int, z: Int): CompletableFuture<Optional<CompoundTag>> =
         resolve(dim, kind, x, z, Optional.empty(), Consumer { }, true)
 
-    private var saveTicks = 0
-    /** Server thread, every tick: queue unsaved chunks every 5 s so freshly generated (partial) chunks reach the master while other backends may be waiting for them. */
+    private val savePace = net.fissionmc.net.Pacer(5_000)   // wall clock: 100 ticks at 20 tps; at 1 tps a chunk generated for a waiting backend must still be pushed within seconds
+    /** Server thread, every tick: queue unsaved chunks every 5 s (wall clock) so freshly generated (partial) chunks reach the master while other backends may be waiting for them. */
     @JvmStatic fun tick(server: net.minecraft.server.MinecraftServer) {
-        if (!pusherStarted || ++saveTicks % 100 != 0 || NodeBootstrap.link?.isOpen != true) return
+        if (!pusherStarted || NodeBootstrap.link?.isOpen != true || !savePace.due()) return
         for (level in server.allLevels) try { level.chunkSource.save(false); (level.chunkSource.chunkMap as PartialSaver).`fission$savePartial`() } catch (t: Throwable) { log.warning("[fission] periodic chunk save failed: $t") }
+    }
+
+    /**
+     * IOWorker mixin: vanilla deletes the entities blob of a chunk whose last entity left (a null write). That was not forwarded, so the master kept the entity in the old chunk's blob AND in the
+     * new one: the next backend to load both logged "UUID of added entity already exists" and dropped one. An empty entity list takes the place of the deletion.
+     */
+    @JvmStatic fun onClear(dim: String, kind: Int, x: Int, z: Int) {
+        if (kind != ChunkKind.ENTITIES) return
+        val tag = CompoundTag(); NbtUtils.addCurrentDataVersion(tag); tag.putIntArray("Position", intArrayOf(x, z)); tag.put("Entities", ListTag())
+        clears.incrementAndGet(); onStore(dim, kind, x, z, tag)
     }
 
     /** IOWorker mixin: a chunk/entities/poi tag is being stored locally; queue it for the master. */
@@ -116,13 +144,15 @@ object ChunkAuthorityBackend {
             val o = net.fissionmc.backend.relay.RegionsBackend.chunkOwner(dim, x, z)
             if (o != null && o != net.fissionmc.backend.relay.RegionsBackend.youId()) return
         }
+        val key = K(dim, kind, x, z)
+        if (foreignRefused.isNotEmpty() && foreign(dim, x, z)) { val t = foreignRefused[key]; if (t != null) { if (System.nanoTime() - t < FOREIGN_RETRY_NANOS) { skippedForeign.incrementAndGet(); return } else foreignRefused.remove(key) } }
         if (!NodeBootstrap.networked) return   // standalone: no master, nothing to push (queueing would keep every saved chunk's NBT in memory for ever)
         val rank = if (kind == ChunkKind.CHUNK) ChunkStatusRank.of(tag.getStringOr("Status", "")) else 0
         queue[K(dim, kind, x, z)] = Queued(tag, rank)
         startPusher()
     }
 
-    private fun decode(bytes: ByteArray): CompoundTag = DataInputStream(InflaterInputStream(bytes.inputStream()).buffered()).use { NbtIo.read(it, NbtAccounter.unlimitedHeap()) }
+    private fun decode(bytes: ByteArray): CompoundTag = net.fissionmc.backend.relay.BoundedNbt.read(bytes, net.fissionmc.protocol.MAX_CHUNK_BLOB)
     private fun encode(tag: CompoundTag): ByteArray { val o = ByteArrayOutputStream(); DataOutputStream(DeflaterOutputStream(o)).use { NbtIo.write(tag, it) }; return o.toByteArray() }
 
     @Synchronized private fun startPusher() {
@@ -167,5 +197,5 @@ object ChunkAuthorityBackend {
 
     private fun statsLine(f: Long): String =
         ("[fission] chunk authority: $f fetches (${fetchHits.get()} from the master, ${leasesGot.get()} leases, ${timeouts.get()} timeouts, avg ${if (f == 0L) 0 else fetchNanos.get() / f / 1000} us, ${pulledBytes.get()} bytes in); " +
-            "pushes ${pushed.get()} (${pushedBytes.get()} bytes, accepted ${accepted.get()} rejected ${rejected.get()}), queued ${queue.size}")
+            "pushes ${pushed.get()} (${pushedBytes.get()} bytes, accepted ${accepted.get()} rejected ${rejected.get()}), not offered again after a refusal ${skippedForeign.get()}, entity deletions forwarded ${clears.get()}, queued ${queue.size}")
 }

@@ -81,7 +81,7 @@ object PlayerRelayBackend {
     }
 
     @JvmStatic fun attach() {
-        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}", WorldSettingsBackend.summary()) + net.fissionmc.backend.node.MasterInfo.lines() + net.fissionmc.backend.node.PluginReplicationStatus.lines() }
+        net.fissionmc.craft.builtin.FissionStatus.provider = java.util.function.Supplier { kotlin.collections.listOf("backend id: ${net.fissionmc.backend.node.NodeBootstrap.nodeId}", WorldSettingsBackend.summary(), TickSyncBackend.summary()) + net.fissionmc.backend.node.MasterInfo.lines() + net.fissionmc.backend.node.PluginReplicationStatus.lines() }
         NodeBootstrap.addMessageHandler { m ->
             // the first message of a NEW master link (reconnect): the master dropped every binding of the old link, so the players of the old link are closed here too
             // (a quick reconnect used to leave them running as zombies: the link was open again before the server thread noticed it had been down)
@@ -91,19 +91,22 @@ object PlayerRelayBackend {
             if (m is GlobalChat || m is GlobalChatObserved || m is PlayerAttach || m is PlayerDetach) GlobalChatBackend.onMessage(m)
             if (m is ChunkData || m is ChunkAbsent || m is ChunkStored || m is ChunkAvailable) net.fissionmc.backend.chunk.ChunkAuthorityBackend.onMessage(m)
             if (m is PlayerFile || m is EntityTransfer || m is EntityRemove) TravelBackend.onMessage(m, serverRef)
-            if (m is RegionMap || m is GenerateChunk || m is EntityHandover || m is BorderForward || m is ItemTransfer || m is ItemPickup || m is ItemGive || m is BlockEntitySignal || m is GhostDemand || m is GhostSync || m is GhostFix) RegionsBackend.onMessage(m, serverRef)
+            if (m is RegionMap || m is GenerateChunk || m is EntityHandover || m is BorderForward || m is ItemTransfer || m is ItemPickup || m is ItemGive || m is ItemGiveTracked || m is ItemGiveAck || m is BlockEntitySignal || m is GhostDemand || m is GhostSync || m is GhostFix) RegionsBackend.onMessage(m, serverRef)
             if (m is PlayerMoveTo) serverRef?.let { srv -> srv.execute { srv.playerList.getPlayer(java.util.UUID(m.uuidHigh, m.uuidLow))?.let { TravelBackend.handoff(it, m.x, m.y, m.z, m.yaw, m.pitch) } } }   // position hand-off: where the client really is
             if (m is ChatFormat) LocalChatBackend.onMessage(m)
             if (m is TraceDump) TraceBackend.onMessage(m)
             if (m is CommandCheck) serverRef?.let { srv -> GhostBackend.checkCommand(srv, m, synchronized(sessions) { sessions[m.playerId]?.name }) }
             if (m is WorldSettingsState || m is WorldSettingApply) WorldSettingsBackend.onMessage(m)
+            if (m is TickSyncState || m is TickSyncApply) TickSyncBackend.onMessage(m)
             if (m is AnnouncementMode) LocalAnnouncements.onMessage(m)
             if (m is PlayerPermission || m is PlayerDetach) PermissionBackend.onMessage(m, serverRef)
             if (m is PlayerData || m is PlayerDataFlush || m is PlayerAttach || m is PlayerDetach) PlayerDataBackend.onMessage(m, serverRef)
             if (m is PlayerClientInfo || m is PlayerAttach || m is PlayerPacketToBackend || m is PlayerDetach) { inbox.add(m); wake() }
         }
         NodeBootstrap.addConnectListener { WorldSettingsBackend.onReconnect() }
+        NodeBootstrap.addConnectListener { TickSyncBackend.onReconnect() }
         NodeBootstrap.addConnectListener { l -> PlayerDataBackend.onReconnect(l) }
+        NodeBootstrap.addConnectListener { EntityGhostBackend.onReconnect() }
         enabled = true
         log.info("[fission] player relay enabled")
     }
@@ -123,14 +126,30 @@ object PlayerRelayBackend {
         if (wakePending.compareAndSet(false, true)) s.execute { wakePending.set(false); drain(s) }
     }
 
+    @Volatile private var readyLink: net.fissionmc.net.NodeLink? = null
+    /**
+     * The link is open from early in the boot (the world is pulled over it), but a relayed player can only be logged in once the server loop runs: tell the master so on the first
+     * tick of every link (also after a reconnect). Until then it sends no player here (a switch started towards a booting backend used to run into the 20 s switch timeout).
+     */
+    private fun announceReady() {
+        val l = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
+        if (readyLink === l) return
+        readyLink = l
+        val boot = (System.currentTimeMillis() - java.lang.management.ManagementFactory.getRuntimeMXBean().startTime).coerceAtLeast(0)
+        l.send(NodeReady(boot)); log.info("[fission] ready for players (${boot} ms after the process started)")
+    }
+
     @JvmStatic fun tick(server: MinecraftServer) {
         serverRef = server
+        announceReady()
+        net.fissionmc.backend.node.LinkScheduler.start(); net.fissionmc.backend.node.LinkScheduler.gameTick(server)
         if (BorderDebug.server == null) BorderDebug.install(server)
         net.fissionmc.backend.node.WorldSeedUploader.tick()
         GlobalChatBackend.setServer(server)
         PlayerDataBackend.tick(server)
         TravelBackend.tick(server)
         WorldSettingsBackend.tick(server)
+        TickSyncBackend.tick(server)
         RegionsBackend.tick(server)
         GhostBackend.tick(server)
         net.fissionmc.backend.chunk.ChunkAuthorityBackend.tick(server)
@@ -193,8 +212,8 @@ object PlayerRelayBackend {
                 val finalProfile = com.destroystokyo.paper.profile.CraftPlayerProfile.asAuthlibCopy(ev.playerProfile.also { it.complete(true) })
                 val deny = if (ev.loginResult != org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result.ALLOWED)
                     net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(ev.kickMessage()) else null
-                ready.add(Ready(a, finalProfile, deny, null).also { it.info = info })
-            } catch (t: Throwable) { ready.add(Ready(a, null, null, t).also { it.info = info }) }
+                ready.add(Ready(a, finalProfile, deny, null).also { it.info = info }); wake()   // (between ticks: a 1 tps server would take the login up to a second later)
+            } catch (t: Throwable) { ready.add(Ready(a, null, null, t).also { it.info = info }); wake() }
         }
     }
 
@@ -216,19 +235,28 @@ object PlayerRelayBackend {
         v.channel.closeFuture().addListener {
             val removed = synchronized(sessions) { sessions.remove(v.id) }   // idempotent
             NodeBootstrap.link?.takeIf { it.isOpen }?.send(PlayerDetach(v.id, "closed on backend"))
+            if (removed != null) {   // a session this backend ended itself (kick, ban, timeout): the master sends no detach back, so drop the per-binding state here too
+                val d = PlayerDetach(v.id, "closed on backend")
+                runCatching { GlobalChatBackend.onMessage(d); PermissionBackend.onMessage(d, serverRef); PlayerDataBackend.onMessage(d, serverRef) }.onFailure { log.warning("[fission] cleanup of ${v.name} failed: $it") }
+            }
             if (removed != null) log.info("[fission] relayed player ${v.name} closed")
         }
         synchronized(sessions) { sessions[v.id] = v }
         // like vanilla's login acknowledgement: switch both directions to configuration, register for ticking, start
         // Vanilla swaps the decoder for an 'unconfigured' placeholder when it decodes a TERMINAL packet (handshake/login ack). We skip
         // those phases, so do the swap by hand, otherwise the decoder stays on the initial handshake protocol and rejects every frame.
-        v.channel.pipeline().replace("decoder", "inbound_config", UnconfiguredPipelineHandler.Inbound())
-        conn.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND)
-        val listener = ServerConfigurationPacketListenerImpl(server, conn, CommonListenerCookie.createInitial(profile, false))
-        conn.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, listener)
-        server.connection.connections.add(conn)
-        v.channel.runPendingTasks()   // EmbeddedChannel runs netty tasks (the inbound protocol switch) only when asked
-        listener.startConfiguration()
+        try {
+            v.channel.pipeline().replace("decoder", "inbound_config", UnconfiguredPipelineHandler.Inbound())
+            conn.setupOutboundProtocol(ConfigurationProtocols.CLIENTBOUND)
+            val listener = ServerConfigurationPacketListenerImpl(server, conn, CommonListenerCookie.createInitial(profile, false))
+            conn.setupInboundProtocol(ConfigurationProtocols.SERVERBOUND, listener)
+            server.connection.connections.add(conn)
+            v.channel.runPendingTasks()   // EmbeddedChannel runs netty tasks (the inbound protocol switch) only when asked
+            listener.startConfiguration()
+        } catch (t: Throwable) {   // a half attached player must not stay as a zombie session / connection
+            server.connection.connections.remove(conn); synchronized(sessions) { sessions.remove(v.id) }; runCatching { v.channel.close() }
+            throw t
+        }
         log.info("[fission] relayed player ${a.name} attached (player ${a.playerId}) from ${remote.address.hostAddress}")
         return v
     }

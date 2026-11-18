@@ -36,6 +36,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] Chunk authority: master chunk store, generation leases, backends pull on load and push on save (wire 64-69), boot pull no longer touches region/entities/poi, `importWorld` seeds the store; scripted two-backend run: 900 chunks generated once, second backend generated nothing, 100/100 pulled chunks identical to the store; pregen, region-owner leases and entity/poi timing are design notes only, real client untested
 - [~] Traveling entities and stats: tamed pets, riders on the player, mounts, shoulder entities, stats and advancements follow a player through every switch; full NBT diff of 9 subjects in the scripted run is clean (allowlist documented); real client untested. Phase 2 (static regions) not started
 - [x] Network-wide join/leave lines from the master (`messages.*`), backends silent for relayed players
+- [~] Client safety layer (`safety:` in fission.yml, `.dev/docs/design/client-safety.md`): every backend->client frame is checked on the master: frame/compressed-frame/custom-payload limits (dropped or kick by policy), block entity tags, components (chat, titles, tab list, boss bars, scoreboard, player info names, map decorations) and item stacks (container, slot, equipment, entity data, merchant result) sanitised in place; counters via `/fission safety` and `/fission status`; unit tests + backend oracle against vanilla's codecs (`-PcheckSafety=exit`) pass; scripted run `safety-test.sh`; source side (layer 3) and signed chat/advancements/recipes not covered
 - [ ] Packet logger demo (real client join)
 - [ ] Typed packet wrappers (sealed hierarchy)
 - [~] Listener chain: `PacketBus` + `PacketTap` over PacketEvents' EventManager, wired in master limbo phases, master relay (both directions) and backend virtual connection (both directions); `PacketTapTest` covers both directions, cancel and modify; backend boot shows the tap initialises
@@ -49,6 +50,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [ ] Message codecs on NMS StreamCodec
 - [x] Node auth (Ed25519 mutual), handshake, heartbeat, reconnect (NodeClient)
 - [x] Master hostable in a backend's JVM (combined mode) and as a separate process; two-process boot with Ed25519 auth + reconnect verified
+- [x] Node data limits (protocol/NODE-LIMITS.md): `limits:` config for every cap, negotiated per link (LinkLimits), large messages fragmented/reassembled by the link (up to 64 MiB), plugin messaging API `fission-api` (FissionNet). Unit tested; scripted multi-process run `scripts/limits-test.sh` (status in the note)
 
 ## M4 Master
 - [x] Node registry
@@ -67,11 +69,17 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [x] Static region grid, tick ownership (`regions.*` in fission.yml, validated at master start; ghost chunks are not ticked/spawned in)
 - [~] Player presence broadcast (backends report player positions to the master, 2 block granularity; not broadcast to other players/backends)
 - [~] Edge/ghost chunks (ghost chunks reach the client from the non-owner, block changes replicate into them; foreign entities in view and cross-border block updates missing)
-- [~] Player + entity handoff across borders (player: seamless switch with hysteresis, pets/riders travel; items/xp/mobs handed over with ack; projectiles, leashes, vehicles not)
+- [~] Player + entity handoff across borders (player: seamless switch with hysteresis, pets/riders travel; items/xp/mobs handed over with ack; leashed mobs cross with their holder; projectiles, vehicles not)
 - [~] Seamless backend switch without the loading screen (`switch.mode: seamless`, default): backend-to-backend switches and region border crossings keep the client's level and player (no Login/Respawn/StartConfiguration): per-client entity id map + byte-level rewriter driven by a mechanically generated id table and checked against vanilla's codecs over ~150k recorded frames, cut-over in one bundle, chunk bookkeeping, PlayerLoaded from the master; limbo to first backend and dimension/seed changes still use Login+Respawn; scripted region-test passes, real client unverified
 - [~] World settings owned by the master (`world-settings:`): clocks (`/time`, 26.x named clocks), game time, weather, all game rules, difficulty, world border, spawn, default game mode are the same on every backend; changes from any backend (commands, plugins, sleeping) go through the master, the master ticks clocks and weather and broadcasts snapshots (drift adopted without a jump), saved in world-settings.txt, late joiners get the state before they tick; sleeping percentage is per backend (gap); scripted test
 - [~] No snap-back on a fast border crossing: the master tracks the client's real position (serverbound movement packets + clientbound teleports) and hands it to the new backend (`PlayerMoveTo`, confirmed with the client's own position; `switch.fresh-position`, default true); scripted region-test: forced correction 0.00 blocks at sprint, flight, elytra and with `/fission send` (baseline without it: 0.84 / 1.80 / 4.50 blocks); real client unverified
 - [~] First entry (limbo to first backend): the backend's configuration now overlaps with the client loading the limbo, the Login waits only for the limbo client's PlayerLoaded (grace 5 s, was a 10 s gate before anything started), one `[join] <name> phases: ...` line per join in the master log; scripted: warm 0.2 to 0.8 s, first join after a backend start about 1.1 s (JIT), never generated terrain about 1.8 to 2.3 s (vanilla spawn preparation); real client unverified, the long "Loading terrain" report is not reproduced by the probe ("First entry timing")
+- [x] Leashed mobs cross with their holder
+- [~] Border/packet review fixes (unit tested)
+- [~] Tick rate sync across backends
+- [~] Backend readiness before switches
+- [~] Entities kept across a switch
+- [~] Mob AI stays off the border (unmerged)
 - [ ] Cross-border interactions (explosions, fluids, pathing, redstone, block entities)
 - [ ] Interacting with an entity across the border (ghost entities cannot be clicked or hit)
 - [ ] Dynamic region assignment
@@ -97,7 +105,10 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 
 ## M10 Hardening and release
 - [ ] Node failure/recovery, world backups
-- [ ] Packet exploit hardening, node-link security
+- [ ] Packet exploit hardening
+- [x] Node link security: transcript v3, copy/paste pairing (`node add <code>`), pinned master key, key rotation, pre-auth limits, per-message authorisation on the master (.dev/docs/design/link-security.md, .dev/docs/pairing.md)
+- [ ] Node link: per-node ownership checks for chunk pushes and block events without regions; tab completion for `/fission node`
+- [ ] Fake database for plugins
 - [ ] Admin tooling, docs
 - [ ] First tagged release
 

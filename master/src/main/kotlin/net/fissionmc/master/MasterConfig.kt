@@ -21,6 +21,11 @@ data class MasterConfig(
     /** `debug: true` (or `debug: {enabled: true, ...}`): the same as -Dfission.debug, live. */
     val debug: Boolean = false,
     val trace: net.fissionmc.net.trace.TraceConfig = net.fissionmc.net.trace.TraceConfig(),
+    val safety: net.fissionmc.master.safety.SafetyConfig = net.fissionmc.master.safety.SafetyConfig(),
+    /** `limits:`; put in force once at start (see LimitsConfig.apply), a changed section applies after a restart. */
+    val limits: net.fissionmc.net.LimitsConfig = net.fissionmc.net.LimitsConfig(),
+    /** `tick.sync`: `/tick` on any backend applies to all (see TickSyncHub); applies after a restart. */
+    val tickSync: net.fissionmc.master.ticksync.TickSyncConfig = net.fissionmc.master.ticksync.TickSyncConfig(),
 ) {
     companion object {
         fun read(root: ConfigSection, dir: Path, fileName: String = "fission.yml", log: (String) -> Unit = {}): MasterConfig {
@@ -40,7 +45,7 @@ data class MasterConfig(
             val (debug, d) = root.flagOrSection("debug", false)
             val cfg = MasterConfig(node, client, settings, regions, ghost, strip, chunkAuthority, det, lease, stats, storeDir, playerDir,
                 d.bool("packets", false), d.optString("dump-client-stream")?.takeIf { it.isNotBlank() }, d.bool("relay-probe", false), d.optString("record-limbo")?.takeIf { it.isNotBlank() },
-                net.fissionmc.master.worldsettings.WorldSettingsConfig.from(root), net.fissionmc.net.plugins.PluginsConfig.from(root), debug, net.fissionmc.net.trace.TraceConfig.from(root))
+                net.fissionmc.master.worldsettings.WorldSettingsConfig.from(root), net.fissionmc.net.plugins.PluginsConfig.from(root), debug, net.fissionmc.net.trace.TraceConfig.from(root), net.fissionmc.master.safety.SafetyConfig.from(root), net.fissionmc.net.LimitsConfig.from(root), net.fissionmc.master.ticksync.TickSyncConfig.from(root))
             root.finish()
             return cfg
         }

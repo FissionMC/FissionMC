@@ -8,14 +8,19 @@ node:
   #                            # `.fission-node-id` next to this file) and logs it with the exact line for the master's authorized keys file.
   #                            # Write your own id when the master's regions.* / admin config must name this backend (a generated id is only known after the first start).
   # master: "master-host:25600"  # backend: where the master listens. 127.0.0.1 is THIS container: use the master's address (internal network name/IP or public IP + allocated port)
-  # master-public: "<base64>"  # backend: the master's public key (printed by the master / gradlew :master:nodeKeys)
-  # security: true             # Ed25519 authentication + encryption of the link (keep on outside tests)
+  # master-public: "<base64>"  # backend: the master's public key, MANUAL setup only. Normally leave it out: the backend prints a pairing code at its start, you type
+  #                            # `node add <code>` on the master console and the backend pins the master's key itself (`.fission-master-key`). See .dev/docs/pairing.md
+  # master-key: .fission-master-key   # backend: where the pinned master key is kept (written by pairing; delete the file to pair again)
+  # pairing-minutes: 15        # backend: how long a printed pairing code is valid (it prints a new one then); the code goes to the CONSOLE only, never to the log file
+  # security: true             # Ed25519 authentication + encryption of the link (keep on outside tests). false towards a non-loopback master needs allow-insecure: true
+  # allow-insecure: false      # true = this backend may dial a non-loopback master without link security (closed networks only)
   # direct-connections: false  # backend: false = this server's own Minecraft port (server.properties) is only bound on 127.0.0.1, so players can only come
   #                            # through the master (its login, permissions and player data). true = the port is public like on a normal server.
   # connect-timeout: 300       # backend: seconds to wait for the master at start before giving up (0 = wait for ever)
   # key: fission-node.key      # this node's key file (created if missing)
   # listen: "127.0.0.1:25600"  # combined: TCP listener for more backends
   # authorized: fission-authorized.keys   # combined: allowed backends
+  # (combined mode: `pairing`, `pairing-max-pending`, `max-unauthenticated`, `connections-per-minute` as in the master's fission.yml)
   # world-root: .              # combined: worlds the master half serves
 
 # combined mode only: the master half's client listener (same keys as the master's client: section)
@@ -41,3 +46,32 @@ trace:
   enabled: false
   ring-seconds: 300
   max-file-mb: 64
+
+# Data limits of the node link (master <-> backends; the same section, with the same keys, on every node). These are what THIS node accepts; after the handshake both sides
+# tell each other theirs and a sender uses the smaller of the two, so nothing is sent that the peer would refuse. Only authenticated peers get here (the limit before the
+# handshake is fixed and small). Sizes are bytes, or a number with a suffix: 512K, 16M, 1G (also KiB/MiB/GiB). Applies after a restart. A message over a limit is not sent and
+# the sender logs which limit; a received message over a limit closes the link with that reason. Raise the limits on ALL nodes together.
+limits:
+  frame: 16M              # largest single frame on the wire (1M..1G). Messages over fragment-above are split anyway, so this mostly bounds unfragmented messages
+  max-message: 64M        # largest message in total (it is split into pieces and reassembled by the link); must be >= frame and >= every blob limit below
+  chunk-blob: 16M         # one chunk's saved data (chunk authority)
+  player-data: 16M        # one player file / player data blob (inventory, ender chest, advancements ...)
+  entity-blob: 8M         # one travelling entity (a mob with a full inventory, a vehicle tree)
+  entity-blobs: 256       # entities in one handover / transfer message (count)
+  item-blob: 4M           # one item stack crossing a border (shulker boxes, bundles, books with big components)
+  item-stacks: 256        # item stacks in one transfer message (count)
+  entity-ghost-blob: 1M   # one part of an entity ghost (spawn packet, metadata, equipment)
+  entity-ghosts: 1024     # entity ghosts in one batch (count)
+  player-frame: 16M       # one relayed player packet (vanilla: 8 MiB clientbound)
+  ghost-chunks: 16384     # chunks in one ghost demand (count)
+  string: 1M              # strings that have no cap of their own (vanilla: 32767 characters)
+  max-plugin-message: 8M  # largest plugin message between backends (the FissionNet API); must be <= max-message
+  # link internals (this node only, not exchanged):
+  fragment-above: 1M      # messages bigger than this are split, so a big transfer cannot hold up heartbeats and chat (<= frame)
+  fragment-size: 256K     # size of one piece
+  reassembly-memory: 256M # memory reserved for messages being reassembled, all links together (>= max-message)
+  max-reassemblies: 16    # messages being reassembled at once per link
+  reassembly-timeout: 120 # seconds a split message may take from its first to its last piece
+  max-pending-send: 512M  # bytes queued towards one peer before the link is dropped as stuck (>= max-message)
+  plugin-inflight: 32M    # bytes of one plugin's messages that may wait to be written to the link (>= max-plugin-message)
+  plugin-rate: 200        # plugin messages per second one plugin may send

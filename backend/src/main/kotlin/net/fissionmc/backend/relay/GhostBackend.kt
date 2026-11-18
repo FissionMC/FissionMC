@@ -25,14 +25,14 @@ object GhostBackend {
         var data: ByteArray? = null; var equip: ByteArray? = null; var swinging = false; var swingProgress = 0f
     }
     private val last = ConcurrentHashMap<UUID, Last>()
-    private var ticks = 0
+    private val reportPace = net.fissionmc.net.Pacer(100)   // 2 ticks at 20 tps, every tick on a slower server (never later than 1 report per tick)
+    private val metaPace = net.fissionmc.net.Pacer(500)     // 10 ticks at 20 tps
     private val slots = listOf(EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND, EquipmentSlot.FEET, EquipmentSlot.LEGS, EquipmentSlot.CHEST, EquipmentSlot.HEAD)
 
     @JvmStatic fun tick(server: MinecraftServer) {
         val link = NodeBootstrap.link?.takeIf { it.isOpen } ?: return
-        ticks++
-        if (ticks % 2 != 0) return
-        val metaTick = ticks % 10 == 0
+        if (!reportPace.due()) return
+        val metaTick = metaPace.due()
         val seen = HashSet<UUID>()
         for (p in server.playerList.players) {
             if (!PlayerDataBackend.isRelayed(p.uuid)) continue

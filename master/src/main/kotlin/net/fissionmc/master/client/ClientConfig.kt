@@ -62,12 +62,13 @@ data class ClientConfig(
                 if (i <= 0) throw ConfigException("client.listen: expected host:port, got '$listen'")
                 listen.substring(0, i) to (listen.substring(i + 1).toIntOrNull() ?: throw ConfigException("client.listen: the port of '$listen' is not a number"))
             }
+            if (po !in 0..65535) throw ConfigException("client.listen: the port must be 0 to 65535, got $po")
             return ClientConfig(
                 h, po, c.bool("online-mode", true), c.string("motd", d.motd), cap(c, d.maxPlayers),
                 c.int("fake-max-players", d.fakeMaxPlayers).also { if (it < -1) throw ConfigException("client.fake-max-players: expected 0 or more or -1, got $it") },
                 c.int("fake-online-players", d.fakeOnlinePlayers).also { if (it < -1) throw ConfigException("client.fake-online-players: expected 0 or more or -1, got $it") },
                 c.int("fake-online-minimum", d.fakeOnlineMinimum).also { if (it < 0) throw ConfigException("client.fake-online-minimum: expected 0 or more, got $it") },
-                c.int("compression-threshold", d.compressionThreshold), c.bool("enabled", true), listen != null,
+                c.int("compression-threshold", d.compressionThreshold).also { if (it < -1) throw ConfigException("client.compression-threshold: expected -1 (off) or 0 or more, got $it") }, c.bool("enabled", true), listen != null,
                 c.int("connection-throttle", d.throttle).also { if (it < 0) throw ConfigException("client.connection-throttle: expected 0 or more, got $it") },
                 c.int("timeout-seconds", d.timeoutSeconds).also { if (it < 5) throw ConfigException("client.timeout-seconds: expected 5 or more, got $it") },
             )

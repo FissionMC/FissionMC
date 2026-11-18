@@ -49,6 +49,7 @@ class WorldServer(private val root: Path, threads: Int = 2) : Closeable {
             val buf = java.nio.ByteBuffer.allocate(FILE_CHUNK_SIZE)
             var offset = 0L
             while (true) {
+                if (!link.isOpen) return   // the peer is gone: stop reading the file (the worker thread is shared)
                 buf.clear()
                 var n = 0
                 while (buf.hasRemaining()) { val r = ch.read(buf); if (r < 0) break; n += r }

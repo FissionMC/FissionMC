@@ -4,6 +4,8 @@ import net.fissionmc.net.*
 import net.fissionmc.protocol.MC_VERSION
 import net.fissionmc.master.client.ClientConfig
 import net.fissionmc.master.client.ClientServer
+import net.fissionmc.net.pairing.PairingStore
+import net.fissionmc.master.nodes.NodeAdmin
 import java.nio.file.Path
 
 /** Standalone master process: `fission.yml` with node.mode master, node.listen, node.authorized, node.world-root (every key: fission.default.yml). */
@@ -17,7 +19,7 @@ fun main(args: Array<String>) {
 private fun runMaster(args: Array<String>) {
     // "nogui" / "--nogui" are accepted and ignored so a Minecraft-style launcher line (java -jar server.jar nogui, e.g. a Pterodactyl egg) works; the first other argument is the config file
     val configFile = Path.of(args.firstOrNull { it != "nogui" && !it.startsWith("-") } ?: "fission.yml").toAbsolutePath()
-    Banner.print("master", listOf("config ${configFile}", "console: stop, list, players, admin, send, trace, help"))
+    Banner.print("master", listOf("config ${configFile}", "console: stop, list, players, node, admin, send, trace, help"))
     LogFormat.install()
     ShutdownWatchdog.install("master", 30)
     // the console reads from the very start, so `stop` works even while the master is still starting (or stuck binding); the full commands replace this handler at the end
@@ -34,18 +36,21 @@ private fun runMaster(args: Array<String>) {
     val mc = try { MasterConfig.read(FissionConfig.load(configFile), configFile.parent, configFile.fileName.toString()) { println("[master] $it") } } catch (e: IllegalArgumentException) {
         println("[master] CONFIG ERROR, master not started: ${e.message}"); System.err.println("[master] CONFIG ERROR, master not started: ${e.message}"); kotlin.system.exitProcess(2)
     }
+    net.fissionmc.net.LimitsConfig.apply(mc.limits)
     // flight recorder + debug flag (both live: see the config reload below)
     FissionDebug.fromConfig(mc.debug); net.fissionmc.net.trace.Trace.init("master", configFile.parent.resolve("trace")); net.fissionmc.net.trace.Trace.apply(mc.trace)
     if (net.fissionmc.net.trace.Trace.on) println("[master] ${net.fissionmc.net.trace.Trace.status()}")
+    net.fissionmc.master.safety.Safety.config = mc.safety
     val cfg = mc.node; val regions = mc.regions; val clientCfg = mc.client; val settings = mc.settings; val ghostZone = mc.ghostZone; val stripChunks = mc.borderStrip
     val chunkAuthorityOn = mc.chunkAuthority; val chunkDeterministic = mc.chunkDeterministic; val leaseSeconds = mc.leaseSeconds; val statsSeconds = mc.chunkStatsSeconds
     val chunkStoreDir = mc.chunkStoreDir; val playerDataDir = mc.playerDataDir
     val dbgPackets = mc.debugPackets; val dbgDump = mc.debugDumpClientStream; val dbgRelayProbe = mc.debugRelayProbe; val dbgRecordLimbo = mc.debugRecordLimbo
     val listen = cfg.listen!!
-    val loopbackListen = listen.host == "127.0.0.1" || listen.host == "localhost" || listen.host == "::1"
-    if (!cfg.security && !loopbackListen && !cfg.allowInsecure)
-        fail("node.security is false and node.listen is ${listen.host}:${listen.port}: anyone who reaches that port could connect as a backend (read player data, grant operator, push chunks). Turn security on, listen on 127.0.0.1, or set node.allow-insecure: true if this network is closed")
-    val transport = NettyTransport(NodeSupport.masterNode(MC_VERSION), security = NodeSupport.masterSecurity(cfg))
+    NodeSupport.insecureListenerProblem(cfg)?.let { fail(it) }
+    // link security: authorized keys (hot reloaded), pending pairings, limits for connections that have not authenticated yet
+    val pairingStore = PairingStore(NodeSupport.authorizedKeys(cfg), cfg.pairing, cfg.pairingMaxPending)
+    val linkSecurity = NodeSupport.masterSecurity(cfg, pairingStore)
+    val transport = NettyTransport(NodeSupport.masterNode(MC_VERSION), security = linkSecurity, guard = NodeSupport.preAuthGuard(cfg))
     val registry = NodeRegistry()
     val hub = ReplicationHub.persistent(configFile.resolveSibling("replication.state"), java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "replication-state").also { it.isDaemon = true } }) { println(it) }
     registry.addListener(hub.listener)
@@ -53,7 +58,7 @@ private fun runMaster(args: Array<String>) {
     relay.playerData = PlayerDataStore(Path.of(playerDataDir), { println(it) })
     registry.addListener(relay.listener)
     relay.regions = regions
-    if (regions.enabled) { println("[master] regions on:"); regions.describe().forEach { println("[master]   $it") }; registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { node.link.send(net.fissionmc.protocol.RegionMap(node.info.nodeId, regions.toRules())) } }) ; java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "regions-resend").also { it.isDaemon = true } }.scheduleWithFixedDelay({ registry.all.filter { it.link.isOpen }.forEach { n -> n.link.send(net.fissionmc.protocol.RegionMap(n.info.nodeId, regions.toRules())) } }, 5, 5, java.util.concurrent.TimeUnit.SECONDS) }
+    if (regions.enabled) { println("[master] regions on:"); regions.describe().forEach { println("[master]   $it") }; registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { node.link.send(net.fissionmc.protocol.RegionMap(node.info.nodeId, regions.toRules(), regions.mobAiBorder)) } }) ; java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "regions-resend").also { it.isDaemon = true } }.scheduleWithFixedDelay({ registry.all.filter { it.link.isOpen }.forEach { n -> n.link.send(net.fissionmc.protocol.RegionMap(n.info.nodeId, regions.toRules(), regions.mobAiBorder)) } }, 5, 5, java.util.concurrent.TimeUnit.SECONDS) }
     // chunk authority: the master is the canonical store of chunk data
     val chunks = if (chunkAuthorityOn) {
         val det = chunkDeterministic
@@ -61,7 +66,9 @@ private fun runMaster(args: Array<String>) {
         val store = net.fissionmc.master.chunk.FileChunkStore(Path.of(chunkStoreDir)) { println(it) }
         // chunk requests and pushes read and write files: on a thread of their own, never on the network threads that relay the players' packets
         val chunkIo = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "chunk-store").also { it.isDaemon = true } }
-        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, leaseSeconds * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }, regionOwner = { d, x, z -> if (regions.enabled) regions.owner(d, x * 16 + 8, z * 16 + 8) else null }, executor = chunkIo).also { a ->
+        // reads and fsynced writes used to share this one thread (every request waited behind every push): four of them now, a region file always on the same one (the messages about one chunk stay in order)
+        val chunkIoStripes = Array(4) { i -> java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "chunk-store-$i").also { it.isDaemon = true } } }
+        net.fissionmc.master.chunk.ChunkAuthority(store, registry, timer, { println(it) }, leaseSeconds * 1000, deterministic = { d -> "true" in det || d in det }, generationOwner = { d, x, z -> regions.generationOwner(d, x, z, stripChunks) }, ownerGenerates = { n, d, x, z -> relay.playerNear(n, d, x, z, ghostZone) }, regionOwner = { d, x, z -> if (regions.enabled) regions.owner(d, x * 16 + 8, z * 16 + 8) else null }, executor = chunkIo, executorFor = { k -> chunkIoStripes[Math.floorMod(31 * (31 * k.dimension.hashCode() + (k.x shr 5)) + (k.z shr 5), chunkIoStripes.size)] }).also { a ->
             val every = statsSeconds
             var last = ""
             timer.scheduleWithFixedDelay({ val l = a.statsLine(); if (l != last) { last = l; println(l) } }, every, every, java.util.concurrent.TimeUnit.SECONDS)
@@ -81,9 +88,11 @@ private fun runMaster(args: Array<String>) {
     if (!shared && clientCfg.enabled && listen.port == clientCfg.port)
         fail("node.listen (${listen.host}:${listen.port}) and client.listen (${clientCfg.host}:${clientCfg.port}) use the same port with different hosts: write the SAME value in both to share the port, or use two ports")
     try { master.start(listen = !shared) } catch (e: Exception) { fail("node.listen ${listen.host}:${listen.port} cannot be bound: ${e.message}") }
+    val nodeAdmin = linkSecurity?.let { sec -> NodeAdmin(cfg.keyFile, sec, pairingStore, registry).also { a -> master.nodeAdmin = a; registry.addListener(a.listener); NodeAdmin.current = a } }
     if (shared) println("[master] node links and players share ${listen.host}:${listen.port} (a connection starting with byte 0 is a node link, anything else a Minecraft client)")
     master.registry.addListener(object : NodeRegistry.Listener {
-        override fun joined(node: RegisteredNode) = println("[master] ${node.info.nodeId} joined")
+        override fun joined(node: RegisteredNode) = println("[master] ${node.info.nodeId} joined" + if (node.ready) "" else " (booting: no players are sent to it until it reports ready)")
+        override fun ready(node: RegisteredNode) { if (node.readyAfterMs > 0) println("[master] ${node.info.nodeId} ready (${node.readyAfterMs} ms after it joined)") }
         override fun left(node: RegisteredNode, reason: String) = println("[master] ${node.info.nodeId} left: $reason")
     })
     println("[master] event log epoch ${hub.epoch}")
@@ -91,7 +100,7 @@ private fun runMaster(args: Array<String>) {
     println("[master] listening on ${listen.host}:${listen.port}, worlds in ${cfg.worldRoot}")
     if (listen.host == "127.0.0.1" || listen.host == "localhost" || listen.host == "::1")
         println("[master] WARN node.listen is ${listen.host}:${listen.port}: backends in other containers/machines cannot connect (use 0.0.0.0:${listen.port}); a changed value applies live")
-    println("[master] node link security: ${if (cfg.security) "on (Ed25519, authorized keys: ${cfg.authorizedFile})" else "OFF (node.security=false: any backend may connect)"}")
+    println("[master] node link security: ${if (cfg.security) "on (Ed25519 + encryption, authorized keys: ${cfg.authorizedFile}, master key fingerprint ${nodeAdmin?.masterFingerprint}; pairing ${if (pairingStore.enabled) "on: type `node add <code>`" else "OFF"})" else "OFF (node.security=false: any backend may connect)"}")
     if (settings.permissions.any && !clientCfg.onlineMode)
         println("[master] WARN permissions exist and client.online-mode=false: offline UUIDs derive from the name, so anyone can log in as a listed name (and is then bound to it first if its owner has not logged in yet). Use online mode outside development.")
     // local chat format (chat.local.format): pushed to the backends on join, on every attach and every 5 s (a first send can precede the backend's handlers)
@@ -106,15 +115,19 @@ private fun runMaster(args: Array<String>) {
         relay.worldSettings = ws
         Runtime.getRuntime().addShutdownHook(Thread { ws.close() })
     }
+    // network-wide /tick state (rate, freeze, step, sprint): one tick speed on all backends
+    relay.tickSync = net.fissionmc.master.ticksync.TickSyncHub(registry, net.fissionmc.master.ticksync.TickSyncModel(), mc.tickSync.sync, 5) { println(it) }
+    Runtime.getRuntime().addShutdownHook(Thread { relay.tickSync?.close() })
+    println("[master] tick sync ${if (mc.tickSync.sync) "on" else "off (tick.sync: false)"}")
     val clients = if (clientCfg.enabled) try { ClientServer(clientCfg, relay = relay, settings = settings, nodeAdopt = if (shared) master::adopt else null).start() } catch (e: Exception) { fail("client.listen ${clientCfg.host}:${clientCfg.port} cannot be bound: ${e.message}" + if (e is java.net.BindException || e.cause is java.net.BindException) " (is another process or listener using this port? node.listen and client.listen may use the same port only when the value is identical)" else "") } else null
-    registry.addListener(object : NodeRegistry.Listener { override fun joined(node: RegisteredNode) { clients?.attachWaiting() } })
+    registry.addListener(object : NodeRegistry.Listener { override fun ready(node: RegisteredNode) { clients?.attachWaiting(); clients?.regionRecheck() } })
     val stats = MasterStatsPublisher(registry, relay, { clients?.onlinePlayers ?: 0 })
     dbgDump?.let { System.setProperty("fission.dump-client-stream", it) }
     if (dbgPackets) System.setProperty("fission.debug.packets", "1")
     if (dbgRelayProbe) registry.addListener(RelayProbe(relay, dbgRecordLimbo?.let { Path.of(it) }))
     Runtime.getRuntime().addShutdownHook(Thread { chunks?.let { println(it.statsLine()) }; stats.close(); clients?.close(); master.close(); transport.close() })
     // config reload: a changed fission.yml is read again; listen addresses and the client motd/max players/online mode/compression apply live, everything else after a restart
-    val reloadable = setOf("client.listen", "client.motd", "client.max-players", "client.fake-max-players", "client.fake-online-players", "client.fake-online-minimum", "client.online-mode", "client.compression-threshold", "node.listen")
+    val reloadable = setOf("client.listen", "client.motd", "client.max-players", "client.fake-max-players", "client.fake-online-players", "client.fake-online-minimum", "client.online-mode", "client.compression-threshold", "node.listen", "node.pairing", "node.pairing-max-pending")
     ConfigWatcher(configFile, { println("[master] $it") }) { oldText, newText ->
         val changed = ConfigWatcher.changedKeys(oldText, newText)
         println("[master] ${configFile.fileName} changed (${changed.joinToString().ifEmpty { "comments only" }}): reloading")
@@ -131,10 +144,12 @@ private fun runMaster(args: Array<String>) {
             if (to == null) println("[master] node.listen was removed: restart required") else master.rebind(to)?.let { println("[master] node.listen: cannot listen on ${to.host}:${to.port}: $it (still on ${(master.address as? NodeAddress.Tcp)?.let { a -> "${a.host}:${a.port}" }})") }
                 ?: run { println("[master] backends now connect to ${to.host}:${to.port}"); applied += "node.listen" }
         }
+        if ("node.pairing" in changed || "node.pairing-max-pending" in changed) { pairingStore.enabled = fresh.node.pairing; pairingStore.maxPending = fresh.node.pairingMaxPending; applied += changed.filter { it.startsWith("node.pairing") }; println("[master] pairing is ${if (pairingStore.enabled) "on" else "off"}") }
         if (changed.any { it.startsWith("client.") && it in reloadable } && clients != null) {
             clients.rebind(fresh.client)?.let { println("[master] client listener: cannot apply ${fresh.client.host}:${fresh.client.port}: $it (still on ${clients.config.host}:${clients.config.port})") }
                 ?: run { applied += changed.filter { it.startsWith("client.") && it in reloadable } }
         }
+        if (changed.any { it == "safety" || it.startsWith("safety.") }) { net.fissionmc.master.safety.Safety.config = fresh.safety; applied += changed.filter { it == "safety" || it.startsWith("safety.") } }
         val liveDiag = changed.filter { it == "debug" || it == "debug.enabled" || it.startsWith("trace.") }
         if (liveDiag.isNotEmpty()) {
             FissionDebug.fromConfig(fresh.debug); net.fissionmc.net.trace.Trace.apply(fresh.trace)
@@ -143,7 +158,7 @@ private fun runMaster(args: Array<String>) {
         // permissions: (and the old admin:) apply live: the new store replaces the old one and every online player's backend is told
         val livePerm = changed.filter { it == "permissions" || it.startsWith("permissions.") || it == "admin" || it.startsWith("admin.") }
         if (livePerm.isNotEmpty() && clients != null) { clients.reloadPermissions(fresh.settings.permissions); applied += livePerm }
-        val later = changed.filter { it !in reloadable && it !in liveDiag && (clients == null || it !in livePerm) }
+        val later = changed.filter { it !in reloadable && it !in liveDiag && it != "safety" && !it.startsWith("safety.") && (clients == null || it !in livePerm) }
         if (applied.isNotEmpty()) println("[master] applied live: ${applied.joinToString()}")
         if (later.isNotEmpty()) println("[master] needs a restart to take effect: ${later.joinToString()}")
     }.start()
@@ -156,7 +171,8 @@ private fun runMaster(args: Array<String>) {
             "" -> {}
             "stop", "end", "exit", "quit" -> { println("[master] stopping"); kotlin.system.exitProcess(0) }
             "list" -> println("[master] ${registry.all.size} backends: ${registry.all.joinToString { it.info.nodeId }.ifEmpty { "-" }}; ${clients?.onlinePlayers ?: 0} players")
-            "help", "?" -> println("[master] commands: stop, list, players, admin list|add|remove <player|uuid>, send <player> <backend>, trace [start|stop|dump [seconds]|mark <text>], help")
+            "node" -> if (nodeAdmin == null) println("[master] node.security is off: there are no keys to manage") else nodeAdmin.command(line.trim().split(Regex("\\s+")).drop(1), "console") { println("[master] $it") }
+            "help", "?" -> println("[master] commands: stop, list, players, node add|list|pending|remove|rename|fingerprint|rotate|rotate-master|pairing, admin list|add|remove <player|uuid>, send <player> <backend>, trace [start|stop|dump [seconds]|mark <text>], help")
             else -> if (clients == null || !net.fissionmc.master.client.MasterCommands.console(clients, line) { println("[master] $it") }) println("[master] unknown command '${line.trim()}', type help")
         }
     }

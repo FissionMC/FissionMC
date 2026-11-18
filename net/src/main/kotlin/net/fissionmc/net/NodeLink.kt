@@ -5,7 +5,9 @@ import net.fissionmc.protocol.Welcome
 import java.util.concurrent.CompletableFuture
 
 /** Identity of the node on the other end, known once the handshake finished. */
-data class PeerInfo(val nodeId: String, val role: net.fissionmc.protocol.NodeRole, val sessionId: Long, val mcVersion: String?)
+data class PeerInfo(val nodeId: String, val role: net.fissionmc.protocol.NodeRole, val sessionId: Long, val mcVersion: String?,
+    /** Acceptor side: the backend still pinned the master's previous key (the master rotated) and was answered with it: send it the new key. */
+    val usedPreviousKey: Boolean = false)
 
 /** A handshaken, framed, bidirectional message link to one peer. Identical for Local and Tcp transports. */
 interface NodeLink {
@@ -27,5 +29,11 @@ interface NodeLink {
     var handler: (NodeMessage) -> Unit
 
     fun send(msg: NodeMessage)
+
+    /** Like [send], and [done] is called when the message has been written to the connection (null) or could not be sent (a limit was exceeded, the link closed). */
+    fun sendTracked(msg: NodeMessage, done: (Throwable?) -> Unit) { send(msg); done(null) }
+
+    /** What this link may send: the minimum of our own limits and the peer's; null until the peer's limits arrived. */
+    val peerLimits: net.fissionmc.protocol.Limits? get() = null
     fun close(reason: String = "closed")
 }

@@ -8,7 +8,6 @@ object ChunkKind {
 }
 
 /** Largest chunk blob on the wire (zlib compressed vanilla NBT; real chunks are some KiB to a few hundred KiB). */
-const val MAX_CHUNK_BLOB = 4 * 1024 * 1024
 
 /**
  * Chunk authority messages, wire ids 64-69. [dimension] is the level id (`minecraft:overworld`), [kind] a [ChunkKind],
@@ -28,10 +27,17 @@ class ChunkData(val reqId: Long, val status: Int, val version: Long, val bytes: 
 data class ChunkAbsent(val reqId: Long, val lease: Boolean) : NodeMessage
 
 /** Backend -> master (67): a chunk generated or saved on the backend. [baseVersion] is the version the backend loaded or last pushed (0 = generated here). */
-class ChunkPush(val dimension: String, val kind: Int, val x: Int, val z: Int, val status: Int, val baseVersion: Long, val bytes: ByteArray) : NodeMessage
+class ChunkPush(val dimension: String, val kind: Int, val x: Int, val z: Int, val status: Int, val baseVersion: Long, val bytes: ByteArray) : OrderedMessage {
+    override val orderKey: String get() = chunkOrderKey(dimension, kind, x, z)
+}
 
 /** Master -> backend (68): the answer to a [ChunkPush]. */
-data class ChunkStored(val dimension: String, val kind: Int, val x: Int, val z: Int, val accepted: Boolean, val version: Long) : NodeMessage
+data class ChunkStored(val dimension: String, val kind: Int, val x: Int, val z: Int, val accepted: Boolean, val version: Long) : OrderedMessage {
+    override val orderKey: String get() = chunkOrderKey(dimension, kind, x, z)
+}
+
+/** Order key of the pushes and answers of one chunk (see [OrderedMessage]). */
+fun chunkOrderKey(dimension: String, kind: Int, x: Int, z: Int): String = "chunk|$dimension|$kind|$x|$z"
 
 /** Master -> the other backends (69): a new version of a chunk exists. */
 data class ChunkAvailable(val dimension: String, val kind: Int, val x: Int, val z: Int, val version: Long) : NodeMessage

@@ -85,10 +85,10 @@ object TransplantBuilder {
 
     val bundleDelimiter: ByteArray get() = frame(PlayPacketIds.c("BundleDelimiter"))
 
-    /** Frames that clear what the OLD backend left on the client (before the id maps are replaced). [tabAndBars] = SwitchCleanup.cleanupFrames(). */
-    fun cleanup(map: EntityIdMap, view: ClientView, tabAndBars: List<ByteArray>): List<ByteArray> {
+    /** Frames that clear what the OLD backend left on the client (before the id maps are replaced). [tabAndBars] = SwitchCleanup.cleanupFrames(). The entities in [keep] (client ids of ghosts that are still right) are not removed. */
+    fun cleanup(map: EntityIdMap, view: ClientView, tabAndBars: List<ByteArray>, keep: Set<Int> = emptySet()): List<ByteArray> {
         val out = ArrayList<ByteArray>()
-        val held = map.heldIds()
+        val held = map.heldIds().filter { it !in keep }
         if (held.isNotEmpty()) out += frame(PlayPacketIds.c("RemoveEntities")) { VarInts.write(it, held.size); held.forEach { id -> VarInts.write(it, id) } }
         out += tabAndBars
         view.objectives.forEach { n -> out += frame(PlayPacketIds.c("SetObjective")) { str(it, n); it.writeByte(1) } }

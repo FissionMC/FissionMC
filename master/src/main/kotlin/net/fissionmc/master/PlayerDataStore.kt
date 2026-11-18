@@ -34,6 +34,7 @@ class PlayerDataStore(val dir: Path, private val log: (String) -> Unit = {}, pri
     fun onFileSave(nodeId: String, uuid: UUID, kind: Int, bytes: ByteArray): Boolean {
         val o = owners[uuid]
         if (o != null && o != nodeId) { log("[playerdata] ignored a json save of $uuid from $nodeId (owner is $o)"); return false }
+        if (o == null && !Files.exists(jsonFile(uuid, kind))) { log("[playerdata] ignored a json save of $uuid from $nodeId: no backend holds this player and there is no file to update"); return false }   // a backend cannot make files for players it never had
         if (!(kind == net.fissionmc.protocol.PlayerFileKind.STATS || kind == net.fissionmc.protocol.PlayerFileKind.ADVANCEMENTS) || !validJson(bytes)) { log("[playerdata] refused a json file for $uuid (kind $kind, ${bytes.size} bytes)"); return false }
         return try {
             val tmp = Files.createTempFile(dir, "$uuid-", ".tmp"); Files.write(tmp, bytes)
@@ -80,18 +81,29 @@ class PlayerDataStore(val dir: Path, private val log: (String) -> Unit = {}, pri
     fun onSave(nodeId: String, uuid: UUID, bytes: ByteArray): Boolean {
         val o = owners[uuid]
         if (o != null && o != nodeId) { log("[playerdata] ignored a save of $uuid from $nodeId (owner is $o)"); return false }
+        if (o == null && !Files.exists(file(uuid))) { log("[playerdata] ignored a save of $uuid from $nodeId: no backend holds this player and there is no file to update"); return false }   // a backend cannot make files for players it never had
         return write(uuid, bytes)
     }
 
     /** The backend finished a flush: everything it had to send for [uuid] has arrived (the link keeps order). */
-    fun flushed(uuid: UUID) { waiters.remove(uuid)?.forEach { it() } }
+    /** False when nobody was waiting (a late or foreign confirmation). */
+    fun flushed(uuid: UUID): Boolean { val w = waiters.remove(uuid); w?.forEach { it() }; return !w.isNullOrEmpty() }
 
-    /** Runs [done] once: when the flush of [uuid] is complete ([flushed]) or after [timeoutMs]. */
-    fun awaitSave(uuid: UUID, timeoutMs: Long, done: () -> Unit) {
+    /**
+     * Runs [done] once: when the flush of [uuid] is complete ([flushed]) or after [timeoutMs]. With [onTimeout] the timeout runs that instead of [done]: the caller
+     * must not go on with the stored data then (the backend's real save is still on its way and would be refused after the owner changed).
+     */
+    fun awaitSave(uuid: UUID, timeoutMs: Long, onTimeout: (() -> Unit)? = null, done: () -> Unit) {
         val once = AtomicBoolean()
         val run = { if (once.compareAndSet(false, true)) done() }
         waiters.computeIfAbsent(uuid) { java.util.concurrent.CopyOnWriteArrayList() }.add(run)
-        timer.schedule({ waiters[uuid]?.remove(run); if (once.get().not()) { log("[playerdata] no save of $uuid within $timeoutMs ms, going on with the stored data"); run() } }, timeoutMs, TimeUnit.MILLISECONDS)
+        timer.schedule({
+            waiters.computeIfPresent(uuid) { _, l -> l.remove(run); if (l.isEmpty()) null else l }   // no empty list left behind for every timed-out flush
+            if (once.compareAndSet(false, true)) {
+                if (onTimeout != null) { log("[playerdata] no save of $uuid within $timeoutMs ms"); onTimeout() }
+                else { log("[playerdata] no save of $uuid within $timeoutMs ms, going on with the stored data"); done() }
+            }
+        }, timeoutMs, TimeUnit.MILLISECONDS)
     }
 
     companion object {

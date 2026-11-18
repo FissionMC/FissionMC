@@ -110,47 +110,54 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
     /** Packet ids whose entity ids this class rewrites (the test checks them against the table). */
     val handledClientbound: Set<Int> = firstId + setOf(pAddEntity, pRemove, pEntityData, pEntityEvent, pPassengers, pTake, pLink, pSound, pLookAt, pMount, pDamage)
 
+    /** Output buffers of the call in progress: all released when it ends, on every path (return, early return, exception). Used by one thread (the session's event loop) at a time. */
+    private val live = ArrayList<ByteBuf>(2)
+    internal var allocated: ((ByteBuf) -> Unit)? = null   // test hook
+    private fun buf(size: Int): ByteBuf = Unpooled.buffer(size).also { live += it; allocated?.invoke(it) }
+    private fun releaseAll() { for (b in live) if (b.refCnt() > 0) b.release(); live.clear() }
     private fun bytes(b: ByteBuf) = ByteArray(b.readableBytes()).also { b.readBytes(it) }
     private fun vi(b: ByteBuf) = VarInts.tryRead(b) ?: throw IllegalArgumentException("truncated varint")
 
     /** A backend frame heading for the client; null = drop it. */
-    fun toClient(frame: ByteArray): ByteArray? {
+    fun toClient(frame: ByteArray): ByteArray? = try { toClient0(frame) } finally { releaseAll() }
+
+    private fun toClient0(frame: ByteArray): ByteArray? {
         val src = Unpooled.wrappedBuffer(frame); val pid = vi(src)
         try {
             when (pid) {
                 in firstId -> return head(src, pid, frame.size) { map.toClient(it) }
                 pAddEntity -> return addEntity(src, pid, frame.size)
                 pRemove -> {
-                    val n = vi(src); val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, n)
+                    val n = vi(src); val dst = buf(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, n)
                     repeat(n) { val b = vi(src); val cid = map.toClient(b); map.onRemoved(cid); map.release(b); VarInts.write(dst, cid) }
                     dst.writeBytes(src); return bytes(dst)
                 }
                 pEntityData -> return entityData(frame, src, pid)
-                pEntityEvent -> { val dst = Unpooled.buffer(frame.size); VarInts.write(dst, pid); dst.writeInt(map.toClient(src.readInt())); dst.writeBytes(src); return bytes(dst) }
+                pEntityEvent -> { val dst = buf(frame.size); VarInts.write(dst, pid); dst.writeInt(map.toClient(src.readInt())); dst.writeBytes(src); return bytes(dst) }
                 pPassengers -> {
-                    val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, map.toClient(vi(src)))
+                    val dst = buf(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, map.toClient(vi(src)))
                     val n = vi(src); VarInts.write(dst, n); repeat(n) { VarInts.write(dst, map.toClient(vi(src))) }; dst.writeBytes(src); return bytes(dst)
                 }
-                pTake -> { val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid); repeat(2) { VarInts.write(dst, map.toClient(vi(src))) }; dst.writeBytes(src); return bytes(dst) }
-                pLink -> { val dst = Unpooled.buffer(frame.size); VarInts.write(dst, pid); dst.writeInt(map.toClient(src.readInt())); val d = src.readInt(); dst.writeInt(if (d == 0) 0 else map.toClient(d)); dst.writeBytes(src); return bytes(dst) }
+                pTake -> { val dst = buf(frame.size + 8); VarInts.write(dst, pid); repeat(2) { VarInts.write(dst, map.toClient(vi(src))) }; dst.writeBytes(src); return bytes(dst) }
+                pLink -> { val dst = buf(frame.size); VarInts.write(dst, pid); dst.writeInt(map.toClient(src.readInt())); val d = src.readInt(); dst.writeInt(if (d == 0) 0 else map.toClient(d)); dst.writeBytes(src); return bytes(dst) }
                 pSound -> {
-                    val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid)
+                    val dst = buf(frame.size + 8); VarInts.write(dst, pid)
                     val holder = vi(src); VarInts.write(dst, holder)
-                    if (holder == 0) { val n = vi(src); VarInts.write(dst, n); dst.writeBytes(src.readBytes(n)); val has = src.readBoolean(); dst.writeBoolean(has); if (has) dst.writeFloat(src.readFloat()) }
+                    if (holder == 0) { val n = vi(src); VarInts.write(dst, n); dst.writeBytes(src, n); val has = src.readBoolean(); dst.writeBoolean(has); if (has) dst.writeFloat(src.readFloat()) }
                     VarInts.write(dst, vi(src))                       // source
                     VarInts.write(dst, map.toClient(vi(src)))         // the entity
                     dst.writeBytes(src); return bytes(dst)
                 }
                 pLookAt -> {
-                    val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid)
+                    val dst = buf(frame.size + 8); VarInts.write(dst, pid)
                     VarInts.write(dst, vi(src)); repeat(3) { dst.writeDouble(src.readDouble()) }
                     val at = src.readBoolean(); dst.writeBoolean(at)
                     if (at) VarInts.write(dst, map.toClient(vi(src)))
                     dst.writeBytes(src); return bytes(dst)
                 }
-                pMount -> { val dst = Unpooled.buffer(frame.size); VarInts.write(dst, pid); VarInts.write(dst, vi(src)); VarInts.write(dst, vi(src)); dst.writeInt(map.toClient(src.readInt())); dst.writeBytes(src); return bytes(dst) }
+                pMount -> { val dst = buf(frame.size); VarInts.write(dst, pid); VarInts.write(dst, vi(src)); VarInts.write(dst, vi(src)); dst.writeInt(map.toClient(src.readInt())); dst.writeBytes(src); return bytes(dst) }
                 pDamage -> {
-                    val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, map.toClient(vi(src))); VarInts.write(dst, vi(src))   // victim, damage type holder
+                    val dst = buf(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, map.toClient(vi(src))); VarInts.write(dst, vi(src))   // victim, damage type holder
                     repeat(2) { val w = vi(src); VarInts.write(dst, if (w == 0) 0 else map.toClient(w - 1) + 1) }                                               // cause, direct (id + 1, 0 = none)
                     dst.writeBytes(src); return bytes(dst)
                 }
@@ -161,18 +168,18 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
     }
 
     private inline fun head(src: ByteBuf, pid: Int, size: Int, f: (Int) -> Int): ByteArray {
-        val dst = Unpooled.buffer(size + 8); VarInts.write(dst, pid); VarInts.write(dst, f(vi(src))); dst.writeBytes(src); return bytes(dst)
+        val dst = buf(size + 8); VarInts.write(dst, pid); VarInts.write(dst, f(vi(src))); dst.writeBytes(src); return bytes(dst)
     }
 
     private fun addEntity(src: ByteBuf, pid: Int, size: Int): ByteArray {
-        val dst = Unpooled.buffer(size + 8); VarInts.write(dst, pid)
+        val dst = buf(size + 8); VarInts.write(dst, pid)
         val b = vi(src); val cid = map.toClient(b); VarInts.write(dst, cid)
-        dst.writeBytes(src.readBytes(16))                          // uuid
+        dst.writeBytes(src, 16)                          // uuid
         val type = vi(src); VarInts.write(dst, type)
-        dst.writeBytes(src.readBytes(24))                          // x y z
+        dst.writeBytes(src, 24)                          // x y z
         val lowest = src.readUnsignedByte().toInt(); dst.writeByte(lowest)  // LpVec3 movement: 1 byte when zero, else 6 bytes (+ a varint when the scale continues)
-        if (lowest != 0) { dst.writeBytes(src.readBytes(5)); if (lowest and 4 == 4) VarInts.write(dst, vi(src)) }
-        dst.writeBytes(src.readBytes(3))                           // xRot yRot yHeadRot
+        if (lowest != 0) { dst.writeBytes(src, 5); if (lowest and 4 == 4) VarInts.write(dst, vi(src)) }
+        dst.writeBytes(src, 3)                           // xRot yRot yHeadRot
         val data = vi(src)
         VarInts.write(dst, if (type in EntityIdTable.projectileTypes && data != 0) map.toClient(data) else data)   // projectiles: the owner's entity id
         dst.writeBytes(src)
@@ -182,10 +189,11 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
 
     private fun entityData(frame: ByteArray, src: ByteBuf, pid: Int): ByteArray {
         val b = vi(src); val cid = map.toClient(b)
-        val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, cid); dst.writeBytes(src)
+        val dst = buf(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, cid); dst.writeBytes(src)
         val entries = map.typeOf(cid)?.let { EntityIdTable.metadata[it] }
         if (entries == null || map.identity || meta == null) return bytes(dst)
-        return meta.rewrite(bytes(dst), cid, entries) { map.toClient(it) } ?: bytes(dst).also { log("[rewrite] metadata of entity $cid (type ${map.typeOf(cid)}) not rewritten: ids inside stay as the backend sent them") }
+        val plain = bytes(dst)   // read once: a second bytes(dst) would be empty
+        return meta.rewrite(plain, cid, entries) { map.toClient(it) } ?: plain.also { log("[rewrite] metadata of entity $cid (type ${map.typeOf(cid)}) not rewritten: ids inside stay as the backend sent them") }
     }
 
     // ---- serverbound
@@ -207,7 +215,9 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
     @Volatile var droppedUnknown = 0L; private set
 
     /** A client frame heading for the current backend; null = drop (names an unknown entity). */
-    fun toBackend(frame: ByteArray): ByteArray? {
+    fun toBackend(frame: ByteArray): ByteArray? = try { toBackend0(frame) } finally { releaseAll() }
+
+    private fun toBackend0(frame: ByteArray): ByteArray? {
         if (namesGhost(frame)) { droppedUnknown++; return null }
         if (map.identity) return frame
         val src = Unpooled.wrappedBuffer(frame); val pid = vi(src)
@@ -215,7 +225,7 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
             val skip = if (pid == sTagQuery) 1 else 0
             when (pid) {
                 sInteract, sAttack, sPlayerCommand, sPick, sCmdMinecart, sTagQuery -> {
-                    val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid)
+                    val dst = buf(frame.size + 8); VarInts.write(dst, pid)
                     if (skip == 1) VarInts.write(dst, vi(src))
                     val b = map.toBackend(vi(src)) ?: run { droppedUnknown++; return null }
                     VarInts.write(dst, b); dst.writeBytes(src); return bytes(dst)
@@ -223,7 +233,7 @@ class EntityRewriter(val map: EntityIdMap, private val meta: MetadataCodec? = nu
                 sSpectate -> {   // Optional<VarInt>: bool present + varint? (OptionalInt codec: VarInt 0 = empty, id + 1 otherwise)
                     val w = vi(src); if (w == 0) return frame
                     val b = map.toBackend(w - 1) ?: run { droppedUnknown++; return null }
-                    val dst = Unpooled.buffer(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, b + 1); dst.writeBytes(src); return bytes(dst)
+                    val dst = buf(frame.size + 8); VarInts.write(dst, pid); VarInts.write(dst, b + 1); dst.writeBytes(src); return bytes(dst)
                 }
                 else -> return frame
             }

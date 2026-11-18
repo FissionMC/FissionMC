@@ -136,7 +136,11 @@ object Replication {
     @JvmStatic fun tick(server: MinecraftServer) {
         if (!enabled) return
         val before = lastApplied
+        // bounded work per tick: half a tick (at least 25 ms, at most 500 ms: a 1 tps server may use more) so a backlog (a backend that was away, a 1 tps server) does not stretch one tick into seconds
+        val deadline = System.nanoTime() + net.fissionmc.net.TickPace.budgetMs(net.fissionmc.backend.node.LinkScheduler.msPerTick()) * 1_000_000L
+        var n = 0
         while (true) {
+            if (++n % 64 == 0 && System.nanoTime() > deadline) break
             val m = inbox.poll() ?: break
             when (m) {
                 is Reconnected -> {
@@ -156,19 +160,37 @@ object Replication {
                     // the master cannot replay what this backend missed (it was away too long, or the master restarted): go on from the master's current position instead of
                     // asking for the gap again and again. Ghost chunks are repaired by the ghost sync; other loaded chunks keep their blocks until they are loaded again.
                     val missed = m.oldestSeq - 1 - lastApplied
+                    synchronized(pending) { pending.clear() }   // echoes of own changes in the skipped range never come: they would hold those blocks against all remote changes
                     if (missed > 0) { log.warning("[fission] replication: the master's event log starts at seq ${m.oldestSeq}; this backend continues from there (block changes other backends made while it was away are not replayed)"); lastApplied = m.oldestSeq - 1 }
                 }
-                is SequencedEvent -> apply(server, m)
+                is SequencedEvent -> try { apply(server, m) } catch (t: Throwable) { applyFailures++; log.warning("[fission] replication: applying seq=${m.seq} from ${m.origin} failed, the event is skipped: $t") }   // one bad event must not keep the rest of the tick (and the ack) from running
             }
         }
         if (lastApplied != before) NodeBootstrap.link?.takeIf { it.isOpen }?.send(EventAck(lastApplied))
+        // a slow server (1 tps) must not leave a backlog for a whole second: the rest is applied between two ticks, like the relay frames
+        if (!inbox.isEmpty() && net.fissionmc.backend.node.LinkScheduler.msPerTick() >= 100 && depth < 8 && followUp.compareAndSet(false, true)) server.execute { followUp.set(false); depth++; try { tick(server) } finally { depth-- } }
     }
+    private val followUp = java.util.concurrent.atomic.AtomicBoolean()
+    private var depth = 0   // server thread: the follow-up cannot nest without end (a task run while the thread blocks runs at once)
+
+    private var resumeAskedAt = -1L
+    private var resumeAskedTime = 0L
+    private const val RESUME_RETRY_MS = 5_000L
+    @JvmField @Volatile var resumesSent = 0L
+    @JvmField @Volatile var resumesSuppressed = 0L
+    /** Remote events whose application threw (the event is skipped: lastApplied already moved on, as before). */
+    @JvmField @Volatile var applyFailures = 0L
 
     private fun apply(server: MinecraftServer, m: SequencedEvent) {
         if (m.seq <= lastApplied) return // duplicate
         if (m.seq != lastApplied + 1) { // gap: ask for a resend and drop everything until it arrives
-            log.warning("[fission] gap: got seq=${m.seq}, expected ${lastApplied + 1}; requesting resend")
-            NodeBootstrap.link?.send(ResumeFrom(epoch, lastApplied))
+            // one request per position: the events that keep arriving before the replay lands are all "gaps" too, and each would start another replay of up to 100,000 events
+            val now = System.currentTimeMillis()
+            if (lastApplied != resumeAskedAt || now - resumeAskedTime > RESUME_RETRY_MS) {
+                resumeAskedAt = lastApplied; resumeAskedTime = now; resumesSent++
+                log.warning("[fission] gap: got seq=${m.seq}, expected ${lastApplied + 1}; requesting resend")
+                NodeBootstrap.link?.send(ResumeFrom(epoch, lastApplied))
+            } else resumesSuppressed++
             inbox.removeIf { it is SequencedEvent }
             return
         }
@@ -189,6 +211,9 @@ object Replication {
                 val level = level(server, e.dimension) ?: return log.warning("[fission] seq=${m.seq}: unknown dimension ${e.dimension}")
                 val state = Block.stateById(e.stateId)
                 val pos = BlockPos(e.x, e.y, e.z)
+                // a chunk of another backend's territory that is not loaded here is not loaded (or generated) for a remote change: setBlock would do that on the server thread. When it is loaded later it comes
+                // from the master's chunk store, which the owner keeps current. Chunks this backend owns are always applied (a neighbour's ghost write into them has to land).
+                if (!RegionsBackend.ownsBlock(e.dimension, e.x, e.z) && level.chunkSource.getChunkNow(e.x shr 4, e.z shr 4) == null) { skippedUnloaded++; return }
                 // the owner decides about writes into its chunks: a refused placement is answered with the authoritative block ("fix", applied by everybody including the writer, whose client gets the real block back)
                 if (e.cause == "ghost" && !own && RegionsBackend.ownsBlock(e.dimension, e.x, e.z)) {
                     val why = refusal(level, pos, state)
@@ -222,6 +247,9 @@ object Replication {
             }
         }
     }
+
+    /** Remote block changes not applied because their chunk is foreign and not loaded here. */
+    @JvmField @Volatile var skippedUnloaded = 0L
 
     private fun level(server: MinecraftServer, dim: String): ServerLevel? =
         server.allLevels.firstOrNull { it.dimension().identifier().toString() == dim }

@@ -80,6 +80,16 @@ class RegionMapTest {
         assertEquals(setOf(ow, "minecraft:the_nether", "*"), rules.map { it.dimension }.toSet())
     }
 
+    @Test fun `mob-ai-border defaults on, can be switched off and travels on the wire`() {
+        assertTrue(split().mobAiBorder)
+        assertFalse(RegionMap.parse(cfg("regions:\n  mob-ai-border: false\n  default: backend-a")).mobAiBorder)
+        val reg = MessageRegistry.core().registerRegionMessages()
+        fun rt(m: NodeMessage): NodeMessage { val buf = Unpooled.buffer(); reg.encode(m, buf); return reg.decode(buf).also { assertEquals(0, buf.readableBytes()) } }
+        val off = net.fissionmc.protocol.RegionMap("backend-b", split().toRules(), false)
+        assertEquals(off, rt(off)); assertFalse((rt(off) as net.fissionmc.protocol.RegionMap).mobAiBorder)
+        assertTrue((rt(net.fissionmc.protocol.RegionMap("a", emptyList())) as net.fissionmc.protocol.RegionMap).mobAiBorder)
+    }
+
     @Test fun `region messages survive the wire`() {
         val reg = MessageRegistry.core().registerRegionMessages()
         fun rt(m: NodeMessage): NodeMessage { val b = Unpooled.buffer(); reg.encode(m, b); return reg.decode(b).also { assertEquals(0, b.readableBytes()) } }

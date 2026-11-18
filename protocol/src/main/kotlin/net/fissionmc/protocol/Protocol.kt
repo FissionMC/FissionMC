@@ -1,7 +1,7 @@
 package net.fissionmc.protocol
 
 /** Wire protocol version spoken between master and backends. */
-const val PROTOCOL_VERSION = 2
+const val PROTOCOL_VERSION = 3
 
 /** Minecraft version both sides must run; keep equal to `mcVersion` in gradle.properties. */
 const val MC_VERSION = "26.3"
