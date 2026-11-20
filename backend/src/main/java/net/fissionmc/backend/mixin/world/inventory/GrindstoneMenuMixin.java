@@ -52,4 +52,18 @@ public abstract class GrindstoneMenuMixin extends AbstractContainerMenu {
     private void fission$checkReachable(final Player player, final CallbackInfoReturnable<Boolean> cir) {
         if (!this.checkReachable) cir.setReturnValue(true); // CraftBukkit
     }
+
+    // Paper - Add PrepareResultEvent (PrepareGrindstoneEvent): fired once the result slot was recomputed
+    @Inject(method = "slotsChanged", at = @At("RETURN"))
+    private void fission$prepareResult(final Container container, final CallbackInfo ci) {
+        if (container == this.repairSlots) {
+            org.bukkit.craftbukkit.event.CraftEventFactory.callPrepareResultEvent(this, GrindstoneMenu.RESULT_SLOT);
+        }
+    }
+
+    // CraftBukkit - SPIGOT-6686: Always send completed inventory to stay in sync with client
+    @Inject(method = "createResult", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/inventory/GrindstoneMenu;broadcastChanges()V"))
+    private void fission$syncResult(final CallbackInfo ci) {
+        this.sendAllDataToRemote();
+    }
 }
