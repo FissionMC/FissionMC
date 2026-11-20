@@ -645,7 +645,7 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
         if (this.server != null) {
             this.server.spark.disable(); // Paper - spark
             this.server.disablePlugins();
-            // TODO(behaviour): this.server.waitForAsyncTasksShutdown(); // Paper - Wait for Async Tasks during shutdown (CraftServer member not ported)
+            this.server.waitForAsyncTasksShutdown(); // Paper - Wait for Async Tasks during shutdown
         }
         // CraftBukkit end
     }

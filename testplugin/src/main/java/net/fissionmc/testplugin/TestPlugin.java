@@ -13,6 +13,8 @@ public final class TestPlugin extends JavaPlugin implements Listener {
     @Override public void onEnable() {
         getLogger().info("enabled on " + getServer().getName() + " " + getServer().getVersion());
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(new PluginCheck.SvcListener(), this); // /fissiontest plugincheck (services events)
+        PluginCheck.registerBrigadier(this); // LifecycleEvents.COMMANDS: fissionbrig, fbrig, fissionbrigperm, fissionboom
         // marker file plugins/FissionTest/audit-on-enable (events-test.sh): a mixin that fails to apply is reported before the worlds load
         // (a failing class load inside a chunk worker would only show as a hung "Preparing spawn area")
         if (new java.io.File(getDataFolder(), "audit-on-enable").exists()) audit("EARLYAUDIT");
@@ -51,6 +53,9 @@ public final class TestPlugin extends JavaPlugin implements Listener {
      */
     @Override public boolean onCommand(org.bukkit.command.CommandSender sender, org.bukkit.command.Command command, String label, String[] args) {
         try {
+            if (command.getName().equals("fissioncheck")) { PluginCheck.checkCommandRan = true; sender.sendMessage("fissioncheck ran"); return true; }
+            // /fissiontest plugincheck : scheduler, Folia-style schedulers, services, unsafe, commands (Bukkit + Brigadier), permissions, config serialization, messaging, data components: PASS/FAIL list
+            if (args.length == 1 && args[0].equals("plugincheck")) { new PluginCheck(this, sender).run(); return true; }
             if (args.length >= 2 && args[0].equals("rider")) {
                 org.bukkit.entity.Player p = getServer().getPlayerExact(args[1]);
                 if (p == null) { sender.sendMessage("no such player"); return true; }
