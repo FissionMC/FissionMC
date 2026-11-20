@@ -14,6 +14,9 @@ public final class PaperDispense {
     private PaperDispense() {
     }
 
+    /** The dispenser currently running ShearsDispenseItemBehavior#execute (BlockShearEntityEvent needs the dispenser block). */
+    public static @Nullable BlockSource shearSource;
+
     public static BlockPos target(final BlockSource source) {
         return source.pos().relative(source.state().getValue(DispenserBlock.FACING));
     }
