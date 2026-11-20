@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.Shadow;
  * SimpleContainer(int, InventoryHolder) (which set bukkitOwner / bukkitOwnerCreator) cannot be added by Mixin.
  */
 @Mixin(SimpleContainer.class)
-public abstract class SimpleContainerMixin {
+public abstract class SimpleContainerMixin implements net.fissionmc.backend.blocks.BlockHolderTarget {
     @Shadow @Final private NonNullList<ItemStack> items;
 
     // Paper start - add fields and methods
@@ -24,6 +24,11 @@ public abstract class SimpleContainerMixin {
     // Paper start - Add missing InventoryHolders
     private java.util.function.@org.jspecify.annotations.Nullable Supplier<? extends org.bukkit.inventory.InventoryHolder> bukkitOwnerCreator;
     // Paper end - Add missing InventoryHolders
+
+    @Override
+    public void fission$setHolderCreator(final java.util.function.Supplier<? extends org.bukkit.inventory.InventoryHolder> creator) {
+        this.bukkitOwnerCreator = creator; // stands in for Paper's SimpleContainer(Supplier, int)
+    }
 
     public List<ItemStack> getContents() {
         return this.items;

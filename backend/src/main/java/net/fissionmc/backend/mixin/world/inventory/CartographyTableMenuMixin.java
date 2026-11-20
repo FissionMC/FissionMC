@@ -33,6 +33,7 @@ public abstract class CartographyTableMenuMixin extends AbstractContainerMenu {
     @Inject(method = "<init>(ILnet/minecraft/world/entity/player/Inventory;Lnet/minecraft/world/inventory/ContainerLevelAccess;)V", at = @At("RETURN"))
     private void fission$savePlayer(final int containerId, final Inventory inventory, final net.minecraft.world.inventory.ContainerLevelAccess access, final CallbackInfo ci) {
         this.fission$inventory = (Inventory) inventory;
+        net.fissionmc.backend.blocks.PaperInventoryHolders.apply(this, access, this.container, this.resultContainer); // Paper - Add missing InventoryHolders
     }
     // CraftBukkit end
 

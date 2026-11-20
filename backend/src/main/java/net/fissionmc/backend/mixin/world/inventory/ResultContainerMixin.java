@@ -13,8 +13,13 @@ import org.spongepowered.asm.mixin.Shadow;
  * TODO(behaviour): Paper's ResultContainer(Supplier<InventoryHolder>) constructor (sets holderCreator) cannot be added by Mixin.
  */
 @Mixin(ResultContainer.class)
-public abstract class ResultContainerMixin {
+public abstract class ResultContainerMixin implements net.fissionmc.backend.blocks.BlockHolderTarget {
     @Shadow @Final private NonNullList<ItemStack> itemStacks;
+
+    @Override
+    public void fission$setHolderCreator(final java.util.function.Supplier<? extends org.bukkit.inventory.InventoryHolder> creator) {
+        this.holderCreator = creator; // stands in for Paper's ResultContainer(Supplier)
+    }
 
     // CraftBukkit start
     private int maxStack = net.minecraft.world.item.Item.ABSOLUTE_MAX_STACK_SIZE;
