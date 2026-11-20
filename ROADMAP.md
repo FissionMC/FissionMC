@@ -79,10 +79,11 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] Tick rate sync across backends
 - [~] Backend readiness before switches
 - [~] Entities kept across a switch
-- [~] Mob AI stays off the border (unmerged)
+- [~] Mob AI stays off the border (land mobs and slimes fixed, live check of the last fixes pending; phantom, squid, bat, frog, goat open)
+- [~] Four backends in quadrants (`dev-run-4.sh`, 2 GB each, live play)
 - [ ] Cross-border interactions (explosions, fluids, pathing, redstone, block entities)
 - [ ] Interacting with an entity across the border (ghost entities cannot be clicked or hit)
-- [ ] Dynamic region assignment
+- [ ] Dynamic region assignment (design note drafted)
 
 ## M7 Craft layer depth
 - [ ] World, Block, Chunk
