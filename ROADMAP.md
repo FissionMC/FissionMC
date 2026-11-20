@@ -80,7 +80,7 @@ Status tracker only. `[x]` done, `[~]` in progress, `[ ]` not started. Rationale
 - [~] Backend readiness before switches
 - [~] Entities kept across a switch
 - [~] Mob AI stays off the border (land mobs and slimes fixed, live check of the last fixes pending; phantom, squid, bat, frog, goat open)
-- [~] Four backends in quadrants (`dev-run-4.sh`, 2 GB each, live play)
+- [x] Four backends in quadrants (`dev-run-4.sh`, 2 GB each, live play: same as two backends)
 - [ ] Cross-border interactions (explosions, fluids, pathing, redstone, block entities)
 - [ ] Interacting with an entity across the border (ghost entities cannot be clicked or hit)
 - [ ] Dynamic region assignment (design note drafted)
