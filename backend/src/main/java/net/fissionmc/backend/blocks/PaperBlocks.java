@@ -26,4 +26,26 @@ public final class PaperBlocks {
     /** Paper - fix drops not preventing stats/food exhaustion: Block#playerDestroy(..., includeDrops, dropExp). */
     public static boolean playerDestroyIncludeDrops = true;
     public static boolean playerDestroyDropExp = true;
+
+    /**
+     * CraftBukkit - PlayerBucketEmptyEvent/PlayerBucketFillEvent: Paper adds (direction, clicked, itemStack, hand) parameters to
+     * BucketItem#emptyContents; Mixin cannot change the signature, so BucketItem#use sets this context around the call.
+     * bucketItem == null means "no player context" (dispensers, API calls): no event is fired then.
+     */
+    public static net.minecraft.core.@Nullable Direction bucketDirection;
+    public static @Nullable BlockPos bucketClicked;
+    public static net.minecraft.world.item.@Nullable ItemStack bucketItem;
+    public static net.minecraft.world.@Nullable InteractionHand bucketHand;
+    /** Paper - Fix PlayerBucketEmptyEvent result itemstack (BucketItem.itemLeftInHandAfterPlayerBucketEmptyEvent). */
+    public static net.minecraft.world.item.@Nullable ItemStack itemLeftInHandAfterPlayerBucketEmptyEvent;
+    /** Result item of a PlayerBucketFillEvent, consumed by createFilledResult in BucketItem#use. */
+    public static net.minecraft.world.item.@Nullable ItemStack bucketFillResult;
+
+    public static void clearBucketContext() {
+        bucketDirection = null;
+        bucketClicked = null;
+        bucketItem = null;
+        bucketHand = null;
+        bucketFillResult = null;
+    }
 }
