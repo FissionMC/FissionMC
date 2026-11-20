@@ -20,4 +20,7 @@ public final class PaperGrowth {
 
     /** CrafterBlock#dispenseFrom: a cancelled CrafterCraftEvent must skip the "fail" level event that vanilla plays for empty results. */
     public static boolean crafterCancelled;
+
+    /** RedStoneOreBlock#interact: Paper adds an entity parameter (EntityChangeBlockEvent); set by the attack/stepOn/useItemOn wrappers. */
+    public static net.minecraft.world.entity.@Nullable Entity interactor;
 }
