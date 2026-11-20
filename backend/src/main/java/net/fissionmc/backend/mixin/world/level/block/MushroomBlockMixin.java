@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** Paper: MushroomBlock.java.patch - BlockSpreadEvent when mushrooms spread (source = the ticking block, not the reassigned pos). */
 @Mixin(MushroomBlock.class)
@@ -27,5 +28,11 @@ public abstract class MushroomBlockMixin {
         final BlockPos source = PaperGrowth.mushroomSource;
         PaperGrowth.mushroomSource = null;
         return CraftEventFactory.handleBlockSpreadEvent(level, source != null ? source : offset, offset, state, flags); // CraftBukkit
+    }
+
+    // CraftBukkit - tree type of the huge mushroom for the StructureGrowEvent
+    @Inject(method = "growMushroom", at = @At("HEAD"))
+    private void paper$treeType(final ServerLevel level, final BlockPos pos, final BlockState state, final RandomSource random, final CallbackInfoReturnable<Boolean> cir) {
+        net.minecraft.world.level.block.SaplingBlock.treeType = ((Object) this == net.minecraft.world.level.block.Blocks.BROWN_MUSHROOM) ? org.bukkit.TreeType.BROWN_MUSHROOM : org.bukkit.TreeType.RED_MUSHROOM;
     }
 }
