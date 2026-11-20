@@ -252,9 +252,130 @@ public abstract class PlayerMixin extends Avatar {
 
     @ModifyExpressionValue(method = "attack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;canCriticalAttack(Lnet/minecraft/world/entity/Entity;)Z"))
     private boolean fission$disableCrits(boolean crit) {
-        return crit && !this.level().paperConfig().entities.behavior.disablePlayerCrits; // Paper - Toggleable player crits
+        crit = crit && !this.level().paperConfig().entities.behavior.disablePlayerCrits; // Paper - Toggleable player crits
+        this.fission$criticalAttack = crit; // only evaluated when fullStrengthAttack, so it equals the vanilla criticalAttack
+        return crit;
     }
-    // TODO(behaviour): attack(): damageSource.critical() (critical damage API), deflectProjectile damage-event predicate, knockback events/PlayerVelocityEvent, sweep attack cause/knockback, stabAttack deflect predicate, BlocksAttacks.disable(attacker) PlayerShieldDisableEvent, tryReadyArrow/PlayerReadyArrowEvent
+    // Paper - critical damage API: the vanilla local damageSource is replaced by the critical copy right after the crit roll
+    @org.spongepowered.asm.mixin.injection.ModifyVariable(method = "attack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;isSweepAttack(ZZZ)Z"), ordinal = 0)
+    private net.minecraft.world.damagesource.DamageSource fission$criticalSource(net.minecraft.world.damagesource.DamageSource damageSource) {
+        final boolean critical = this.fission$criticalAttack;
+        this.fission$criticalAttack = false;
+        return critical ? damageSource.critical() : damageSource; // Paper - critical damage API
+    }
+    @org.spongepowered.asm.mixin.Unique private boolean fission$criticalAttack;
+
+    // Paper - damage events: the projectile deflect only happens when the (non living entity) damage event is not cancelled
+    @WrapOperation(method = "attack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;deflectProjectile(Lnet/minecraft/world/entity/Entity;)Z"))
+    private boolean fission$deflectAttack(Player self, Entity entity, Operation<Boolean> original, @com.llamalad7.mixinextras.sugar.Local(ordinal = 0) net.minecraft.world.damagesource.DamageSource damageSource, @com.llamalad7.mixinextras.sugar.Local(name = "magicBoost") float magicBoost) {
+        return this.fission$deflect(self, entity, original, damageSource, magicBoost);
+    }
+
+    @WrapOperation(method = "stabAttack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;deflectProjectile(Lnet/minecraft/world/entity/Entity;)Z"))
+    private boolean fission$deflectStab(Player self, Entity entity, Operation<Boolean> original, @com.llamalad7.mixinextras.sugar.Local(ordinal = 0) net.minecraft.world.damagesource.DamageSource damageSource, @com.llamalad7.mixinextras.sugar.Local(name = "magicBoost") float magicBoost) {
+        return this.fission$deflect(self, entity, original, damageSource, magicBoost);
+    }
+
+    @org.spongepowered.asm.mixin.Unique
+    private boolean fission$deflect(Player self, Entity entity, Operation<Boolean> original, net.minecraft.world.damagesource.DamageSource damageSource, float magicBoost) {
+        if (entity.is(net.minecraft.tags.EntityTypeTags.REDIRECTABLE_PROJECTILE) && entity instanceof net.minecraft.world.entity.projectile.Projectile
+            && org.bukkit.craftbukkit.event.CraftEventFactory.handleNonLivingEntityDamageEvent(entity, damageSource, magicBoost, false)) {
+            return false; // event cancelled: no deflect
+        }
+        return original.call(self, entity);
+    }
+
+    // Paper - knockback events: attack knockback carries the attacker and the ENTITY_ATTACK cause, pushes carry the pushing entity
+    @WrapOperation(method = "causeExtraKnockback", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;knockback(DDDLnet/minecraft/world/damagesource/DamageSource;FZ)V"))
+    private void fission$attackKnockback(LivingEntity target, double power, double xd, double zd, net.minecraft.world.damagesource.DamageSource source, float damage, boolean comesFromEffect, Operation<Void> original) {
+        target.knockback(power, xd, zd, source, damage, comesFromEffect, (Entity) (Object) this, io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.ENTITY_ATTACK);
+    }
+
+    @WrapOperation(method = "causeExtraKnockback", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;push(DDD)V"))
+    private void fission$attackPush(Entity target, double x, double y, double z, Operation<Void> original) {
+        target.push(x, y, z, (Entity) (Object) this); // Paper - Add EntityKnockbackByEntityEvent and EntityPushedByEntityAttackEvent
+    }
+
+    // Paper - Configurable sprint interruption on attack
+    @com.llamalad7.mixinextras.injector.v2.WrapWithCondition(method = "causeExtraKnockback", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;setSprinting(Z)V"))
+    private boolean fission$sprintInterruption(Player self, boolean sprinting) {
+        return !this.level().paperConfig().misc.disableSprintInterruptionOnAttack;
+    }
+
+    // CraftBukkit start - Add Velocity Event
+    @ModifyExpressionValue(method = "causeExtraKnockback", at = @At(value = "FIELD", target = "Lnet/minecraft/world/entity/Entity;syncVelocity:Z", opcode = org.objectweb.asm.Opcodes.GETFIELD))
+    private boolean fission$attackVelocityEvent(boolean syncVelocity, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) Entity entity, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) net.minecraft.world.phys.Vec3 oldMovement) {
+        if (!syncVelocity) {
+            return false;
+        }
+        org.bukkit.entity.Player player = (org.bukkit.entity.Player) entity.getBukkitEntity();
+        org.bukkit.util.Vector velocity = org.bukkit.craftbukkit.util.CraftVector.toBukkit(oldMovement);
+        org.bukkit.event.player.PlayerVelocityEvent event = new org.bukkit.event.player.PlayerVelocityEvent(player, velocity.clone());
+        if (!event.callEvent()) {
+            return false; // cancelled: keep syncVelocity set and send nothing
+        }
+        if (!velocity.equals(event.getVelocity())) {
+            player.setVelocity(event.getVelocity());
+        }
+        return true;
+    }
+    // CraftBukkit end
+
+    // Paper - Only apply knockback if the event is not canceled; sweep attack cause and knockback events
+    @WrapOperation(method = "doSweepAttack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;hurtServer(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;F)Z"))
+    private boolean fission$sweepHurt(LivingEntity nearby, net.minecraft.server.level.ServerLevel level, net.minecraft.world.damagesource.DamageSource damageSource, float damage, Operation<Boolean> original) {
+        nearby.lastDamageCancelled = false;
+        return original.call(nearby, level, damageSource.knownCause(org.bukkit.event.entity.EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK), damage) && !nearby.lastDamageCancelled;
+    }
+
+    @WrapOperation(method = "doSweepAttack", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/LivingEntity;knockback(DDDLnet/minecraft/world/damagesource/DamageSource;F)V"))
+    private void fission$sweepKnockback(LivingEntity nearby, double power, double xd, double zd, net.minecraft.world.damagesource.DamageSource source, float damage, Operation<Void> original) {
+        nearby.knockback(power, xd, zd, source, damage, (Entity) (Object) this, io.papermc.paper.event.entity.EntityKnockbackEvent.Cause.SWEEP_ATTACK);
+    }
+
+    // Paper - Add PlayerShieldDisableEvent
+    @WrapOperation(method = "blockUsingItem", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/component/BlocksAttacks;disable(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/entity/LivingEntity;FLnet/minecraft/world/item/ItemStack;)V"))
+    private void fission$shieldDisable(net.minecraft.world.item.component.BlocksAttacks blocksAttacks, net.minecraft.server.level.ServerLevel level, LivingEntity user, float baseSeconds, net.minecraft.world.item.ItemStack blockingWith, Operation<Void> original, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) LivingEntity attacker) {
+        blocksAttacks.disable(level, user, baseSeconds, blockingWith, attacker);
+    }
+
+    // Paper start - PlayerReadyArrowEvent
+    @org.spongepowered.asm.mixin.Unique private boolean fission$anyReadyArrowCancelled;
+
+    @Inject(method = "getProjectile", at = @At("HEAD"))
+    private void fission$readyArrowReset(net.minecraft.world.item.ItemStack heldWeapon, CallbackInfoReturnable<net.minecraft.world.item.ItemStack> cir) {
+        this.fission$anyReadyArrowCancelled = false;
+    }
+
+    @ModifyExpressionValue(method = "getProjectile", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ProjectileWeaponItem;getSupportedHeldProjectiles()Ljava/util/function/Predicate;"))
+    private java.util.function.Predicate<net.minecraft.world.item.ItemStack> fission$readyArrowHeld(java.util.function.Predicate<net.minecraft.world.item.ItemStack> predicate, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) net.minecraft.world.item.ItemStack heldWeapon) {
+        return predicate.and(item -> this.fission$tryReadyArrow(heldWeapon, item));
+    }
+
+    @ModifyExpressionValue(method = "getProjectile", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ProjectileWeaponItem;getAllSupportedProjectiles()Ljava/util/function/Predicate;"))
+    private java.util.function.Predicate<net.minecraft.world.item.ItemStack> fission$readyArrowAll(java.util.function.Predicate<net.minecraft.world.item.ItemStack> predicate, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) net.minecraft.world.item.ItemStack heldWeapon) {
+        return predicate.and(item -> this.fission$tryReadyArrow(heldWeapon, item));
+    }
+
+    @org.spongepowered.asm.mixin.Unique
+    private boolean fission$tryReadyArrow(net.minecraft.world.item.ItemStack bow, net.minecraft.world.item.ItemStack itemstack) {
+        if (!(((Object) this) instanceof net.minecraft.server.level.ServerPlayer serverPlayer)) return true;
+        final boolean notCancelled = new com.destroystokyo.paper.event.player.PlayerReadyArrowEvent(
+            serverPlayer.getBukkitEntity(),
+            org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitMirror(bow),
+            org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitMirror(itemstack)
+        ).callEvent();
+        if (!notCancelled) this.fission$anyReadyArrowCancelled = true;
+        return notCancelled;
+    }
+
+    @Inject(method = "getProjectile", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;hasInfiniteMaterials()Z"))
+    private void fission$readyArrowResync(net.minecraft.world.item.ItemStack heldWeapon, CallbackInfoReturnable<net.minecraft.world.item.ItemStack> cir) {
+        if (this.fission$anyReadyArrowCancelled && !this.abilities.instabuild && ((Object) this) instanceof net.minecraft.server.level.ServerPlayer player) {
+            this.resyncUsingItem(player); // Paper - resync if no item matched the Predicate
+        }
+    }
+    // Paper end - PlayerReadyArrowEvent
 
     @WrapOperation(method = {"attack", "stabAttack"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;causeFoodExhaustion(F)V"))
     private void fission$attackExhaustion(Player self, float amount, Operation<Void> original) {

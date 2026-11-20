@@ -1433,7 +1433,10 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
     }
 
     @ModifyExpressionValue(method = "handleAttack", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;getEntityOrPart(I)Lnet/minecraft/world/entity/Entity;"))
-    private Entity paper$attackSelf(final Entity target) {
+    private Entity paper$attackSelf(final Entity target, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) final net.minecraft.network.protocol.game.ServerboundAttackPacket packet) {
+        if (target == null) {
+            CraftEventFactory.callPlayerUseUnknownEntityEvent(this.player, packet.entityId(), true, InteractionHand.MAIN_HAND, null); // Paper - PlayerUseUnknownEntityEvent
+        }
         // Spigot start
         if (target == this.player) {
             this.disconnect(Component.literal("Cannot interact with self!"), org.bukkit.event.player.PlayerKickEvent.Cause.SELF_INTERACTION); // Paper - kick event cause
@@ -1449,7 +1452,10 @@ public abstract class ServerGamePacketListenerImplMixin extends ServerCommonPack
     }
 
     @ModifyExpressionValue(method = "handleInteract", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;getEntityOrPart(I)Lnet/minecraft/world/entity/Entity;"))
-    private Entity paper$interactSelf(final Entity target) {
+    private Entity paper$interactSelf(final Entity target, @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) final net.minecraft.network.protocol.game.ServerboundInteractPacket packet) {
+        if (target == null) {
+            CraftEventFactory.callPlayerUseUnknownEntityEvent(this.player, packet.entityId(), false, packet.hand(), packet.location()); // Paper - PlayerUseUnknownEntityEvent
+        }
         // Spigot start
         if (target == this.player && !this.player.isSpectator()) {
             this.disconnect(Component.literal("Cannot interact with self!"), org.bukkit.event.player.PlayerKickEvent.Cause.SELF_INTERACTION); // Paper - kick event cause

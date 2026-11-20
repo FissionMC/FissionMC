@@ -3,3 +3,5 @@
 public net.minecraft.world.level.dimension.end.EnderDragonFight spawnNewGateway()V
 # FissionMC: lets ClientboundSetPlayerTeamPacketMixin#createMultiplePlayerPacket (Paper code, merged into the class) compile
 public net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket <init>(Ljava/lang/String;ILjava/util/Optional;Ljava/util/Collection;)V
+# Paper: LivingEntity#dropFromShearingLootTable is called from the Shearable mixins (M7 entity events pass 2)
+public net.minecraft.world.entity.LivingEntity dropFromShearingLootTable(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/resources/ResourceKey;Lnet/minecraft/world/item/ItemInstance;Ljava/util/function/BiConsumer;)V

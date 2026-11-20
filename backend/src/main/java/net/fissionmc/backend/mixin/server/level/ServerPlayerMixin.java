@@ -175,7 +175,7 @@ public abstract class ServerPlayerMixin extends Player {
 
     // Paper/CraftBukkit: ServerPlayer.teleport(TeleportTransition) hunks. The PlayerTeleportEvent is fired at HEAD (vanilla's isRemoved check and missing-respawn-block message
     // run after it instead of before; harmless), a changed destination re-enters with the new transition; vanilla's connection.teleport calls become internalTeleport (no second event).
-    // TODO(behaviour): PlayerTeleportEndGatewayEvent branch, oldLevelTypeKey/getTypeKey nether check, restartClientLoadTimerAfterRespawn, portalProcess reset, shield blocking reset
+    // TODO(behaviour): oldLevelTypeKey/getTypeKey nether check, restartClientLoadTimerAfterRespawn, portalProcess reset, shield blocking reset
     private boolean fission$teleportEventDone = false;
     private @Nullable ServerLevel fission$teleportOldLevel;
 
@@ -201,7 +201,15 @@ public abstract class ServerPlayerMixin extends Player {
         org.bukkit.Location enter = this.getBukkitEntity().getLocation();
         PositionMoveRotation absolutePosition = PositionMoveRotation.calculateAbsolute(PositionMoveRotation.of(this), PositionMoveRotation.of(transition), transition.relatives());
         org.bukkit.Location exit = org.bukkit.craftbukkit.util.CraftLocation.toBukkit(absolutePosition.position(), newLevel, absolutePosition.yRot(), absolutePosition.xRot());
-        final org.bukkit.event.player.PlayerTeleportEvent tpEvent = new org.bukkit.event.player.PlayerTeleportEvent(this.getBukkitEntity(), enter, exit.clone(), transition.cause());
+        final org.bukkit.event.player.PlayerTeleportEvent tpEvent;
+        // Paper start - gateway-specific teleport event
+        final ServerPlayer selfPlayer = fission$self();
+        if (selfPlayer.portalProcess != null && selfPlayer.portalProcess.isSamePortal(((net.minecraft.world.level.block.EndGatewayBlock) net.minecraft.world.level.block.Blocks.END_GATEWAY)) && selfPlayer.level().getBlockEntity(selfPlayer.portalProcess.getEntryPosition()) instanceof net.minecraft.world.level.block.entity.TheEndGatewayBlockEntity theEndGatewayBlockEntity) {
+            tpEvent = new com.destroystokyo.paper.event.player.PlayerTeleportEndGatewayEvent(this.getBukkitEntity(), enter, exit.clone(), new org.bukkit.craftbukkit.block.CraftEndGateway(selfPlayer.level().getWorld(), theEndGatewayBlockEntity, true));
+        } else {
+            tpEvent = new org.bukkit.event.player.PlayerTeleportEvent(this.getBukkitEntity(), enter, exit.clone(), transition.cause());
+        }
+        // Paper end - gateway-specific teleport event
         org.bukkit.Bukkit.getServer().getPluginManager().callEvent(tpEvent);
         org.bukkit.Location newExit = tpEvent.getTo();
         if (tpEvent.isCancelled()) {
