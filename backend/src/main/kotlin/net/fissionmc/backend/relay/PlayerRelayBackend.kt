@@ -222,6 +222,9 @@ object PlayerRelayBackend {
         val conn = Connection(PacketFlow.SERVERBOUND)
         v.conn = conn
         conn.hostname = info?.hostname ?: ""
+        // what the handshake would have set: Player#getProtocolVersion / getVirtualHost (the port is not relayed, so the default one)
+        conn.protocolVersion = a.protocol
+        if (conn.hostname.isNotEmpty()) conn.virtualHost = com.destroystokyo.paper.network.PaperNetworkClient.prepareVirtualHost(conn.hostname, 25565)
         val remote = InetSocketAddress(info?.let { runCatching { InetAddress.getByName(it.address) }.getOrNull() } ?: InetAddress.getLoopbackAddress(), info?.port ?: 0)
         v.channel = net.fissionmc.net.VirtualChannel.create(remote, object : ChannelInitializer<Channel>() {
             override fun initChannel(ch: Channel) {
