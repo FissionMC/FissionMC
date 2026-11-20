@@ -58,6 +58,7 @@ public abstract class EnchantmentMenuMixin extends AbstractContainerMenu {
     @Inject(method = "<init>(ILnet/minecraft/world/entity/player/Inventory;Lnet/minecraft/world/inventory/ContainerLevelAccess;)V", at = @At("RETURN"))
     private void fission$savePlayer(final int containerId, final Inventory inventory, final ContainerLevelAccess access, final CallbackInfo ci) {
         this.player = (org.bukkit.entity.Player) inventory.player.getBukkitEntity(); // CraftBukkit
+        net.fissionmc.backend.blocks.PaperInventoryHolders.apply(this, access, this.enchantSlots); // Paper - Add missing InventoryHolders
     }
 
     @Inject(method = "stillValid", at = @At("HEAD"), cancellable = true)
