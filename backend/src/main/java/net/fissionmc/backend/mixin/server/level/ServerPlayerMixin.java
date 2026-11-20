@@ -370,7 +370,10 @@ public abstract class ServerPlayerMixin extends Player {
     // Paper end - special close for unloaded inventory
 
     // vanilla teleportTo(double, double, double) goes through connection.teleport(PMR, Set) which delegates with TeleportCause.UNKNOWN
-    // TODO(behaviour): dismountTo should use TeleportCause.DISMOUNT
+    // Paper - use dismount cause
+    public void dismountTo(final double x, final double y, final double z) {
+        this.teleportTo(x, y, z, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.DISMOUNT);
+    }
     public void teleportTo(final double x, final double y, final double z, final org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause) {
         this.connection.teleport(new PositionMoveRotation(new Vec3(x, y, z), Vec3.ZERO, 0.0F, 0.0F), Relative.union(Relative.DELTA, Relative.ROTATION), cause);
         // Paper end - pass cause
@@ -1013,6 +1016,109 @@ public abstract class ServerPlayerMixin extends Player {
             event.callEvent();
         }
         // CraftBukkit end
+    }
+
+    // CraftBukkit/Paper: PlayerLevelChangeEvent and the client-sided world border tick (end of doTick)
+    private int fission$oldLevel = -1;
+
+    @Inject(method = "doTick", at = @At("TAIL"))
+    private void fission$doTickTail(final CallbackInfo ci) {
+        if (this.fission$oldLevel == -1) {
+            this.fission$oldLevel = this.experienceLevel;
+        }
+        if (this.fission$oldLevel != this.experienceLevel) {
+            org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerLevelChangeEvent(this.getBukkitEntity(), this.fission$oldLevel, this.experienceLevel);
+            this.fission$oldLevel = this.experienceLevel;
+        }
+        if (this.getBukkitEntity().hasClientWorldBorder()) {
+            ((org.bukkit.craftbukkit.CraftWorldBorder) this.getBukkitEntity().getWorldBorder()).getHandle().tick();
+        }
+    }
+
+    // Paper/CraftBukkit: bed events. The vanilla checks move into fission$getBedResult so PlayerBedEnterEvent can override the outcome.
+    @Shadow private boolean bedInRange(final BlockPos pos, final net.minecraft.core.Direction direction) { throw new AssertionError(); }
+    @Shadow private boolean bedBlocked(final BlockPos pos, final net.minecraft.core.Direction direction) { throw new AssertionError(); }
+
+    private com.mojang.datafixers.util.Either<Player.BedSleepingProblem, net.minecraft.util.Unit> fission$getBedResult(final BlockPos pos, final net.minecraft.core.Direction direction, final net.minecraft.world.attribute.BedRule rule) {
+        if (rule.destroyOnUse()) return com.mojang.datafixers.util.Either.left(Player.BedSleepingProblem.EXPLOSION);
+        if (!this.isSleeping() && this.isAlive()) {
+            final boolean canSleep = rule.canSleep(this.level());
+            final boolean canSetSpawn = rule.canSetSpawn(this.level());
+            if (!this.bedInRange(pos, direction)) {
+                return com.mojang.datafixers.util.Either.left(Player.BedSleepingProblem.TOO_FAR_AWAY);
+            }
+            if (this.bedBlocked(pos, direction)) {
+                return com.mojang.datafixers.util.Either.left(Player.BedSleepingProblem.OBSTRUCTED);
+            }
+            if (canSetSpawn) {
+                this.setRespawnPosition(new ServerPlayer.RespawnConfig(LevelData.RespawnData.of(this.level().dimension(), pos, this.getYRot(), this.getXRot()), false), true, com.destroystokyo.paper.event.player.PlayerSetSpawnEvent.Cause.BED);
+            }
+            if (!canSleep) {
+                return com.mojang.datafixers.util.Either.left(rule.asProblem());
+            }
+            if (!this.isCreative()) {
+                final Vec3 bedCenter = Vec3.atBottomCenterOf(pos);
+                final List<net.minecraft.world.entity.monster.Monster> monsters = this.level().getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class,
+                    new net.minecraft.world.phys.AABB(bedCenter.x() - 8.0, bedCenter.y() - 5.0, bedCenter.z() - 8.0, bedCenter.x() + 8.0, bedCenter.y() + 5.0, bedCenter.z() + 8.0),
+                    monster -> monster.isPreventingPlayerRest(this.fission$self().level(), this));
+                if (!monsters.isEmpty()) {
+                    return com.mojang.datafixers.util.Either.left(Player.BedSleepingProblem.NOT_SAFE);
+                }
+            }
+            return com.mojang.datafixers.util.Either.right(net.minecraft.util.Unit.INSTANCE);
+        } else {
+            return com.mojang.datafixers.util.Either.left(Player.BedSleepingProblem.OTHER_PROBLEM);
+        }
+    }
+
+    // CraftBukkit - add force boolean (vanilla's 4 argument overload forwards here with force = false)
+    public com.mojang.datafixers.util.Either<Player.BedSleepingProblem, net.minecraft.util.Unit> startSleepInBed(final net.minecraft.world.level.block.AbstractBedBlock bedBlock, final BlockState bedBlockState, final net.minecraft.world.attribute.BedRule rule, final BlockPos pos, final boolean force) {
+        final net.minecraft.core.Direction direction = bedBlockState.getValue(net.minecraft.world.level.block.HorizontalDirectionalBlock.FACING);
+        com.mojang.datafixers.util.Either<Player.BedSleepingProblem, net.minecraft.util.Unit> bedResult = this.fission$getBedResult(pos, direction, rule);
+        final boolean canSetSpawn = rule.canSetSpawn(this.level());
+        if (bedResult.left().orElse(null) == Player.BedSleepingProblem.OTHER_PROBLEM) {
+            return bedResult; // not bypassable by plugins
+        }
+        if (force) {
+            bedResult = com.mojang.datafixers.util.Either.right(net.minecraft.util.Unit.INSTANCE);
+        }
+        bedResult = org.bukkit.craftbukkit.event.CraftEventFactory.callPlayerBedEnterEvent(this, pos, rule, bedResult);
+        if (bedResult.left().isPresent()) {
+            return bedResult;
+        }
+        final com.mojang.datafixers.util.Either<Player.BedSleepingProblem, net.minecraft.util.Unit> result = super.startSleepInBed(bedBlock, bedBlockState, rule, pos).ifRight(unit -> {
+            this.awardStat(bedBlock.getSleptInBedStatType());
+            if (canSetSpawn) {
+                net.minecraft.advancements.triggers.CriteriaTriggers.SLEPT_IN_BED.trigger(this.fission$self());
+            }
+        });
+        if (!this.fission$self().level().canSleepThroughNights()) {
+            this.sendOverlayMessage(Component.translatable("sleep.not_possible"));
+        }
+        this.fission$self().level().updateSleepingPlayerList();
+        return result;
+    }
+
+    @Inject(method = "startSleepInBed(Lnet/minecraft/world/level/block/AbstractBedBlock;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/attribute/BedRule;Lnet/minecraft/core/BlockPos;)Lcom/mojang/datafixers/util/Either;", at = @At("HEAD"), cancellable = true)
+    private void fission$startSleepInBed(final net.minecraft.world.level.block.AbstractBedBlock bedBlock, final BlockState bedBlockState, final net.minecraft.world.attribute.BedRule rule, final BlockPos pos, final org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<com.mojang.datafixers.util.Either<Player.BedSleepingProblem, net.minecraft.util.Unit>> cir) {
+        cir.setReturnValue(this.startSleepInBed(bedBlock, bedBlockState, rule, pos, false));
+    }
+
+    // CraftBukkit: PlayerBedLeaveEvent (cancellable) and the EXIT_BED teleport cause
+    @Inject(method = "stopSleepInBed", at = @At("HEAD"), cancellable = true)
+    private void fission$stopSleepInBed(final boolean forcefulWakeUp, final boolean updateLevelList, final CallbackInfo ci) {
+        ci.cancel();
+        if (!this.isSleeping()) return; // can't leave a bed when not in one
+        final org.bukkit.block.Block bed = org.bukkit.craftbukkit.block.CraftBlock.at(this.level(), this.getSleepingPos().orElse(this.blockPosition()));
+        final org.bukkit.event.player.PlayerBedLeaveEvent event = new org.bukkit.event.player.PlayerBedLeaveEvent(this.getBukkitEntity(), bed, true);
+        if (!event.callEvent()) {
+            return;
+        }
+        this.fission$self().level().getChunkSource().sendToTrackingPlayersAndSelf(this, new net.minecraft.network.protocol.game.ClientboundAnimatePacket(this, net.minecraft.network.protocol.game.ClientboundAnimatePacket.WAKE_UP));
+        super.stopSleepInBed(forcefulWakeUp, updateLevelList);
+        if (this.connection != null) {
+            this.connection.teleport(this.getX(), this.getY(), this.getZ(), this.getYRot(), this.getXRot(), org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.EXIT_BED);
+        }
     }
 
     // CraftBukkit - joining flag
