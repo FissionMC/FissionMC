@@ -211,3 +211,6 @@ net.minecraft.world.entity.EntityType: public T spawn(net.minecraft.server.level
 
 # Paper: sources/net/minecraft/world/item/component/BlocksAttacks.java.patch (M7 entity events pass 2)
 net.minecraft.world.item.component.BlocksAttacks: public void disable(net.minecraft.server.level.ServerLevel level, net.minecraft.world.entity.LivingEntity user, float baseSeconds, net.minecraft.world.item.ItemStack blockingWith, net.minecraft.world.entity.LivingEntity attacker)
+
+# Paper: sources/net/minecraft/world/entity/vehicle/minecart/MinecartTNT.java.patch (M7 entity events pass 2)
+net.minecraft.world.entity.vehicle.minecart.MinecartTNT: public void primeFuse(net.minecraft.world.damagesource.DamageSource source, int fuseTime)
