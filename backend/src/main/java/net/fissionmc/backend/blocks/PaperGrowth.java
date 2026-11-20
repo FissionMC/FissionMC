@@ -17,4 +17,7 @@ public final class PaperGrowth {
     public static @Nullable BlockState bambooBelowState;
     public static @Nullable BlockPos bambooTwoBelowPos;
     public static @Nullable BlockState bambooTwoBelowState;
+
+    /** CrafterBlock#dispenseFrom: a cancelled CrafterCraftEvent must skip the "fail" level event that vanilla plays for empty results. */
+    public static boolean crafterCancelled;
 }
