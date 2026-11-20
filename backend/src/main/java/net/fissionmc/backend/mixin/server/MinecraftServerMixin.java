@@ -62,6 +62,7 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     @Shadow @Final private Services services;
     @Shadow private int emptyTicks;
     @Shadow private int tickCount;
+    @Shadow public abstract net.minecraft.commands.Commands getCommands();
     @Shadow private long nextTickTimeNanos;
     @Shadow public abstract Iterable<ServerLevel> getAllLevels();
     @Shadow private @Nullable String motd;
@@ -731,14 +732,45 @@ public abstract class MinecraftServerMixin extends ReentrantBlockableEventLoop<T
     public CompletableFuture<Void> reloadResources(
         final Collection<String> packsToEnable, final io.papermc.paper.event.server.ServerResourcesReloadedEvent.Cause cause
     ) {
-        // TODO(behaviour): reloadResources hunks (moveBukkitCommands, commands lifecycle event, help map; the ServerResourcesReloadedEvent below is ported)
         this.paper$reloadCause = cause;
         return this.reloadResources(packsToEnable);
+    }
+
+    // Paper: moveBukkitCommands(this.resources.managers().getCommands(), newResources.managers().getCommands()). The
+    // ReloadableResources record is package-private, so the old Commands is captured at the head of the
+    // lambda (this.resources is still the old one there) and moved just before PlayerList.reloadResources (this.resources
+    // is the new one by then; it sends the command tree to every player, so the Bukkit commands must already be in it).
+    @org.spongepowered.asm.mixin.Unique private net.minecraft.commands.@Nullable Commands fission$oldCommands;
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "lambda$reloadResources$4", at = @org.spongepowered.asm.mixin.injection.At("HEAD"))
+    private void fission$captureOldCommands(final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        this.fission$oldCommands = this.getCommands();
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "lambda$reloadResources$4", at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Lnet/minecraft/server/players/PlayerList;reloadResources()V"))
+    private void fission$moveBukkitCommands(final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        final net.minecraft.commands.Commands old = this.fission$oldCommands;
+        this.fission$oldCommands = null;
+        if (old != null && this.server != null) {
+            io.papermc.paper.command.brigadier.PaperBrigadier.moveBukkitCommands(old, this.getCommands()); // Paper
+        }
     }
 
     // Paper - Add ServerResourcesReloadedEvent; fire after everything has been reloaded (tail of the thenAcceptAsync lambda of reloadResources)
     @org.spongepowered.asm.mixin.injection.Inject(method = "lambda$reloadResources$4", at = @org.spongepowered.asm.mixin.injection.At("TAIL"))
     private void fission$resourcesReloadedEvent(final org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        if (this.server != null) {
+            // Paper start - brigadier command API
+            org.bukkit.craftbukkit.block.data.CraftBlockData.reloadCache(); // Paper - cache block data strings; they can be defined by datapacks so refresh it here
+            io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.setValid(); // reset invalid state for event fire below
+            io.papermc.paper.plugin.lifecycle.event.LifecycleEventRunner.INSTANCE.callReloadableRegistrarEvent(io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents.COMMANDS, io.papermc.paper.command.brigadier.PaperCommands.INSTANCE, org.bukkit.plugin.Plugin.class, io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent.Cause.RELOAD); // call commands event for regular plugins
+            final org.bukkit.craftbukkit.help.SimpleHelpMap helpMap = (org.bukkit.craftbukkit.help.SimpleHelpMap) this.server.getHelpMap();
+            helpMap.clear();
+            helpMap.initializeGeneralTopics();
+            helpMap.initializeCommands();
+            this.server.syncCommands(); // Refresh commands after event
+            // Paper end
+        }
         io.papermc.paper.event.server.ServerResourcesReloadedEvent.Cause cause = this.paper$reloadCause == null ? io.papermc.paper.event.server.ServerResourcesReloadedEvent.Cause.PLUGIN : this.paper$reloadCause;
         this.paper$reloadCause = null;
         new io.papermc.paper.event.server.ServerResourcesReloadedEvent(cause).callEvent();

@@ -54,11 +54,54 @@ public abstract class CommandsMixin {
     );
     // Paper end - Perf: Async command map building
 
+    @Shadow private static @Nullable ContextChain<CommandSourceStack> finishParsing(ParseResults<CommandSourceStack> command, String commandString, CommandSourceStack sender) { throw new AssertionError(); }
+    @Shadow public static void executeCommandInContext(CommandSourceStack context, java.util.function.Consumer<net.minecraft.commands.execution.ExecutionContext<CommandSourceStack>> config) {}
+
+    // Paper: vanilla performCommand(parse, string) delegates to the 3-arg overload (rethrow when requested, always log execution exceptions)
+    @Inject(method = "performCommand(Lcom/mojang/brigadier/ParseResults;Ljava/lang/String;)V", at = @At("HEAD"), cancellable = true)
+    private void fission$performCommand2(final ParseResults<CommandSourceStack> command, final String commandString, final CallbackInfo ci) {
+        ci.cancel();
+        this.performCommand(command, commandString, false);
+    }
+
     // Paper start
     public void performCommand(final ParseResults<CommandSourceStack> command, final String commandString, final boolean throwCommandError) {
-        // TODO(behaviour): Paper moves the vanilla performCommand body here (AsyncCatcher, rethrow when
-        // throwCommandError, UnknownCommandEvent, console logging); the 2-arg overload delegates with false.
-        this.performCommand(command, commandString);
+        org.spigotmc.AsyncCatcher.catchOp("Cannot perform command async");
+        final CommandSourceStack sender = command.getContext().getSource();
+        net.minecraft.util.profiling.Profiler.get().push(() -> "/" + commandString);
+        final ContextChain<CommandSourceStack> commandChain = finishParsing(command, commandString, sender);
+        try {
+            if (commandChain != null) {
+                executeCommandInContext(
+                    sender,
+                    executionContext -> net.minecraft.commands.execution.ExecutionContext.queueInitialCommandExecution(
+                        executionContext, commandString, commandChain, sender, net.minecraft.commands.CommandResultCallback.EMPTY
+                    )
+                );
+            }
+        } catch (final Throwable e) { // always gracefully handle it, no matter how bad:tm:
+            if (throwCommandError) throw sneaky(e); // rethrow directly if requested
+            final MutableComponent hover = Component.literal(e.getMessage() == null ? e.getClass().getName() : e.getMessage());
+            MinecraftServer.LOGGER.error("Command exception: /{}", commandString, e); // Paper - always show execution exception in console log
+            if (sender.getServer().isDebugging() || MinecraftServer.LOGGER.isDebugEnabled()) { // Paper - Debugging
+                final StackTraceElement[] stackTrace = e.getStackTrace();
+                for (int i = 0; i < Math.min(stackTrace.length, 3); i++) {
+                    hover.append("\n\n").append(stackTrace[i].getMethodName()).append("\n ").append(stackTrace[i].getFileName()).append(":").append(String.valueOf(stackTrace[i].getLineNumber()));
+                }
+            }
+            sender.sendFailure(Component.translatable("command.failed").withStyle(style -> style.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(hover))));
+            if (net.minecraft.SharedConstants.DEBUG_VERBOSE_COMMAND_ERRORS || net.minecraft.SharedConstants.IS_RUNNING_IN_IDE) {
+                sender.sendFailure(Component.literal(net.minecraft.util.Util.describeError(e)));
+                MinecraftServer.LOGGER.error("'/{}' threw an exception", commandString, e);
+            }
+        } finally {
+            net.minecraft.util.profiling.Profiler.get().pop();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> RuntimeException sneaky(final Throwable t) throws T {
+        throw (T) t;
     }
     // Paper end
 
@@ -155,6 +198,73 @@ public abstract class CommandsMixin {
                     .redirect(flattenedAliasTarget));
         }
     }
-    // TODO(behaviour): isRestricted RestrictedMarker check, sendCommands async building
-    // (sendAsync/runSync on COMMAND_SENDING_POOL, clientNode, tab-complete=-1 empty packet), fillUsableCommands changes.
+
+    // Paper - Send empty commands if tab completion is disabled
+    @Inject(method = "sendCommands", at = @At("HEAD"), cancellable = true)
+    private void fission$noCommandsWithoutTabComplete(final ServerPlayer player, final CallbackInfo ci) {
+        if (org.spigotmc.SpigotConfig.tabComplete < 0) {
+            player.connection.send(new ClientboundCommandsPacket(new RootCommandNode<>(), COMMAND_NODE_INSPECTOR));
+            ci.cancel();
+        }
+    }
+
+    @Shadow @Final private static ClientboundCommandsPacket.NodeInspector<CommandSourceStack> COMMAND_NODE_INSPECTOR;
+
+    // Paper: fillUsableCommands. Replaced body: Brigadier API client nodes (custom/wrapped arguments), Spigot's send-namespaced,
+    // and the "dead redirect" repair (a plugin removed the node a minecraft:x copy redirects to, e.g. Essentials replacing /msg).
+    @Inject(method = "fillUsableCommands", at = @At("HEAD"), cancellable = true)
+    private static <S> void fission$fillUsableCommandsHook(
+        final CommandNode<S> source, final CommandNode<S> target, final S commandFilter, final java.util.Map<CommandNode<S>, CommandNode<S>> converted, final CallbackInfo ci
+    ) {
+        ci.cancel();
+        fission$fillUsableCommands(source, target, commandFilter, converted);
+    }
+
+    private static <S> void fission$fillUsableCommands(
+        final CommandNode<S> source, final CommandNode<S> target, final S commandFilter, final java.util.Map<CommandNode<S>, CommandNode<S>> converted
+    ) {
+        for (CommandNode<S> child : source.getChildren()) {
+            // Paper start - Brigadier API
+            if (child.clientNode != null) {
+                child = child.clientNode;
+            }
+            // Paper end - Brigadier API
+            if (!org.spigotmc.SpigotConfig.sendNamespaced && child.getName().contains(":")) continue; // Spigot
+            if (child.canUse(commandFilter)) {
+                com.mojang.brigadier.builder.ArgumentBuilder<S, ?> builder = child.createBuilder();
+                // Paper start
+                // Is there an invalid command redirect?
+                if (builder.getRedirect() != null && converted.get(builder.getRedirect()) == null) {
+                    // Create the argument builder with the same values as the specified node, but with a different literal and populated children
+                    final CommandNode<S> redirect = builder.getRedirect();
+                    // Diff copied from LiteralCommand#createBuilder
+                    final com.mojang.brigadier.builder.LiteralArgumentBuilder<S> redirectBuilder = com.mojang.brigadier.builder.LiteralArgumentBuilder.literal(child.getName());
+                    redirectBuilder.requires(redirect.getRequirement());
+                    // builder.forward(redirect.getRedirect(), redirect.getRedirectModifier(), redirect.isFork()); We don't want to migrate the forward, since it's invalid.
+                    if (redirect.getCommand() != null) {
+                        redirectBuilder.executes(redirect.getCommand());
+                    }
+                    // Diff copied from LiteralCommand#createBuilder
+                    for (final CommandNode<S> redirectChild : redirect.getChildren()) {
+                        redirectBuilder.then(redirectChild);
+                    }
+
+                    builder = redirectBuilder;
+                }
+                // Paper end
+                if (builder.getRedirect() != null) {
+                    builder.redirect(converted.get(builder.getRedirect()));
+                }
+
+                final CommandNode<S> node = builder.build();
+                converted.put(child, node);
+                target.addChild(node);
+                if (!child.getChildren().isEmpty()) {
+                    fission$fillUsableCommands(child, node, commandFilter, converted);
+                }
+            }
+        }
+    }
+
+    // TODO(behaviour): sendCommands async building (sendAsync/runSync on COMMAND_SENDING_POOL): built synchronously here.
 }

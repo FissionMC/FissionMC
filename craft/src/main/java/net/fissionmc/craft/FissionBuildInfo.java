@@ -21,7 +21,15 @@ public final class FissionBuildInfo implements ServerBuildInfo {
     @Override public Instant buildTime() { return Instant.EPOCH; }
     @Override public Optional<String> gitBranch() { return Optional.empty(); }
     @Override public Optional<String> gitCommit() { return Optional.empty(); }
+    /**
+     * Same shape as Paper's: {@code <mc>-<build>}. CraftServer#getVersion appends " (MC: <mc>)" itself, so the string must not contain
+     * that part (plugins parse {@code Bukkit.getVersion()} with a "(MC: x)" pattern: it has to occur exactly once).
+     */
     @Override public String asString(StringRepresentation representation) {
-        return "FissionMC " + VERSION + " (MC: " + MINECRAFT + ")";
+        return simple();
+    }
+
+    static String simple() {
+        return MINECRAFT + "-DEV-fission-" + VERSION;
     }
 }

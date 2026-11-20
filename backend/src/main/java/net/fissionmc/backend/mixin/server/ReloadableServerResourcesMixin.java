@@ -33,5 +33,19 @@ public abstract class ReloadableServerResourcesMixin {
         io.papermc.paper.command.PaperCommands.registerCommands(); // Paper
     }
 
-    // TODO(behaviour): loadResources hunk - LifecycleEvents.COMMANDS for bootstrap contexts (BootstrapContext, INITIAL/RELOAD)
+    // Paper start - call commands event for bootstraps: after `new ReloadableServerResources(...)`, before SimpleReloadInstance.create
+    // (INITIAL while the server does not exist yet, RELOAD for every datapack reload)
+    @Inject(
+        method = "lambda$loadResources$2",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/server/packs/resources/SimpleReloadInstance;create(Lnet/minecraft/server/packs/resources/ResourceManager;Ljava/util/List;Ljava/util/concurrent/Executor;Ljava/util/concurrent/Executor;Ljava/util/concurrent/CompletableFuture;Z)Lnet/minecraft/server/packs/resources/ReloadInstance;")
+    )
+    private static void paper$callBootstrapCommandsEvent(final CallbackInfo ci) {
+        io.papermc.paper.plugin.lifecycle.event.LifecycleEventRunner.INSTANCE.callReloadableRegistrarEvent(
+            io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents.COMMANDS,
+            io.papermc.paper.command.brigadier.PaperCommands.INSTANCE,
+            io.papermc.paper.plugin.bootstrap.BootstrapContext.class,
+            net.minecraft.server.MinecraftServer.getServer() == null ? io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent.Cause.INITIAL : io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent.Cause.RELOAD
+        );
+    }
+    // Paper end - call commands event
 }

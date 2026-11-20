@@ -40,3 +40,6 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xmaxerrs", "100000", "-nowarn"))
     options.encoding = "UTF-8"
 }
+
+dependencies { testImplementation(kotlin("test")) }
+tasks.withType<Test>().configureEach { useJUnitPlatform() }
